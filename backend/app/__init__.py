@@ -1,0 +1,1 @@
+"""Serenita FastAPI application."""

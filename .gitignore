@@ -1,0 +1,20 @@
+# 忽略整个模型文件夹（或按你需要的粒度调整）
+model/
+
+# uv 虚拟环境
+.venv/
+
+# local env / generated files
+.env
+node_modules/
+dist/
+*.tsbuildinfo
+__pycache__/
+*.pyc
+.obsidian/
+serenita_files/
+.worktrees/
+.superpowers/
+
+# macOS
+.DS_Store

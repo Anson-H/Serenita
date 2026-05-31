@@ -1,0 +1,2 @@
+class FavoriteRepository:
+    pass

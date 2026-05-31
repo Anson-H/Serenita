@@ -1,0 +1,194 @@
+/* Shared content and control defaults. */
+
+.command-button {
+  width: fit-content;
+  min-width: 132px;
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+  color: var(--surface-strong);
+  text-align: center;
+  box-shadow: 0 12px 28px oklch(34% 0.08 276 / 0.18);
+}
+
+.secondary-button,
+.text-button {
+  border: 1px solid var(--line);
+  background: var(--surface-raised);
+  color: var(--ink);
+  padding: 0 14px;
+}
+
+.command-button,
+.secondary-button,
+.text-button {
+  min-height: var(--control-height);
+  border-radius: var(--radius-control);
+  font-size: var(--text-ui);
+  font-weight: 720;
+  line-height: 1.2;
+}
+
+.markdown-content {
+  display: grid;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+.markdown-content > * {
+  margin: 0;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  display: grid;
+  gap: 6px;
+  padding-left: 1.25rem;
+}
+
+.markdown-content code {
+  border-radius: var(--radius-small);
+  background: var(--surface-muted);
+  color: var(--accent-ink);
+  padding: 1px 5px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: var(--text-sm);
+}
+
+.markdown-content pre {
+  overflow-x: auto;
+  border-radius: var(--radius-small);
+  background: oklch(24% 0.032 250);
+  color: oklch(95% 0.01 105);
+  padding: 12px;
+}
+
+.markdown-content pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.markdown-content blockquote {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+  color: var(--muted);
+  padding: 8px 10px;
+}
+
+label,
+.secret-field {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 720;
+}
+
+.secret-field > label {
+  display: block;
+}
+
+.secret-input {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.secret-input input {
+  padding-right: 48px;
+}
+
+.secret-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+  color: var(--muted);
+  padding: 0;
+  transform: translateY(-50%);
+}
+
+.secret-toggle .secret-toggle-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.secret-toggle:hover,
+.secret-toggle:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.status-message {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 680;
+  line-height: var(--line-copy);
+}
+
+.status-message.success {
+  color: var(--accent-strong);
+}
+
+.status-message.error {
+  color: var(--danger);
+}
+
+.status-message.testing,
+.status-message.saving {
+  color: var(--accent);
+}
+
+.status {
+  display: inline-grid;
+  place-items: center;
+  min-height: 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+  padding: 0 10px;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 760;
+}
+
+.status.ready {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.text-button {
+  min-height: 32px;
+  font-size: var(--text-xs);
+  font-weight: 720;
+  padding: 0 10px;
+}
+
+.text-button:hover,
+.text-button:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  outline: none;
+}
+
+.text-button.danger {
+  color: var(--danger);
+}
+
+button.secret-toggle:hover:not(:disabled),
+button.secret-toggle:focus-visible {
+  transform: translateY(-50%);
+}

@@ -1,0 +1,98 @@
+/* Base reset and native element defaults */
+
+:root {
+  color: var(--ink);
+  background: var(--page-bg);
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  line-height: var(--line-copy);
+  --conversation-copy-line-height: 20px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 300px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 20% 8%, oklch(91.5% 0.055 292 / 0.62), transparent 34rem),
+    radial-gradient(circle at 88% 14%, oklch(92.5% 0.046 255 / 0.5), transparent 32rem),
+    linear-gradient(135deg, var(--page-bg) 0%, var(--surface) 48%, var(--page-wash) 100%);
+  color: var(--ink);
+  font-feature-settings: "ss01" 1;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  letter-spacing: 0;
+}
+
+button {
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+button:hover:not(:disabled) {
+  transform: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+input,
+select {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+  color: var(--ink);
+  padding: 0 12px;
+  font-size: var(--text-ui);
+  line-height: var(--line-ui);
+}
+
+input {
+  width: 100%;
+}
+
+select {
+  max-width: 240px;
+}
+
+input:focus-visible,
+select:focus-visible {
+  border-color: var(--line-strong);
+}
+
+input[readonly] {
+  background: var(--surface-muted);
+  color: var(--muted);
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--line-strong);
+}

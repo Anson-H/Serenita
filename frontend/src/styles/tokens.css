@@ -1,0 +1,57 @@
+/* Tokens surface styles. */
+
+:root {
+  --page-bg: oklch(97.6% 0.014 286);
+  --page-wash: oklch(94.9% 0.024 276);
+  --ink: oklch(31% 0.031 272);
+  --ink-strong: oklch(20% 0.042 274);
+  --muted: oklch(52% 0.029 274);
+  --muted-soft: oklch(66% 0.026 278);
+  --line: oklch(89% 0.016 279);
+  --line-strong: oklch(78% 0.034 278);
+  --surface-strong: oklch(99.2% 0.006 286);
+  --surface: oklch(97.7% 0.012 284);
+  --surface-raised: oklch(98.7% 0.009 286);
+  --surface-muted: oklch(96.2% 0.014 283);
+  --surface-accent: oklch(94.6% 0.03 278);
+  --accent-strong: oklch(43% 0.106 276);
+  --accent: oklch(56% 0.122 276);
+  --accent-soft: oklch(92.8% 0.045 278);
+  --accent-ink: oklch(29% 0.079 276);
+  --warm-accent: oklch(69% 0.096 26);
+  --warning: oklch(56% 0.106 75);
+  --warning-soft: oklch(94.5% 0.038 82);
+  --danger: oklch(52% 0.142 24);
+  --danger-soft: oklch(94.2% 0.041 20);
+  --success: oklch(47% 0.086 168);
+  --success-soft: oklch(93.5% 0.036 166);
+  --focus-ring: 0 0 0 3px oklch(70% 0.098 276 / 0.28);
+  --shadow-panel: 0 24px 70px oklch(31% 0.055 276 / 0.11);
+  --shadow-soft: 0 14px 34px oklch(31% 0.046 276 / 0.08);
+  --shadow-button: 0 10px 22px oklch(34% 0.06 276 / 0.1);
+  --radius-panel: 8px;
+  --radius-control: 8px;
+  --radius-small: 6px;
+  --radius-tight: 4px;
+  --radius-icon: var(--radius-control);
+  --radius-chip: var(--radius-control);
+  --control-height: 40px;
+  --icon-button-size: 34px;
+  --back-button-size: 30px;
+  --icon-size: 16px;
+  --workspace-titlebar-height: 52px;
+  --workspace-titlebar-side: 44px;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-ui: 15px;
+  --text-title: 16px;
+  --text-section-title: 18px;
+  --text-brand: 24px;
+  --line-ui: 1.25;
+  --line-copy: 1.55;
+  --transition-fast: 170ms cubic-bezier(0.22, 1, 0.36, 1);
+  color: var(--ink);
+  background: var(--page-bg);
+  font-family: var(--font-ui);
+}
