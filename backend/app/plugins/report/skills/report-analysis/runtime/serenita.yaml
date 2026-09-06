@@ -1,0 +1,4 @@
+allowed_tools:
+  - "write_report_analysis"
+required_references:
+  - "references/report-analysis.md"

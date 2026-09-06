@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export const SIDEBAR_COMPACT_MEDIA = "(max-width: 1000px)";
+const SIDEBAR_COMPACT_MEDIA = "(max-width: 1000px)";
 
 function matchesViewportMedia(query: string) {
   return typeof window !== "undefined" && window.matchMedia(query).matches;
@@ -20,22 +20,28 @@ export function useResponsiveSidebar() {
       return;
     }
 
-    function closeMobileSidebarOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+    function collapseMobileSidebarOnEscape(event: KeyboardEvent) {
+      // A dialog or its menu owns Escape until that overlay has closed.
+      if (event.key === "Escape" && !event.defaultPrevented &&
+        !document.querySelector('[aria-modal="true"], [data-modal-focus-scope="true"]')) {
         setMobileSidebarOpen(false);
       }
     }
 
-    document.addEventListener("keydown", closeMobileSidebarOnEscape);
-    return () => document.removeEventListener("keydown", closeMobileSidebarOnEscape);
+    document.addEventListener("keydown", collapseMobileSidebarOnEscape);
+    return () => document.removeEventListener("keydown", collapseMobileSidebarOnEscape);
   }, [mobileSidebarOpen]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(SIDEBAR_COMPACT_MEDIA);
 
     function syncCompactSidebarMode() {
-      setCompactSidebarMode(mediaQuery.matches);
+      const compact = mediaQuery.matches;
+      setCompactSidebarMode(compact);
       setMobileSidebarOpen(false);
+      if (!compact) {
+        setSidebarCollapsed(false);
+      }
     }
 
     syncCompactSidebarMode();

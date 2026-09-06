@@ -1,17 +1,27 @@
-export type SettingsSection = "account" | "providers" | "defaults";
-export type AccountPanel = "profile" | "password";
+export type SettingsSection =
+  | "members"
+  | "account"
+  | "providers"
+  | "defaults"
+  | "conversation"
+  | "web"
+  | "lab-categories"
+  | "lab-items";
+export type AccountPanel = "profile" | "password" | "grants";
 export type DefaultModelUsage = "chat" | "title" | "vision_parse" | "compact";
+export type ConversationSettingsSection =
+  | "composer"
+  | "response";
+export type LabCatalog = "categories" | "items";
 export type SettingsMobileLayer =
   | "root"
   | "provider-list"
-  | "default-models"
-  | "account-profile"
-  | "account-password"
-  | "provider-detail";
+  | "conversation-list"
+  | "dictionary-list";
 
 export type ProviderDraft = {
   officialUrl: string;
-  baseUrl: string;
+  apiUrl: string;
   apiKey: string;
 };
 
@@ -25,15 +35,18 @@ export type ProviderConnectionTestState = {
   message: string;
 };
 
-export const accountAutoSaveDelayMs = 650;
+export const settingsAutoSaveDelayMs = 650;
+export const accountIdentifierPattern = /^[A-Za-z0-9_-]{1,20}$/;
 
 export function draftsMatch(left?: ProviderDraft, right?: ProviderDraft) {
   return (
     Boolean(left && right) &&
     left?.officialUrl === right?.officialUrl &&
-    left?.baseUrl === right?.baseUrl &&
+    left?.apiUrl === right?.apiUrl &&
     left?.apiKey === right?.apiKey
   );
 }
 
-export const userNameSpacePattern = /\s/;
+export function accountNameLength(value: string) {
+  return Array.from(value).length;
+}

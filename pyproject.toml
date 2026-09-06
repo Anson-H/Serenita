@@ -4,16 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "serenita"
-version = "0.1.0"
-description = "Serenita v0.1.0 patient assistant"
+version = "0.2.0"
+description = "Serenita v0.2.0 patient report workspace"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
-    "pydantic-settings",
-    "psycopg[binary]",
     "httpx",
     "python-multipart",
+    "cryptography",
+    "pyyaml",
+    "markdown-it-py>=4.2,<5",
 ]
 
 [dependency-groups]

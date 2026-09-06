@@ -6,12 +6,14 @@ import type { FavoriteWorkspaceState } from "./useFavoriteWorkspace";
 type FavoritesWorkspacePanelProps = {
   favoriteWorkspace: FavoriteWorkspaceState;
   onOpenConversation: (sessionId: string, sourceMessageId: string) => void | Promise<void>;
+  onOpenReport: (reportId: string, memberId: string) => void | Promise<void>;
   sidebarToggle: ReactNode;
 };
 
 export function FavoritesWorkspacePanel({
   favoriteWorkspace,
   onOpenConversation,
+  onOpenReport,
   sidebarToggle
 }: FavoritesWorkspacePanelProps) {
   return (
@@ -26,12 +28,11 @@ export function FavoritesWorkspacePanel({
       editingFavoriteTagIds={favoriteWorkspace.editingFavoriteTagIds}
       favoriteDetail={favoriteWorkspace.favoriteDetail}
       favoriteDetailAutoSaveRef={favoriteWorkspace.favoriteDetailAutoSaveRef}
-      favoriteListPanelRef={favoriteWorkspace.favoriteListPanelRef}
-      favoriteListRef={favoriteWorkspace.favoriteListRef}
       favorites={favoriteWorkspace.favorites}
       favoriteSelectionMode={favoriteWorkspace.favoriteSelectionMode}
       favoriteTagInput={favoriteWorkspace.favoriteTagInput}
       onOpenConversation={(sessionId, sourceMessageId) => void onOpenConversation(sessionId, sourceMessageId)}
+      onOpenReport={(reportId, memberId) => void onOpenReport(reportId, memberId)}
       removeFavoriteTag={favoriteWorkspace.removeFavoriteTag}
       selectedFavoriteIds={favoriteWorkspace.selectedFavoriteIds}
       setFavoriteTagInput={favoriteWorkspace.setFavoriteTagInput}

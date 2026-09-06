@@ -1,23 +1,13 @@
-export type AttachmentModel = {
-  file_mime_types: string[];
-} | null | undefined;
+type AttachmentResource = { mime_type: string };
 
-export type AttachmentResource = {
-  mime_type: string;
-};
-
-export function modelFileMimeTypes(model: AttachmentModel) {
-  return model?.file_mime_types ?? [];
-}
-
-export function mergeModelFileMimeTypes(...models: AttachmentModel[]) {
-  return Array.from(
-    new Set(models.flatMap((model) => modelFileMimeTypes(model)))
+export function canAttachFilesForScenario(
+  activeScenario: string,
+  mimeTypes: string[]
+) {
+  return (
+    (activeScenario === "home" || activeScenario === "reports") &&
+    mimeTypes.length > 0
   );
-}
-
-export function canAttachFilesForScenario(activeScenario: string, mimeTypes: string[]) {
-  return activeScenario === "home" && mimeTypes.length > 0;
 }
 
 export function filterResourcesByMimeTypes<T extends AttachmentResource>(resources: T[], mimeTypes: string[]) {
@@ -25,5 +15,6 @@ export function filterResourcesByMimeTypes<T extends AttachmentResource>(resourc
     return resources;
   }
   const supportedMimeTypes = new Set(mimeTypes);
-  return resources.filter((resource) => supportedMimeTypes.has(resource.mime_type));
+  const filteredResources = resources.filter((resource) => supportedMimeTypes.has(resource.mime_type));
+  return filteredResources.length === resources.length ? resources : filteredResources;
 }

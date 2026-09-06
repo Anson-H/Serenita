@@ -1,24 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-
 import { Favorite, apiClient } from "../../api/client";
+import { showStatusNotification } from "../../components/StatusNotificationCenter";
 import {
-  addFavoriteIds,
-  applyLocalFavoriteTagsToDetail,
-  applyLocalFavoriteTagsToList,
-  applySavedFavoriteDetail,
-  applySavedFavoriteList,
-  favoriteTagsForState,
-  normalizedFavoriteTags,
   removeDeletedFavoriteDetail,
   removeFavoriteIds,
   toggleFavoriteId
 } from "./favoriteState";
+import { createFavoriteTagActions } from './favoriteTagActions';
 
 type UseFavoriteWorkspaceOptions = {
   setComposerError: (value: string) => void;
+  memberCollection?: object;
 };
 
-export function useFavoriteWorkspace({ setComposerError }: UseFavoriteWorkspaceOptions) {
+export function useFavoriteWorkspace({ setComposerError, memberCollection }: UseFavoriteWorkspaceOptions) {
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [favoriteSelectionMode, setFavoriteSelectionMode] = useState(false);
   const [selectedFavoriteIds, setSelectedFavoriteIds] = useState<string[]>([]);
@@ -28,9 +23,32 @@ export function useFavoriteWorkspace({ setComposerError }: UseFavoriteWorkspaceO
   const [addingFavoriteTagId, setAddingFavoriteTagId] = useState<string | null>(null);
   const [favoriteTagInput, setFavoriteTagInput] = useState("");
   const pendingFavoriteTagsRef = useRef(new Map<string, string[]>());
+  const favoriteTagSavePromisesRef = useRef(new Map<string, Promise<void>>());
+  const favoriteWorkspaceRevisionRef = useRef(0);
+  const favoriteDetailRequestSequenceRef = useRef(0);
+  const favoriteDetailRequestTargetRef = useRef<string | null>(null);
   const favoriteDetailAutoSaveRef = useRef<HTMLDivElement | null>(null);
-  const favoriteListPanelRef = useRef<HTMLElement | null>(null);
-  const favoriteListRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!memberCollection) return;
+    let disposed = false;
+    void apiClient.fetchFavorites().then(response => {
+      if (disposed) return;
+      const identities = new Map(response.favorites.map(item => [item.favorite_id, item]));
+      setFavorites(current => current.map(item => {
+        const updated = identities.get(item.favorite_id);
+        return updated ? { ...item, member_id: updated.member_id, member_name: updated.member_name } : item;
+      }));
+    }).catch(() => undefined);
+    if (favoriteDetail?.favorite_id) {
+      void apiClient.getFavorite(favoriteDetail.favorite_id).then(updated => {
+        if (!disposed) setFavoriteDetail(current => current?.favorite_id === updated.favorite_id
+          ? { ...current, member_id: updated.member_id, member_name: updated.member_name, source_available: updated.source_available }
+          : current);
+      }).catch(() => undefined);
+    }
+    return () => { disposed = true; };
+  }, [memberCollection, favoriteDetail?.favorite_id]);
 
   useEffect(() => {
     const favoriteIds = new Set(favorites.map((favorite) => favorite.favorite_id));
@@ -38,6 +56,16 @@ export function useFavoriteWorkspace({ setComposerError }: UseFavoriteWorkspaceO
     setEditingFavoriteTagIds((current) => current.filter((favoriteId) => favoriteIds.has(favoriteId)));
     setEditingFavoriteDetailTagId((current) => (current && !favoriteIds.has(current) ? null : current));
     setFavoriteDetail((current) => (current && !favoriteIds.has(current.favorite_id) ? null : current));
+    for (const favoriteId of pendingFavoriteTagsRef.current.keys()) {
+      if (!favoriteIds.has(favoriteId)) pendingFavoriteTagsRef.current.delete(favoriteId);
+    }
+    if (
+      favoriteDetailRequestTargetRef.current &&
+      !favoriteIds.has(favoriteDetailRequestTargetRef.current)
+    ) {
+      favoriteDetailRequestSequenceRef.current += 1;
+      favoriteDetailRequestTargetRef.current = null;
+    }
     if (addingFavoriteTagId && !favoriteIds.has(addingFavoriteTagId)) {
       setAddingFavoriteTagId(null);
       setFavoriteTagInput("");
@@ -65,8 +93,12 @@ export function useFavoriteWorkspace({ setComposerError }: UseFavoriteWorkspaceO
       if (target.closest('.favorite-tag-capsules[data-editing="true"]')) {
         return;
       }
-      if (addingFavoriteTagId && favoriteTagInput.trim()) {
-        appendFavoriteTag(addingFavoriteTagId, favoriteTagInput);
+      const visibleTagInput = document.querySelector<HTMLInputElement>(
+        '.favorite-tag-add-form input[name="favorite-tag"]'
+      );
+      const submittedTag = visibleTagInput?.value ?? favoriteTagInput;
+      if (addingFavoriteTagId && submittedTag.trim()) {
+        appendFavoriteTag(addingFavoriteTagId, submittedTag);
       } else if (addingFavoriteTagId) {
         setAddingFavoriteTagId(null);
         setFavoriteTagInput("");
@@ -82,8 +114,17 @@ export function useFavoriteWorkspace({ setComposerError }: UseFavoriteWorkspaceO
   }, [addingFavoriteTagId, editingFavoriteDetailTagId, editingFavoriteTagIds, favoriteTagInput]);
 
   async function showFavorite(favoriteId: string) {
-    const detail = await apiClient.getFavorite(favoriteId);
-    setFavoriteDetail(detail);
+    const requestSequence = ++favoriteDetailRequestSequenceRef.current;
+    favoriteDetailRequestTargetRef.current = favoriteId;
+    try {
+      const detail = await apiClient.getFavorite(favoriteId);
+      if (requestSequence !== favoriteDetailRequestSequenceRef.current) return;
+      setFavoriteDetail(detail);
+    } catch (error) {
+      if (requestSequence !== favoriteDetailRequestSequenceRef.current) return;
+      favoriteDetailRequestTargetRef.current = null;
+      setComposerError(error instanceof Error ? error.message : "收藏详情加载失败。");
+    }
   }
 
   function closeFavoriteDetail() {
@@ -99,51 +140,9 @@ export function useFavoriteWorkspace({ setComposerError }: UseFavoriteWorkspaceO
       setFavoriteTagInput("");
     }
     setEditingFavoriteDetailTagId(null);
+    favoriteDetailRequestSequenceRef.current += 1;
+    favoriteDetailRequestTargetRef.current = null;
     setFavoriteDetail(null);
-  }
-
-  function favoriteTagsFor(favoriteId: string) {
-    return favoriteTagsForState(favorites, favoriteDetail, favoriteId);
-  }
-
-  async function saveFavoriteTags(favoriteId: string, tags: string[]) {
-    const normalizedTags = normalizedFavoriteTags(tags);
-    const updated = await apiClient.updateFavorite(favoriteId, normalizedTags);
-    setFavoriteDetail((current) => applySavedFavoriteDetail(current, favoriteId, updated));
-    setFavorites((current) => applySavedFavoriteList(current, favoriteId, updated));
-    return updated;
-  }
-
-  function updateFavoriteTagsLocally(favoriteId: string, tags: string[]) {
-    const normalizedTags = normalizedFavoriteTags(tags);
-    pendingFavoriteTagsRef.current.set(favoriteId, normalizedTags);
-    setFavoriteDetail((current) => applyLocalFavoriteTagsToDetail(current, favoriteId, normalizedTags));
-    setFavorites((current) => applyLocalFavoriteTagsToList(current, favoriteId, normalizedTags));
-  }
-
-  async function flushFavoriteTags(favoriteId: string) {
-    const pendingTags = pendingFavoriteTagsRef.current.get(favoriteId);
-    if (!pendingTags) {
-      return;
-    }
-    pendingFavoriteTagsRef.current.delete(favoriteId);
-    try {
-      await saveFavoriteTags(favoriteId, pendingTags);
-    } catch (error) {
-      setComposerError(error instanceof Error ? error.message : "标签保存失败，请稍后重试。");
-    }
-  }
-
-  async function flushFavoriteDetailTags() {
-    if (!favoriteDetail) {
-      return;
-    }
-    await flushFavoriteTags(favoriteDetail.favorite_id);
-  }
-
-  async function flushAllFavoriteTags() {
-    const pendingFavoriteIds = Array.from(pendingFavoriteTagsRef.current.keys());
-    await Promise.all(pendingFavoriteIds.map((favoriteId) => flushFavoriteTags(favoriteId)));
   }
 
   function toggleFavoriteSelection(favoriteId: string) {
@@ -163,97 +162,50 @@ export function useFavoriteWorkspace({ setComposerError }: UseFavoriteWorkspaceO
     }
   }
 
-  function beginBatchTagEditing() {
-    if (!selectedFavoriteIds.length) {
-      setComposerError("请先选择要设置标签的收藏。");
-      return;
-    }
-    setEditingFavoriteTagIds((current) => addFavoriteIds(current, selectedFavoriteIds));
-  }
-
-  function toggleFavoriteTagEditor(favoriteId: string, surface: "list" | "detail") {
-    if (surface === "detail") {
-      const currentlyEditingDetail = editingFavoriteDetailTagId === favoriteId;
-      setEditingFavoriteDetailTagId(currentlyEditingDetail ? null : favoriteId);
-      if (currentlyEditingDetail) {
-        if (addingFavoriteTagId === favoriteId) {
-          setAddingFavoriteTagId(null);
-          setFavoriteTagInput("");
-        }
-        void flushFavoriteTags(favoriteId);
-      }
-      return;
-    }
-
-    const currentlyEditing = editingFavoriteTagIds.includes(favoriteId);
-    setEditingFavoriteTagIds((current) =>
-      currentlyEditing
-        ? current.filter((editingFavoriteId) => editingFavoriteId !== favoriteId)
-        : [...current, favoriteId]
-    );
-    if (currentlyEditing) {
-      if (addingFavoriteTagId === favoriteId) {
-        setAddingFavoriteTagId(null);
-        setFavoriteTagInput("");
-      }
-      void flushFavoriteTags(favoriteId);
-    }
-  }
-
-  function beginFavoriteTagAdd(favoriteId: string, surface: "list" | "detail") {
-    if (surface === "detail") {
-      setEditingFavoriteDetailTagId(favoriteId);
-    } else {
-      setEditingFavoriteTagIds((current) => (current.includes(favoriteId) ? current : [...current, favoriteId]));
-    }
-    setAddingFavoriteTagId(favoriteId);
-    setFavoriteTagInput("");
-  }
-
-  function appendFavoriteTag(favoriteId: string, tag: string) {
-    const trimmedTag = tag.trim();
-    setAddingFavoriteTagId(null);
-    setFavoriteTagInput("");
-    if (!trimmedTag) {
-      return;
-    }
-    updateFavoriteTagsLocally(favoriteId, [...favoriteTagsFor(favoriteId), trimmedTag]);
-  }
-
-  function commitFavoriteTagDraft() {
-    if (!addingFavoriteTagId) {
-      return;
-    }
-    appendFavoriteTag(addingFavoriteTagId, favoriteTagInput);
-  }
-
-  function removeFavoriteTag(favoriteId: string, tagToRemove: string) {
-    updateFavoriteTagsLocally(
-      favoriteId,
-      favoriteTagsFor(favoriteId).filter((tag) => tag !== tagToRemove)
-    );
-  }
-
   async function batchDeleteFavorites() {
     if (!selectedFavoriteIds.length) {
       return;
     }
-    const result = await apiClient.batchDeleteFavorites(selectedFavoriteIds);
-    const deletedFavoriteIds = new Set(result.deleted_ids);
-    setSelectedFavoriteIds([]);
-    setFavoriteSelectionMode(false);
-    setEditingFavoriteTagIds((current) => removeFavoriteIds(current, deletedFavoriteIds));
-    setEditingFavoriteDetailTagId((current) => (current && deletedFavoriteIds.has(current) ? null : current));
-    setFavoriteDetail((current) => removeDeletedFavoriteDetail(current, deletedFavoriteIds));
-    const response = await apiClient.fetchFavorites();
-    setFavorites(response.favorites);
-    if (result.failed.length) {
-      setComposerError(`有 ${result.failed.length} 条收藏未能取消，请刷新后重试。`);
+    try {
+      const result = await apiClient.batchDeleteFavorites(selectedFavoriteIds);
+      const deletedFavoriteIds = new Set(result.deleted_ids);
+      for (const favoriteId of deletedFavoriteIds) {
+        pendingFavoriteTagsRef.current.delete(favoriteId);
+      }
+      if (
+        favoriteDetailRequestTargetRef.current &&
+        deletedFavoriteIds.has(favoriteDetailRequestTargetRef.current)
+      ) {
+        favoriteDetailRequestSequenceRef.current += 1;
+        favoriteDetailRequestTargetRef.current = null;
+      }
+      setSelectedFavoriteIds([]);
+      setFavoriteSelectionMode(false);
+      setEditingFavoriteTagIds((current) => removeFavoriteIds(current, deletedFavoriteIds));
+      setEditingFavoriteDetailTagId((current) => (current && deletedFavoriteIds.has(current) ? null : current));
+      setFavoriteDetail((current) => removeDeletedFavoriteDetail(current, deletedFavoriteIds));
+      const response = await apiClient.fetchFavorites();
+      setFavorites(response.favorites);
+      if (result.failed.length) {
+        setComposerError(`有 ${result.failed.length} 条收藏未能取消，请刷新后重试。`);
+      } else {
+        showStatusNotification({
+          id: "favorite-batch-delete-success",
+          message: "所选收藏已取消。",
+          tone: "success"
+        });
+      }
+    } catch (error) {
+      setComposerError(error instanceof Error ? error.message : "取消收藏失败。");
     }
   }
 
   function resetFavoriteWorkspaceState() {
+    favoriteWorkspaceRevisionRef.current += 1;
+    favoriteDetailRequestSequenceRef.current += 1;
+    favoriteDetailRequestTargetRef.current = null;
     pendingFavoriteTagsRef.current.clear();
+    favoriteTagSavePromisesRef.current.clear();
     setFavorites([]);
     setFavoriteSelectionMode(false);
     setSelectedFavoriteIds([]);
@@ -263,6 +215,37 @@ export function useFavoriteWorkspace({ setComposerError }: UseFavoriteWorkspaceO
     setAddingFavoriteTagId(null);
     setFavoriteTagInput("");
   }
+  const {
+    favoriteTagsFor,
+    updateFavoriteTagsLocally,
+    flushFavoriteTags,
+    flushFavoriteDetailTags,
+    flushAllFavoriteTags,
+    beginBatchTagEditing,
+    toggleFavoriteTagEditor,
+    beginFavoriteTagAdd,
+    appendFavoriteTag,
+    commitFavoriteTagDraft,
+    removeFavoriteTag
+  } = createFavoriteTagActions({
+    favorites,
+    favoriteDetail,
+    pendingFavoriteTagsRef,
+    setFavoriteDetail,
+    setFavorites,
+    favoriteTagSavePromisesRef,
+    favoriteWorkspaceRevisionRef,
+    selectedFavoriteIds,
+    setComposerError,
+    setEditingFavoriteTagIds,
+    editingFavoriteDetailTagId,
+    setEditingFavoriteDetailTagId,
+    addingFavoriteTagId,
+    setAddingFavoriteTagId,
+    setFavoriteTagInput,
+    editingFavoriteTagIds,
+    favoriteTagInput
+  });
 
   return {
     addingFavoriteTagId,
@@ -275,8 +258,6 @@ export function useFavoriteWorkspace({ setComposerError }: UseFavoriteWorkspaceO
     editingFavoriteTagIds,
     favoriteDetail,
     favoriteDetailAutoSaveRef,
-    favoriteListPanelRef,
-    favoriteListRef,
     favoriteSelectionMode,
     favoriteTagInput,
     favorites,

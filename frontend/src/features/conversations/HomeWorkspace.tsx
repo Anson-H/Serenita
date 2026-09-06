@@ -1,93 +1,122 @@
-import type { ReactNode, RefObject } from "react";
+import { type ReactNode, type RefObject } from "react";
 
-import { QuoteIcon } from "../../components/icons";
+import { ArrowDownIcon, QuoteIcon } from "../../components/icons";
+import { WorkspaceToolbar } from "../../components/WorkspaceToolbar";
 import {
-  type QuoteSelection
+  type AnnotationSelection
 } from "./workspaceTypes";
 
 type HomeWorkspaceProps = {
-  branchRestoreDivider: ReactNode;
   composer: ReactNode;
+  memberControl?: ReactNode;
+  emptyPrompt?: string;
   conversationStageRef: RefObject<HTMLDivElement | null>;
   conversationSurfaceRef: RefObject<HTMLDivElement | null>;
+  conversationTailButtonVisible: boolean;
   messageItems: ReactNode;
   messageListRef: RefObject<HTMLDivElement | null>;
   messagesLength: number;
   onAddSelectedTextToConversation: () => void;
-  onConversationScroll: () => void;
-  quoteSelection: QuoteSelection | null;
+  onConversationDisclosureAnchor: (anchor: HTMLElement) => void;
+  onReturnToLatest: () => void;
+  annotationSelection: AnnotationSelection | null;
   sidebarToggle: ReactNode;
   workspaceTitle: string;
 };
 
-export function HealthWorkspacePlaceholder() {
-  return (
-    <section className="workspace-panel">
-      <header className="workspace-header">
-        <span>原始文件</span>
-        <h1>原始文件暂作为占位入口</h1>
-      </header>
-      <div className="empty-state">
-        <strong>v0.1.0 不录入正式文件</strong>
-        <p>后续报告、用药、生活指标会在这里汇总；当前不会误导为已完成能力。</p>
-      </div>
-    </section>
-  );
-}
-
 export function HomeWorkspace({
-  branchRestoreDivider,
   composer,
+  memberControl,
+  emptyPrompt = "今天想先聊哪件健康小事？",
   conversationStageRef,
   conversationSurfaceRef,
+  conversationTailButtonVisible,
   messageItems,
   messageListRef,
   messagesLength,
   onAddSelectedTextToConversation,
-  onConversationScroll,
-  quoteSelection,
+  onConversationDisclosureAnchor,
+  onReturnToLatest,
+  annotationSelection,
   sidebarToggle,
   workspaceTitle
 }: HomeWorkspaceProps) {
   return (
     <section className="workspace-panel home-workspace" data-home-empty={messagesLength ? undefined : "true"}>
       <div className="home-workspace-header">
-        <header className="workspace-titlebar">
-          <div className="workspace-titlebar-side">{sidebarToggle}</div>
-          <h1>{workspaceTitle}</h1>
-          <span className="workspace-titlebar-side" aria-hidden="true" />
-        </header>
+        <WorkspaceToolbar
+          className="workspace-titlebar"
+          leading={<>{sidebarToggle}<div className="chat-member-control">{memberControl}</div></>}
+          showBack={false}
+          title={workspaceTitle}
+        />
       </div>
 
-      <div className="home-workspace-content" ref={conversationStageRef}>
-        <div className="conversation-surface" ref={conversationSurfaceRef} onScroll={onConversationScroll}>
+      <div className="home-workspace-content" ref={conversationStageRef} onClickCapture={(event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+          return;
+        }
+        const summary = target.closest("summary");
+        const details = summary?.parentElement;
+        if (
+          summary instanceof HTMLElement &&
+          details instanceof HTMLDetailsElement &&
+          details.dataset.active !== "true" &&
+          summary.getAttribute("aria-disabled") !== "true" &&
+          messageListRef.current?.contains(summary)
+        ) {
+          onConversationDisclosureAnchor(summary);
+        }
+      }}>
+        <div
+          aria-label="当前聊天内容"
+          className="conversation-surface"
+          ref={conversationSurfaceRef}
+          role="region"
+          tabIndex={0}
+        >
           {messagesLength ? (
-            <div className="message-list" aria-label="当前对话" ref={messageListRef}>
-              {messageItems}
-              {branchRestoreDivider}
+            <div className="message-list" ref={messageListRef}>
+              <div className="conversation-message-flow">
+                {messageItems}
+              </div>
+              <div aria-hidden="true" className="conversation-tail-anchor" />
+              <div aria-hidden="true" className="conversation-tail-sentinel" />
             </div>
           ) : (
             <div className="home-empty-center">
               <div className="empty-state">
-                <strong>今天想先聊哪件健康小事？</strong>
+                <strong>{emptyPrompt}</strong>
               </div>
-              {composer}
             </div>
           )}
         </div>
 
-        {messagesLength ? composer : null}
+        {composer}
 
-        {quoteSelection ? (
+        {messagesLength && conversationTailButtonVisible ? (
           <button
-            className="selection-quote-popover"
+            aria-label="回到聊天最新内容并恢复自动跟随"
+            className="conversation-tail-button"
+            onClick={onReturnToLatest}
+            type="button"
+          >
+            <ArrowDownIcon />
+            <span>回到最新</span>
+          </button>
+        ) : null}
+
+        {annotationSelection ? (
+          <button
+            className="selection-annotation-popover"
             onClick={onAddSelectedTextToConversation}
             onMouseDown={(event) => event.preventDefault()}
-            style={{ left: quoteSelection.left, top: quoteSelection.top }}
+            style={{ left: annotationSelection.left, top: annotationSelection.top }}
             type="button"
           >
             <QuoteIcon />
-            <span>添加到对话</span>
+            <span>添加到聊天</span>
           </button>
         ) : null}
       </div>

@@ -1,288 +1,433 @@
 import {
-  MutableRefObject,
-  RefObject,
+  type MutableRefObject,
+  type RefCallback,
+  type RefObject,
+  useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef
 } from "react";
 
-import type { ConversationMessage } from "../../api/client";
 import type { RoutePath } from "../../app/routes";
-import type { QuotedContext, ScenarioTab, WorkspaceView } from "./workspaceTypes";
+import { useConversationScrollController } from "./useConversationScrollController";
+import type { AnnotatedContext, ScenarioTab } from "./workspaceTypes";
 
-const CONVERSATION_TAIL_THRESHOLD_PX = 24;
-const COMPOSER_TEXTAREA_MIN_HEIGHT_PX = 24;
-const COMPOSER_TEXTAREA_MAX_HEIGHT_PX = 144;
-const COMPOSER_OVERLAY_GAP_PX = 16;
-const LATEST_MESSAGE_MIN_VISIBLE_PX = 96;
+const COMPOSER_TEXTAREA_MIN_HEIGHT_PX = 40;
+const COMPOSER_TEXTAREA_MAX_HEIGHT_PX = 140;
+const CONVERSATION_PREFERRED_VISIBLE_HEIGHT_PX = 96;
+const CONVERSATION_HARD_VISIBLE_HEIGHT_PX = 48;
+const CONVERSATION_TAIL_BUTTON_HEIGHT_PX = 40;
+const CONVERSATION_TAIL_BUTTON_GAP_PX = 8;
+const CONVERSATION_TAIL_BUTTON_EDGE_PX = 4;
+const COMPOSER_COMPACT_CHROME_HEIGHT_PX = 64;
+const COMPOSER_AUXILIARY_USABLE_HEIGHT_PX = 120;
 
 type UseConversationLayoutOptions = {
   activeScenario: ScenarioTab;
   activeStreamTurnId: string | null;
-  activeView: WorkspaceView;
   composerError: string;
   composerRef: RefObject<HTMLFormElement | null>;
   composerText: string;
   composerTextareaRef: RefObject<HTMLTextAreaElement | null>;
+  conversationEnabled: boolean;
+  messageListRef: RefObject<HTMLDivElement | null>;
   conversationSessionId: string | null;
   conversationStageRef: RefObject<HTMLDivElement | null>;
   conversationSurfaceRef: RefObject<HTMLDivElement | null>;
   highlightedMessageId: string | null;
-  messageListRef: RefObject<HTMLDivElement | null>;
+  highlightedMessageRequestId: number;
   messageRefs: MutableRefObject<Map<string, HTMLElement>>;
-  messages: ConversationMessage[];
-  onClearQuoteSelection: () => void;
-  parentForNextMessage: string | null | undefined;
-  quotedContext: QuotedContext | null;
+  onClearAnnotationSelection: () => void;
+  annotatedContexts: AnnotatedContext[];
   route: RoutePath;
+  queuedInputsLength?: number;
   uploadedResourcesLength: number;
   uploadingResourcesLength: number;
 };
 
+type VisibleStageGeometry = {
+  bottom: number;
+  height: number;
+  left: number;
+  right: number;
+  top: number;
+  width: number;
+};
+
+function visibleStageGeometry(stageRect: DOMRect): VisibleStageGeometry {
+  const viewport = window.visualViewport;
+  const viewportTop = viewport?.offsetTop ?? 0;
+  const viewportBottom = viewport
+    ? viewport.offsetTop + viewport.height
+    : window.innerHeight;
+  const viewportLeft = viewport?.offsetLeft ?? 0;
+  const viewportRight = viewport
+    ? viewport.offsetLeft + viewport.width
+    : window.innerWidth;
+  const top = Math.max(stageRect.top, viewportTop);
+  const bottom = Math.min(stageRect.bottom, viewportBottom);
+  const left = Math.max(stageRect.left, viewportLeft);
+  const right = Math.min(stageRect.right, viewportRight);
+  return {
+    bottom,
+    height: Math.max(0, bottom - top),
+    left,
+    right,
+    top,
+    width: Math.max(0, right - left)
+  };
+}
+
+function finiteCssLength(value: string, fallback = 0) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function setBooleanDataAttribute(
+  element: HTMLElement,
+  name: "heightCompact" | "heightExtreme",
+  value: boolean
+) {
+  if (value) {
+    element.dataset[name] = "true";
+  } else {
+    delete element.dataset[name];
+  }
+}
+
 export function useConversationLayout({
   activeScenario,
   activeStreamTurnId,
-  activeView,
   composerError,
   composerRef,
   composerText,
   composerTextareaRef,
+  conversationEnabled,
+  messageListRef,
   conversationSessionId,
   conversationStageRef,
   conversationSurfaceRef,
   highlightedMessageId,
-  messageListRef,
+  highlightedMessageRequestId,
   messageRefs,
-  messages,
-  onClearQuoteSelection,
-  parentForNextMessage,
-  quotedContext,
+  onClearAnnotationSelection,
+  annotatedContexts,
   route,
+  queuedInputsLength = 0,
   uploadedResourcesLength,
   uploadingResourcesLength
 }: UseConversationLayoutOptions) {
-  const lastRenderedConversationSessionRef = useRef<string | null>(null);
-  const autoScrollConversationSessionRef = useRef<string | null>(null);
-  const shouldFollowConversationTailRef = useRef(true);
-  const conversationTailKey = useMemo(
-    () => messages.map((message) => `${message.message_id}:${message.status ?? ""}:${message.content.length}`).join("|"),
-    [messages]
-  );
+  const composerObserverRef = useRef<ResizeObserver | null>(null);
+  const observedComposerRef = useRef<HTMLFormElement | null>(null);
+  const composerMeasurementFrameRef = useRef<number | null>(null);
+  const measurementRunningRef = useRef(false);
+  const naturalOverlayHeightRef = useRef(0);
+  const bindingKey = `${activeScenario}:${route}:${conversationEnabled ? "on" : "off"}`;
+  const scrollController = useConversationScrollController({
+    bindingKey,
+    conversationSessionId,
+    conversationStageRef,
+    conversationSurfaceRef,
+    highlightedMessageId,
+    highlightedMessageRequestId,
+    messageListRef,
+    messageRefs,
+    onClearAnnotationSelection
+  });
+  const invalidateScrollGeometryRef = useRef(scrollController.invalidateGeometry);
+  invalidateScrollGeometryRef.current = scrollController.invalidateGeometry;
+
+  const resizeComposerTextarea = useCallback(() => {
+    if (measurementRunningRef.current) {
+      return;
+    }
+    const composer = composerRef.current;
+    const textarea = composerTextareaRef.current;
+    const stage = composer?.closest<HTMLElement>("[data-composer-stage]") ?? conversationStageRef.current;
+    if (!composer || !stage) {
+      return;
+    }
+    measurementRunningRef.current = true;
+    try {
+      const stageRect = stage.getBoundingClientRect();
+      const visibleStage = visibleStageGeometry(stageRect);
+      const stageStyle = window.getComputedStyle(stage);
+      const contentGap = finiteCssLength(
+        stageStyle.getPropertyValue("--space-content")
+      );
+      const relatedGap = finiteCssLength(
+        stageStyle.getPropertyValue("--space-related")
+      );
+      const itemGap = finiteCssLength(
+        stageStyle.getPropertyValue("--space-item")
+      );
+      const visualBottomOffset = Math.max(0, stageRect.bottom - visibleStage.bottom);
+      const visualLeftOffset = Math.max(0, visibleStage.left - stageRect.left);
+      const visualRightOffset = Math.max(0, stageRect.right - visibleStage.right);
+      stage.style.setProperty(
+        "--composer-visual-bottom-offset",
+        `${Math.ceil(visualBottomOffset)}px`
+      );
+      stage.style.setProperty(
+        "--composer-visible-left-offset",
+        `${Math.floor(visualLeftOffset)}px`
+      );
+      stage.style.setProperty(
+        "--composer-visible-right-offset",
+        `${Math.floor(visualRightOffset)}px`
+      );
+      stage.style.setProperty(
+        "--composer-visible-viewport-width",
+        `${Math.floor(visibleStage.width)}px`
+      );
+      stage.style.setProperty(
+        "--composer-visible-viewport-height",
+        `${Math.floor(visibleStage.height)}px`
+      );
+      composer.style.setProperty(
+        "--composer-visible-viewport-height",
+        `${Math.floor(visibleStage.height)}px`
+      );
+
+      if (textarea) {
+        textarea.style.height = `${COMPOSER_TEXTAREA_MIN_HEIGHT_PX}px`;
+        const borderHeight = textarea.offsetHeight - textarea.clientHeight;
+        const naturalHeight = Math.min(
+          COMPOSER_TEXTAREA_MAX_HEIGHT_PX,
+          Math.max(
+            COMPOSER_TEXTAREA_MIN_HEIGHT_PX,
+            textarea.scrollHeight + borderHeight
+          )
+        );
+        textarea.style.height = `${naturalHeight}px`;
+        textarea.style.overflowY =
+          textarea.scrollHeight + borderHeight > COMPOSER_TEXTAREA_MAX_HEIGHT_PX
+            ? "auto"
+            : "hidden";
+      }
+
+      let composerRect = composer.getBoundingClientRect();
+      const visibleBottomInset = Math.max(
+        0,
+        visibleStage.bottom - composerRect.bottom
+      );
+      const currentlyCompact =
+        stage.dataset.heightCompact === "true" ||
+        composer.dataset.heightCompact === "true";
+      const currentlyExtreme =
+        stage.dataset.heightExtreme === "true" ||
+        composer.dataset.heightExtreme === "true";
+      const estimatedSafeAreaBottom = Math.max(
+        0,
+        visibleBottomInset - (currentlyExtreme ? itemGap : contentGap)
+      );
+      const stableBottomInset = contentGap + estimatedSafeAreaBottom;
+      const measuredOverlayHeight = Math.ceil(
+        Math.max(composerRect.height, composer.scrollHeight) +
+        stableBottomInset +
+        contentGap
+      );
+      if (!currentlyCompact) {
+        naturalOverlayHeightRef.current = measuredOverlayHeight;
+      }
+      const desiredOverlayHeight = currentlyCompact
+        ? Math.max(naturalOverlayHeightRef.current, measuredOverlayHeight)
+        : measuredOverlayHeight;
+      const preferredComposerBudget = Math.max(
+        0,
+        visibleStage.height -
+        CONVERSATION_PREFERRED_VISIBLE_HEIGHT_PX -
+        stableBottomInset -
+        contentGap
+      );
+      const preferredOverlayBudget = Math.max(
+        0,
+        visibleStage.height - CONVERSATION_PREFERRED_VISIBLE_HEIGHT_PX
+      );
+      const hasAuxiliaryContent = Boolean(
+        queuedInputsLength ||
+        annotatedContexts.length ||
+        uploadedResourcesLength ||
+        uploadingResourcesLength
+      );
+      const compact =
+        desiredOverlayHeight > preferredOverlayBudget ||
+        (hasAuxiliaryContent &&
+          preferredComposerBudget <= COMPOSER_AUXILIARY_USABLE_HEIGHT_PX);
+      const extreme = compact && preferredComposerBudget < COMPOSER_AUXILIARY_USABLE_HEIGHT_PX;
+      const reservedConversationHeight = extreme
+        ? CONVERSATION_HARD_VISIBLE_HEIGHT_PX
+        : CONVERSATION_PREFERRED_VISIBLE_HEIGHT_PX;
+      const composerHeightBudget = Math.max(
+        compact ? COMPOSER_COMPACT_CHROME_HEIGHT_PX : COMPOSER_TEXTAREA_MIN_HEIGHT_PX,
+        visibleStage.height - reservedConversationHeight - stableBottomInset - contentGap
+      );
+
+      setBooleanDataAttribute(stage, "heightCompact", compact);
+      setBooleanDataAttribute(stage, "heightExtreme", extreme);
+      setBooleanDataAttribute(composer, "heightCompact", compact);
+      setBooleanDataAttribute(composer, "heightExtreme", extreme);
+      if (compact) {
+        const composerMaxHeight = `${Math.floor(composerHeightBudget)}px`;
+        stage.style.setProperty("--composer-max-height", composerMaxHeight);
+        composer.style.setProperty("--composer-max-height", composerMaxHeight);
+      } else {
+        stage.style.removeProperty("--composer-max-height");
+        composer.style.removeProperty("--composer-max-height");
+      }
+
+      if (textarea && compact) {
+        textarea.style.height = `${COMPOSER_TEXTAREA_MIN_HEIGHT_PX}px`;
+        textarea.style.overflowY = "auto";
+      }
+
+      composerRect = composer.getBoundingClientRect();
+      const trayMaxHeight = Math.max(
+        0,
+        composerRect.top - visibleStage.top - relatedGap
+      );
+      const trayMaxHeightValue = `${Math.floor(trayMaxHeight)}px`;
+      stage.style.setProperty("--composer-tray-max-height", trayMaxHeightValue);
+      composer.style.setProperty("--composer-tray-max-height", trayMaxHeightValue);
+      const rawOverlayHeight = Math.ceil(
+        stageRect.bottom - composerRect.top + contentGap
+      );
+      const maximumOverlayHeight = Math.max(
+        0,
+        stageRect.bottom - visibleStage.top - CONVERSATION_HARD_VISIBLE_HEIGHT_PX
+      );
+      const effectiveOverlayHeight = Math.max(
+        0,
+        Math.min(rawOverlayHeight, maximumOverlayHeight)
+      );
+      const previousOverlayHeight = finiteCssLength(
+        stageStyle.getPropertyValue("--composer-overlay-height"),
+        -1
+      );
+      stage.style.setProperty(
+        "--composer-overlay-height",
+        `${effectiveOverlayHeight}px`
+      );
+
+      const desiredButtonTop =
+        composerRect.top -
+        stageRect.top -
+        CONVERSATION_TAIL_BUTTON_GAP_PX -
+        CONVERSATION_TAIL_BUTTON_HEIGHT_PX;
+      const minimumButtonTop =
+        visibleStage.top - stageRect.top + CONVERSATION_TAIL_BUTTON_EDGE_PX;
+      const maximumButtonTop = Math.max(
+        minimumButtonTop,
+        visibleStage.bottom -
+        stageRect.top -
+        CONVERSATION_TAIL_BUTTON_HEIGHT_PX -
+        CONVERSATION_TAIL_BUTTON_EDGE_PX
+      );
+      const buttonTop = Math.min(
+        maximumButtonTop,
+        Math.max(minimumButtonTop, desiredButtonTop)
+      );
+      stage.style.setProperty(
+        "--conversation-tail-button-top",
+        `${Math.floor(buttonTop)}px`
+      );
+
+      if (Math.abs(previousOverlayHeight - effectiveOverlayHeight) > 1) {
+        invalidateScrollGeometryRef.current("composer-resize");
+      }
+    } finally {
+      measurementRunningRef.current = false;
+    }
+  }, [
+    annotatedContexts.length,
+    composerRef,
+    composerTextareaRef,
+    conversationStageRef,
+    queuedInputsLength,
+    uploadedResourcesLength,
+    uploadingResourcesLength
+  ]);
+
+  const scheduleComposerMeasurement = useCallback(() => {
+    if (composerMeasurementFrameRef.current !== null) {
+      return;
+    }
+    composerMeasurementFrameRef.current = window.requestAnimationFrame(() => {
+      composerMeasurementFrameRef.current = null;
+      resizeComposerTextarea();
+    });
+  }, [resizeComposerTextarea]);
+
+  const bindComposerElement = useCallback<RefCallback<HTMLFormElement>>((node) => {
+    (composerRef as MutableRefObject<HTMLFormElement | null>).current = node;
+    if (node === observedComposerRef.current) {
+      if (node && !composerObserverRef.current && typeof ResizeObserver !== "undefined") {
+        composerObserverRef.current = new ResizeObserver(scheduleComposerMeasurement);
+        composerObserverRef.current.observe(node);
+      }
+      scheduleComposerMeasurement();
+      return;
+    }
+    composerObserverRef.current?.disconnect();
+    composerObserverRef.current = null;
+    observedComposerRef.current = node;
+    naturalOverlayHeightRef.current = 0;
+    const stage = node?.closest<HTMLElement>("[data-composer-stage]") ?? conversationStageRef.current;
+    if (node && stage) {
+      setBooleanDataAttribute(stage, "heightCompact", false);
+      setBooleanDataAttribute(stage, "heightExtreme", false);
+      setBooleanDataAttribute(node, "heightCompact", false);
+      setBooleanDataAttribute(node, "heightExtreme", false);
+    }
+    if (node && typeof ResizeObserver !== "undefined") {
+      composerObserverRef.current = new ResizeObserver(scheduleComposerMeasurement);
+      composerObserverRef.current.observe(node);
+    }
+    scheduleComposerMeasurement();
+  }, [composerRef, conversationStageRef, scheduleComposerMeasurement]);
 
   useLayoutEffect(() => {
-    const sessionId = conversationSessionId ?? null;
-    if (lastRenderedConversationSessionRef.current === sessionId) {
-      return;
-    }
-    lastRenderedConversationSessionRef.current = sessionId;
-    shouldFollowConversationTailRef.current = true;
-    if (messages.length) {
-      scrollConversationToLatest("auto");
-      return;
-    }
-    conversationSurfaceRef.current?.scrollTo({ top: 0, behavior: "auto" });
-  }, [conversationSessionId, messages.length]);
+    bindComposerElement(composerRef.current);
+  });
 
   useEffect(() => {
-    const sessionChanged = autoScrollConversationSessionRef.current !== conversationSessionId;
-    autoScrollConversationSessionRef.current = conversationSessionId ?? null;
-    if (activeView !== "home" || activeScenario !== "home" || !messages.length || highlightedMessageId) {
-      return;
-    }
-    if (sessionChanged && !activeStreamTurnId) {
-      return;
-    }
-    if (activeStreamTurnId && !shouldFollowConversationTailRef.current) {
-      return;
-    }
-    const frameHandle = window.requestAnimationFrame(() => {
-      if (activeStreamTurnId && !shouldFollowConversationTailRef.current) {
-        return;
-      }
-      scrollConversationToLatest(activeStreamTurnId ? "auto" : "smooth");
-    });
-    return () => window.cancelAnimationFrame(frameHandle);
-  }, [activeScenario, activeStreamTurnId, activeView, conversationSessionId, conversationTailKey, highlightedMessageId, messages.length]);
-
-  useEffect(() => {
-    if (!highlightedMessageId) {
-      return;
-    }
-    const scrollHandle = window.setTimeout(() => {
-      messageRefs.current.get(highlightedMessageId)?.scrollIntoView({
-        block: "center",
-        behavior: "smooth"
-      });
-    }, 50);
-    return () => window.clearTimeout(scrollHandle);
-  }, [conversationSessionId, highlightedMessageId, messageRefs, messages.length]);
-
-  useEffect(() => {
-    const frameHandle = window.requestAnimationFrame(resizeComposerTextarea);
-    return () => window.cancelAnimationFrame(frameHandle);
+    scheduleComposerMeasurement();
   }, [
     activeScenario,
     activeStreamTurnId,
+    annotatedContexts,
     composerError,
     composerText,
-    conversationTailKey,
-    parentForNextMessage,
-    quotedContext,
-    uploadingResourcesLength,
-    uploadedResourcesLength
+    route,
+    scheduleComposerMeasurement,
+    uploadedResourcesLength,
+    uploadingResourcesLength
   ]);
 
   useEffect(() => {
-    window.addEventListener("resize", resizeComposerTextarea);
-    return () => window.removeEventListener("resize", resizeComposerTextarea);
+    const handleViewportChange = () => scheduleComposerMeasurement();
+    window.addEventListener("resize", handleViewportChange);
+    window.visualViewport?.addEventListener("resize", handleViewportChange);
+    window.visualViewport?.addEventListener("scroll", handleViewportChange);
+    return () => {
+      window.removeEventListener("resize", handleViewportChange);
+      window.visualViewport?.removeEventListener("resize", handleViewportChange);
+      window.visualViewport?.removeEventListener("scroll", handleViewportChange);
+    };
+  }, [scheduleComposerMeasurement]);
+
+  useEffect(() => () => {
+    composerObserverRef.current?.disconnect();
+    composerObserverRef.current = null;
+    if (composerMeasurementFrameRef.current !== null) {
+      window.cancelAnimationFrame(composerMeasurementFrameRef.current);
+      composerMeasurementFrameRef.current = null;
+    }
   }, []);
 
-  useEffect(() => {
-    const composer = composerRef.current;
-    if (!composer || typeof ResizeObserver === "undefined") {
-      return;
-    }
-
-    let frameHandle: number | null = null;
-    const scheduleComposerMeasurement = () => {
-      if (frameHandle !== null) {
-        return;
-      }
-      frameHandle = window.requestAnimationFrame(() => {
-        frameHandle = null;
-        resizeComposerTextarea();
-      });
-    };
-
-    const observer = new ResizeObserver(scheduleComposerMeasurement);
-    observer.observe(composer);
-    scheduleComposerMeasurement();
-
-    return () => {
-      if (frameHandle !== null) {
-        window.cancelAnimationFrame(frameHandle);
-      }
-      observer.disconnect();
-    };
-  }, [activeView, route]);
-
-  function resizeComposerTextarea() {
-    const textarea = composerTextareaRef.current;
-    if (textarea) {
-      textarea.style.height = `${COMPOSER_TEXTAREA_MIN_HEIGHT_PX}px`;
-      const textareaBorderHeight = textarea.offsetHeight - textarea.clientHeight;
-      const nextHeight = Math.min(
-        COMPOSER_TEXTAREA_MAX_HEIGHT_PX,
-        Math.max(COMPOSER_TEXTAREA_MIN_HEIGHT_PX, textarea.scrollHeight + textareaBorderHeight)
-      );
-      textarea.style.height = `${nextHeight}px`;
-      textarea.style.overflowY = textarea.scrollHeight + textareaBorderHeight > COMPOSER_TEXTAREA_MAX_HEIGHT_PX ? "auto" : "hidden";
-    }
-
-    const composerRect = composerRef.current?.getBoundingClientRect();
-    const stage = conversationStageRef.current;
-    const surface = conversationSurfaceRef.current;
-    if (stage && surface) {
-      const surfaceStyle = window.getComputedStyle(surface);
-      const surfaceHorizontalBorderWidth =
-        Number.parseFloat(surfaceStyle.borderLeftWidth) + Number.parseFloat(surfaceStyle.borderRightWidth);
-      const actualScrollbarGutter = Math.max(
-        0,
-        surface.offsetWidth - surface.clientWidth - surfaceHorizontalBorderWidth
-      );
-      stage.style.setProperty("--chat-scrollbar-axis-offset", `${actualScrollbarGutter / 2}px`);
-    }
-    if (composerRect && composerRect.height > 0 && stage) {
-      const measuredOverlayHeight = Math.ceil(composerRect.height + COMPOSER_OVERLAY_GAP_PX);
-      const cappedOverlayHeight = stage.clientHeight > LATEST_MESSAGE_MIN_VISIBLE_PX
-        ? Math.min(measuredOverlayHeight, stage.clientHeight - LATEST_MESSAGE_MIN_VISIBLE_PX)
-        : measuredOverlayHeight;
-      stage.style.setProperty("--composer-overlay-height", `${cappedOverlayHeight}px`);
-    }
-  }
-
-  function currentComposerOverlayHeight(surface: HTMLDivElement) {
-    const composerHeight = composerRef.current?.getBoundingClientRect().height ?? 0;
-    const overlayHeight = composerHeight > 0
-      ? composerHeight + COMPOSER_OVERLAY_GAP_PX
-      : Number.parseFloat(
-          window.getComputedStyle(conversationStageRef.current ?? surface).getPropertyValue("--composer-overlay-height")
-        );
-    const normalizedOverlayHeight = Number.isFinite(overlayHeight) ? Math.max(0, overlayHeight) : 0;
-    return Math.min(
-      normalizedOverlayHeight,
-      Math.max(0, surface.clientHeight - LATEST_MESSAGE_MIN_VISIBLE_PX)
-    );
-  }
-
-  function scrollLatestMessageIntoView(surface: HTMLDivElement, behavior: ScrollBehavior) {
-    const latestMessage = messageListRef.current?.lastElementChild;
-    if (!(latestMessage instanceof HTMLElement)) {
-      return false;
-    }
-    const surfaceRect = surface.getBoundingClientRect();
-    const latestMessageRect = latestMessage.getBoundingClientRect();
-    const latestMessageBottom = latestMessageRect.bottom - surfaceRect.top + surface.scrollTop;
-    const maxScrollTop = Math.max(0, surface.scrollHeight - surface.clientHeight);
-    const targetTop = Math.min(
-      maxScrollTop,
-      Math.max(0, latestMessageBottom - surface.clientHeight + currentComposerOverlayHeight(surface))
-    );
-    surface.scrollTo({
-      top: targetTop,
-      behavior
-    });
-    return true;
-  }
-
-  function scrollConversationToLatest(behavior: ScrollBehavior = "smooth") {
-    const surface = conversationSurfaceRef.current;
-    if (!surface) {
-      return;
-    }
-    shouldFollowConversationTailRef.current = true;
-    if (!scrollLatestMessageIntoView(surface, behavior)) {
-      surface.scrollTo({
-        top: Math.max(0, surface.scrollHeight - surface.clientHeight),
-        behavior
-      });
-    }
-    window.requestAnimationFrame(() => {
-      const latestSurface = conversationSurfaceRef.current;
-      if (!latestSurface) {
-        return;
-      }
-      if (!scrollLatestMessageIntoView(latestSurface, "auto")) {
-        latestSurface.scrollTo({
-          top: Math.max(0, latestSurface.scrollHeight - latestSurface.clientHeight),
-          behavior: "auto"
-        });
-      }
-    });
-  }
-
-  function isConversationNearTail(surface: HTMLDivElement) {
-    return surface.scrollHeight - surface.scrollTop - surface.clientHeight <= CONVERSATION_TAIL_THRESHOLD_PX;
-  }
-
-  function updateConversationScrollState() {
-    const surface = conversationSurfaceRef.current;
-    if (!surface) {
-      return;
-    }
-    shouldFollowConversationTailRef.current = isConversationNearTail(surface);
-    onClearQuoteSelection();
-  }
-
-  function markConversationTailShouldFollow() {
-    shouldFollowConversationTailRef.current = true;
-  }
-
   return {
-    markConversationTailShouldFollow,
-    resizeComposerTextarea,
-    scrollConversationToLatest,
-    updateConversationScrollState
+    ...scrollController,
+    bindComposerElement,
+    resizeComposerTextarea
   };
 }

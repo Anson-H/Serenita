@@ -1,0 +1,372 @@
+/* Shared controls: size, appearance, semantic tone and state are independent. */
+
+.control {
+  --control-height: var(--size-control-primary);
+  --control-radius: var(--radius-control);
+  --control-icon-size: var(--size-icon-default);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-control-block) var(--space-control-inline);
+  min-height: var(--control-height);
+  padding: var(--space-control-block) var(--space-control-inline);
+  border: 0;
+  border-radius: var(--control-radius);
+  background: var(--color-control-surface);
+  color: var(--color-foreground);
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-body);
+  text-align: center;
+  box-shadow: none;
+}
+
+.control--primary {
+  background: var(--color-primary-surface);
+  color: var(--color-foreground);
+}
+
+.control--ghost,
+.control--row {
+  background: transparent;
+  border-color: transparent;
+}
+
+.control--row {
+  width: 100%;
+  border-radius: 0;
+}
+
+.control--compact {
+  --control-height: var(--size-compact-bar);
+  --control-radius: var(--radius-compact-bar);
+}
+
+.control--compact,
+.compact-control-bar {
+  --control-icon-size: var(--size-inline-icon-compact);
+  align-self: center;
+  height: auto;
+  min-height: var(--size-compact-bar);
+  padding: var(--space-control-block-compact) var(--space-control-inline);
+  gap: var(--space-related);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-meta);
+}
+
+.control--inline,
+.control--inline-compact {
+  height: var(--control-height);
+  padding: 0 var(--space-control-inline);
+  gap: var(--space-related);
+  font-size: var(--text-meta);
+  line-height: var(--line-meta);
+}
+
+.control--inline {
+  --control-height: var(--size-inline-button);
+  --control-radius: var(--radius-inline-button);
+  --control-icon-size: var(--size-inline-icon);
+}
+
+.control--inline-compact {
+  --control-height: var(--size-inline-button-compact);
+  --control-radius: var(--radius-inline-button-compact);
+  --control-icon-size: var(--size-inline-icon-compact);
+}
+
+.control--titlebar {
+  --control-height: var(--size-titlebar-control);
+  --control-radius: var(--radius-titlebar-control);
+  --control-icon-size: var(--size-titlebar-icon);
+  height: var(--control-height);
+  padding-block: 0;
+}
+
+.control--icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 var(--control-height);
+  width: var(--control-height);
+  min-width: var(--control-height);
+  padding: 0;
+}
+
+.control:is(button, a, label) svg[viewBox] {
+  flex: 0 0 auto;
+  width: var(--control-icon-size);
+  height: var(--control-icon-size);
+  color: currentColor;
+}
+
+.control:hover:not(:disabled) {
+  color: var(--color-foreground);
+}
+
+.control--primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  color: var(--color-foreground);
+}
+
+.control--danger {
+  border: 0;
+  box-shadow: none;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.control--danger:hover:not(:disabled) {
+  background: var(--color-danger-hover);
+  color: var(--color-danger);
+}
+
+.control:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+label,
+.secret-field {
+  display: grid;
+  gap: var(--space-related);
+  color: var(--color-foreground);
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+  font-weight: var(--weight-regular);
+}
+
+input,
+textarea,
+select {
+  /* Draw the stroke inside the surface without adding to the 40px control. */
+  min-height: var(--size-control-primary);
+  min-width: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--color-control-surface);
+  color: var(--color-foreground);
+  padding: var(--space-control-block) var(--space-control-inline);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-body);
+  box-shadow: inset 0 0 0 1px var(--color-divider);
+}
+
+input { width: 100%; }
+input,
+select {
+  height: calc(var(--line-body) + var(--space-control-block) * 2);
+}
+select { max-width: 240px; }
+
+.secret-field > label { display: block; }
+.secret-input { position: relative; display: block; width: 100%; }
+.secret-input input { padding-right: calc(var(--size-inline-button) + var(--space-control-inline)); }
+.secret-input.with-before-toggle input { padding-right: calc(var(--size-inline-button) * 2 + var(--space-content)); }
+.secret-before-toggle {
+  position: absolute;
+  top: 50%;
+  right: calc(var(--size-inline-button) + var(--space-control-inline));
+  display: inline-grid;
+  place-items: center;
+  width: var(--size-inline-button);
+  height: var(--size-inline-button);
+  transform: translateY(-50%);
+}
+
+.secret-toggle {
+  position: absolute;
+  top: 50%;
+  right: var(--secret-toggle-inset, var(--space-related));
+  transform: translateY(-50%);
+}
+
+.select-popover { position: relative; width: 100%; min-width: 0; }
+.select-popover[data-density="compact"] {
+  --size-control-primary: var(--size-compact-bar);
+  --space-control-block: var(--space-control-block-compact);
+  --text-body: var(--text-meta);
+  --line-body: var(--line-meta);
+  --radius-control: var(--radius-compact-bar);
+  --control-icon-size: var(--size-inline-icon-compact);
+}
+.select-popover-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-control-block) var(--space-control-inline);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--size-control-primary);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--color-control-surface);
+  color: var(--color-foreground);
+  padding: var(--space-control-block) var(--space-control-inline);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-body);
+  text-align: left;
+}
+
+.select-popover-trigger > span:first-child,
+.select-popover-option > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-popover-trigger:is(:hover, [aria-expanded="true"]) {
+  color: var(--color-foreground);
+}
+
+.select-popover-options.grouped-object-list {
+  /* Geometry and initial visibility must be committed before option focus. */
+  transition-property: none;
+  position: fixed;
+  z-index: var(--layer-menu);
+  width: max-content;
+  max-width: calc(100dvw - var(--space-content) * 2);
+  overflow: auto;
+  border: 1px solid var(--color-divider);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
+}
+
+.select-popover-options[data-placement="above"] { transform: translateY(-100%); }
+.select-popover-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-control-block) var(--space-control-inline);
+  width: 100%;
+  min-height: var(--size-control-primary);
+  padding: var(--space-control-block) var(--space-control-inline);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-foreground);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-body);
+  text-align: left;
+}
+
+/* Composite bars reuse row state and focus ownership from the shared interaction rules. */
+:where(.compact-control-bar)[data-row-surface] {
+  --radius-list: var(--radius-compact-bar);
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border: 0;
+  border-radius: var(--radius-compact-bar);
+  background: var(--color-content-inset);
+  color: var(--color-foreground);
+}
+
+/* The bar supplies spacing; its row-owned control inherits the existing compact typography. */
+.compact-control-bar > .control[data-interaction-owner="row"] {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  justify-content: flex-start;
+  font: inherit;
+  text-decoration: none;
+}
+
+/* Discrete range control; its surrounding standard row owns interaction feedback. */
+.discrete-slider {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: var(--size-slider-thumb);
+}
+
+.discrete-slider::before {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto;
+  height: var(--size-slider-track);
+  transform: translateY(-50%);
+  border: 1px solid var(--color-foreground-muted);
+  border-radius: var(--radius-slider-track);
+  background: linear-gradient(to right, var(--color-accent) var(--slider-progress), var(--color-divider) var(--slider-progress));
+}
+
+.discrete-slider-ticks {
+  position: absolute;
+  inset: 0 calc(var(--size-slider-thumb) / 2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.discrete-slider-ticks span {
+  width: var(--size-slider-tick);
+  height: var(--size-slider-tick);
+  border-radius: var(--radius-slider-tick);
+  background: var(--color-foreground-muted);
+}
+
+.discrete-slider input[type="range"] {
+  appearance: none;
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-slider-thumb);
+  background: transparent;
+  cursor: pointer;
+}
+
+.discrete-slider input::-webkit-slider-runnable-track {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.discrete-slider input::-moz-range-track {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.discrete-slider input::-moz-range-progress {
+  background: transparent;
+}
+
+.discrete-slider input::-webkit-slider-thumb {
+  appearance: none;
+  width: var(--size-slider-thumb);
+  height: var(--size-slider-thumb);
+  border-radius: var(--radius-slider-thumb);
+  border: 1px solid var(--color-foreground-muted);
+  background: var(--color-surface);
+  box-shadow: none;
+}
+
+.discrete-slider input::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--size-slider-thumb);
+  height: var(--size-slider-thumb);
+  border-radius: var(--radius-slider-thumb);
+  border: 1px solid var(--color-foreground-muted);
+  background: var(--color-surface);
+  box-shadow: none;
+}
+
+.discrete-slider:has(input:disabled) { opacity: 0.5; }
+.discrete-slider input:disabled { cursor: default; }
+
+@media (pointer: coarse) {
+  .discrete-slider { height: var(--size-touch-target); }
+}

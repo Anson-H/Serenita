@@ -1,0 +1,98 @@
+html,
+body,
+#root,
+.conversation-scroll-fixture {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+.conversation-scroll-fixture {
+  position: relative;
+  background: var(--color-surface);
+}
+
+.fixture-conversation-stage {
+  --chat-column-width: min(750px, calc(100cqw - 40px));
+  width: 100%;
+  height: 100%;
+}
+
+.fixture-conversation-stage .message-list {
+  padding-block-start: var(--space-content);
+}
+
+.fixture-message {
+  box-sizing: border-box;
+  display: grid;
+  align-content: center;
+  min-width: 0;
+  padding: var(--space-content);
+  border-radius: var(--radius-control);
+  background: var(--color-content-inset);
+}
+
+.fixture-message:nth-child(even) {
+  background: var(--color-rail);
+}
+
+.fixture-message strong,
+.fixture-message span {
+  display: block;
+}
+
+.fixture-async-media {
+  display: block;
+  width: 100%;
+  object-fit: cover;
+  background: var(--color-item-hover);
+}
+
+.fixture-scroll-actions {
+  position: fixed;
+  z-index: 100;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  max-width: calc(100vw - 16px);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.fixture-scroll-actions button {
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-raised);
+  color: var(--color-foreground);
+}
+
+.fixture-controller-state {
+  position: fixed;
+  z-index: -1;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.fixture-composer-surface {
+  min-height: 64px;
+}
+
+.fixture-composer-main-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.fixture-composer-footer {
+  display: flex;
+}
+
+.fixture-composer-footer button {
+  width: var(--size-control-primary);
+  height: var(--size-control-primary);
+}

@@ -1,82 +1,106 @@
-import type { ConversationMessage } from "../../api/client";
+import type { ReportContextResource } from "../../api/client";
+import { reportContextResourceFromRecord } from "../reports/reportContext";
 
-export const QUOTE_PREVIEW_LENGTH = 10;
-
-export type QuoteContextResource = {
+export type AnnotationContextResource = {
   resource_id: string;
-  quote_text: string;
+  source_record_id: string;
+  annotation_text: string;
   preview?: string;
 };
 
 export type FileContextResource = {
   resource_id: string;
-  name: string;
+  original_filename: string;
   mime_type?: string;
 };
 
 export type UploadingResource = {
-  upload_id: string;
-  name: string;
+  progress_key: string;
+  originalFilename: string;
   progress: number;
 };
 
-export function quotePreviewText(quoteText: string) {
-  const normalized = quoteText.trim();
-  if (normalized.length <= QUOTE_PREVIEW_LENGTH) {
-    return normalized;
+type ContextResourcePartition = {
+  annotations: AnnotationContextResource[];
+  files: FileContextResource[];
+  reports: ReportContextResource[];
+};
+
+function annotationContextResourceFromRecord(
+  resource: Record<string, unknown>,
+  index: number,
+  fallbackId: string
+) {
+  if (
+    resource.resource_type !== "record_annotation" ||
+    typeof resource.annotation_text !== "string"
+  ) {
+    return null;
   }
-  return `${normalized.slice(0, QUOTE_PREVIEW_LENGTH)}...`;
+  const annotationText = resource.annotation_text.trim();
+  const sourceRecordId = typeof resource.source_record_id === "string"
+    ? resource.source_record_id.trim()
+    : "";
+  if (!annotationText || !sourceRecordId) {
+    return null;
+  }
+  return {
+    resource_id:
+      typeof resource.resource_id === "string"
+        ? resource.resource_id
+        : `${fallbackId}-annotation-${index}`,
+    source_record_id: sourceRecordId,
+    annotation_text: annotationText
+  };
 }
 
-export function quoteResourcesFromContextResources(
+function fileContextResourceFromRecord(
+  resource: Record<string, unknown>,
+  index: number,
+  fallbackId: string
+) {
+  if (resource.resource_type !== "file") {
+    return null;
+  }
+  return {
+    resource_id:
+      typeof resource.resource_id === "string"
+        ? resource.resource_id
+        : `${fallbackId}-file-${index}`,
+    original_filename:
+      typeof resource.original_filename === "string" && resource.original_filename.trim()
+        ? resource.original_filename.trim()
+        : "附件",
+    ...(typeof resource.mime_type === "string" ? { mime_type: resource.mime_type } : {})
+  };
+}
+
+export function partitionContextResources(
   contextResources: Array<Record<string, unknown>>,
   fallbackId: string
-): QuoteContextResource[] {
-  return contextResources
-    .map((resource, index) => {
-      if (resource.resource_type !== "message_quote" || typeof resource.quote_text !== "string") {
-        return null;
-      }
-      const quoteText = resource.quote_text.trim();
-      if (!quoteText) {
-        return null;
-      }
-      return {
-        resource_id:
-          typeof resource.resource_id === "string"
-            ? resource.resource_id
-            : `${fallbackId}-quote-${index}`,
-        quote_text: quoteText
-      };
-    })
-    .filter((resource): resource is QuoteContextResource => Boolean(resource));
-}
-
-export function quoteResourcesFromMessage(message: ConversationMessage): QuoteContextResource[] {
-  return quoteResourcesFromContextResources(message.context_resources ?? [], message.message_id);
-}
-
-export function fileResourcesFromContextResources(
-  contextResources: Array<Record<string, unknown>>,
-  fallbackId: string
-): FileContextResource[] {
-  return contextResources
-    .map((resource, index) => {
-      if (resource.resource_type !== "file") {
-        return null;
-      }
-      return {
-        resource_id:
-          typeof resource.resource_id === "string"
-            ? resource.resource_id
-            : `${fallbackId}-file-${index}`,
-        name: typeof resource.name === "string" && resource.name.trim() ? resource.name.trim() : "附件",
-        ...(typeof resource.mime_type === "string" ? { mime_type: resource.mime_type } : {})
-      };
-    })
-    .filter((resource): resource is FileContextResource => Boolean(resource));
-}
-
-export function fileResourcesFromMessage(message: ConversationMessage): FileContextResource[] {
-  return fileResourcesFromContextResources(message.context_resources ?? [], message.message_id);
+): ContextResourcePartition {
+  const partition: ContextResourcePartition = {
+    annotations: [],
+    files: [],
+    reports: []
+  };
+  const seenReportIds = new Set<string>();
+  contextResources.forEach((resource, index) => {
+    const annotation = annotationContextResourceFromRecord(resource, index, fallbackId);
+    if (annotation) {
+      partition.annotations.push(annotation);
+      return;
+    }
+    const file = fileContextResourceFromRecord(resource, index, fallbackId);
+    if (file) {
+      partition.files.push(file);
+      return;
+    }
+    const report = reportContextResourceFromRecord(resource);
+    if (report && !seenReportIds.has(report.resource_id)) {
+      seenReportIds.add(report.resource_id);
+      partition.reports.push(report);
+    }
+  });
+  return partition;
 }

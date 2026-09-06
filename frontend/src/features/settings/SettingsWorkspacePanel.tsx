@@ -1,53 +1,46 @@
-import type { ReactNode } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 
-import { type AddedModel, apiClient } from "../../api/client";
-import { mergeModelsWithChatDefault } from "../conversations/conversationModels";
+import { type AuthenticatedSession } from "../../api/client";
+import { type ModelCatalog } from "../modelConfiguration/modelCatalog";
 import { SettingsShell } from "./SettingsShell";
 
 type SettingsWorkspacePanelProps = {
+  accountId: string;
   account: string;
-  onModelsChanged: (models: AddedModel[]) => void;
+  modelCatalog: ModelCatalog;
+  onModelsChanged: Dispatch<SetStateAction<ModelCatalog>>;
+  onReportsChanged: () => void;
   onSignOut: () => void;
-  onUserNameChange: (userName: string) => void;
+  onAccountProfileChange: (session: AuthenticatedSession) => void;
   settingsSidebarToggle: ReactNode;
-  userName: string;
+  accountName: string;
 };
 
 export function SettingsWorkspacePanel({
+  accountId,
   account,
+  modelCatalog,
   onModelsChanged,
+  onReportsChanged,
   onSignOut,
-  onUserNameChange,
+  onAccountProfileChange,
   settingsSidebarToggle,
-  userName
+  accountName
 }: SettingsWorkspacePanelProps) {
-  async function refreshModels() {
-    const [modelResponse, defaultsResponse] = await Promise.all([
-      apiClient.fetchModels(),
-      apiClient.fetchModelDefaults()
-    ]);
-    onModelsChanged(mergeModelsWithChatDefault(modelResponse.models, defaultsResponse.defaults.chat));
-  }
 
   return (
     <section className="workspace-panel settings-workspace" aria-label="账号设置">
-      <div className="settings-workspace-header">
-        <div className="settings-toolbar">
-          <div className="settings-toolbar-leading">
-            {settingsSidebarToggle}
-          </div>
-          <strong className="settings-toolbar-title">账号设置</strong>
-          <div className="settings-toolbar-controls" />
-        </div>
-      </div>
       <div className="settings-workspace-content">
         <SettingsShell
+          accountId={accountId}
           account={account}
           mobileSidebarToggle={settingsSidebarToggle}
-          onModelsChanged={refreshModels}
+          modelCatalog={modelCatalog}
+          onModelsChanged={onModelsChanged}
+          onReportsChanged={onReportsChanged}
           onSignOut={onSignOut}
-          onUserNameChange={onUserNameChange}
-          userName={userName}
+          onAccountProfileChange={onAccountProfileChange}
+          accountName={accountName}
         />
       </div>
     </section>

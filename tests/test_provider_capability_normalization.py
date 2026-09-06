@@ -3,6 +3,37 @@ import unittest
 
 
 class ProviderCapabilityNormalizationTests(unittest.TestCase):
+    def test_capability_profiles_aggregate_with_boolean_or_and_mime_union(self):
+        from backend.app.model_capabilities import (
+            ModelCapabilityProfiles,
+            ModelModeCapabilityProfile,
+            aggregate_capability_profile,
+        )
+
+        aggregate = aggregate_capability_profile(
+            ModelCapabilityProfiles(
+                default_state="thinking",
+                non_thinking=ModelModeCapabilityProfile(
+                    availability="available",
+                    supports_text=True,
+                    file_mime_types=["image/png"],
+                    supports_tool_calling=True,
+                ),
+                thinking=ModelModeCapabilityProfile(
+                    availability="unverified",
+                    supports_text=True,
+                    file_mime_types=["audio/wav", "image/png"],
+                ),
+            ),
+            thinking_modes=["default", "off", "max"],
+            context_window_tokens=1_000_000,
+            max_output_tokens=131_072,
+        )
+
+        self.assertTrue(aggregate.supports_tool_calling)
+        self.assertEqual(aggregate.file_mime_types, ["image/png", "audio/wav"])
+        self.assertEqual(aggregate.thinking_modes[-1], "max")
+
     def test_openrouter_models_are_normalized_from_architecture_and_supported_parameters(self):
         from backend.app.providers.openrouter import OpenRouterProvider
 
@@ -28,8 +59,6 @@ class ProviderCapabilityNormalizationTests(unittest.TestCase):
                                 },
                                 "supported_parameters": [
                                     "tools",
-                                    "response_format",
-                                    "structured_outputs",
                                 ],
                                 "context_length": 1048576,
                                 "top_provider": {"max_completion_tokens": 32768},
@@ -59,9 +88,20 @@ class ProviderCapabilityNormalizationTests(unittest.TestCase):
         self.assertNotIn("application/msword", model.file_mime_types)
         self.assertNotIn("application/vnd.ms-excel", model.file_mime_types)
         self.assertTrue(model.supports_tool_calling)
-        self.assertTrue(model.supports_json_output)
         self.assertEqual(model.context_window_tokens, 1048576)
         self.assertEqual(model.max_output_tokens, 32768)
+        self.assertEqual(
+            model.capability_declarations,
+            {
+                "text": True,
+                "tool_calling": True,
+                "image_input": True,
+                "pdf_input": True,
+                "audio_input": False,
+                "video_input": False,
+                "thinking": False,
+            },
+        )
 
     def test_openrouter_file_modality_only_advertises_pdf_documents(self):
         from backend.app.providers.openrouter import OpenRouterProvider
@@ -79,6 +119,24 @@ class ProviderCapabilityNormalizationTests(unittest.TestCase):
         )
 
         self.assertEqual(profile.file_mime_types, ["application/pdf"])
+
+    def test_openrouter_preserves_minimal_reasoning_effort_from_metadata(self):
+        from backend.app.providers.openrouter import OpenRouterProvider
+
+        profile = OpenRouterProvider().normalize_capabilities(
+            {
+                "reasoning": {
+                    "supported_efforts": ["minimal", "low", "high"],
+                    "default_enabled": True,
+                }
+            },
+            "provider/reasoning-model",
+        )
+
+        self.assertEqual(
+            profile.thinking_modes,
+            ["default", "off", "minimal", "low", "high"],
+        )
 
     def test_openrouter_gemini_3_multimodal_inputs_are_normalized_to_attachment_mime_types(self):
         from backend.app.providers.openrouter import OpenRouterProvider
@@ -120,113 +178,50 @@ class ProviderCapabilityNormalizationTests(unittest.TestCase):
         self.assertNotIn("audio/mpeg", profile.file_mime_types)
         self.assertNotIn("video/mp4", profile.file_mime_types)
 
-    def test_deepseek_models_are_normalized_from_model_ids(self):
+    def test_provider_model_ids_do_not_infer_capabilities(self):
+        from backend.app.model_capabilities import DEFAULT_CAPABILITY_PROFILE
+        from backend.app.providers.aliyun_bailian import AliyunBailianProvider
         from backend.app.providers.deepseek import DeepSeekProvider
 
-        class Response:
-            status = 200
+        cases = (
+            (DeepSeekProvider(), "deepseek-v4-flash-vision-exp"),
+            (DeepSeekProvider(), "deepseek-reasoner"),
+            (AliyunBailianProvider(), "qwen3.8-max"),
+            (AliyunBailianProvider(), "qwen3.5-omni-plus"),
+        )
+        for provider, remote_model_id in cases:
+            with self.subTest(
+                provider=provider.provider_id,
+                remote_model_id=remote_model_id,
+            ):
+                self.assertEqual(
+                    provider.normalize_capabilities({}, remote_model_id),
+                    DEFAULT_CAPABILITY_PROFILE,
+                )
+                self.assertEqual(
+                    provider.capability_declarations({}, remote_model_id),
+                    {},
+                )
 
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, traceback):
-                return False
-
-            def read(self):
-                return json.dumps(
-                    {
-                        "object": "list",
-                        "data": [
-                            {
-                                "id": "deepseek-v4-pro",
-                                "object": "model",
-                                "owned_by": "deepseek",
-                            }
-                        ],
-                    }
-                ).encode("utf-8")
-
-        provider = DeepSeekProvider(urlopen=lambda request, timeout: Response())
-
-        model = provider.list_models("https://api.deepseek.com", "sk-test")[0]
-
-        self.assertTrue(model.supports_text)
-        self.assertEqual(model.file_mime_types, [])
-        self.assertEqual(model.thinking_modes, ["default", "high", "xhigh"])
-        self.assertTrue(model.supports_tool_calling)
-        self.assertTrue(model.supports_json_output)
-        self.assertEqual(model.context_window_tokens, 1_000_000)
-
-    def test_aliyun_bailian_models_are_normalized_from_model_ids(self):
+    def test_provider_native_formats_are_transport_metadata_not_model_inference(self):
         from backend.app.providers.aliyun_bailian import AliyunBailianProvider
+        from backend.app.providers.deepseek import DeepSeekProvider
 
-        class Response:
-            status = 200
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, traceback):
-                return False
-
-            def read(self):
-                return json.dumps(
-                    {
-                        "object": "list",
-                        "data": [
-                            {
-                                "id": "qwen3-vl-32b-thinking",
-                                "object": "model",
-                                "owned_by": "aliyun",
-                            }
-                        ],
-                    }
-                ).encode("utf-8")
-
-        provider = AliyunBailianProvider(urlopen=lambda request, timeout: Response())
-
-        model = provider.list_models(
-            "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "sk-test",
-        )[0]
-
-        self.assertTrue(model.supports_text)
-        self.assertIn("image/png", model.file_mime_types)
-        self.assertIn("video/mp4", model.file_mime_types)
-        self.assertEqual(model.thinking_modes, ["default", "high"])
-        self.assertTrue(model.supports_tool_calling)
-        self.assertTrue(model.supports_json_output)
-
-    def test_aliyun_bailian_qwen_3_5_and_newer_attachment_mime_types_match_model_family(self):
-        from backend.app.providers.aliyun_bailian import AliyunBailianProvider
-
-        provider = AliyunBailianProvider()
-
-        for model_id in ("qwen3.5-plus", "qwen3.6-plus", "qwen3-vl-plus"):
-            with self.subTest(model_id=model_id):
-                profile = provider.normalize_capabilities({}, model_id)
-
-                self.assertIn("image/bmp", profile.file_mime_types)
-                self.assertIn("image/png", profile.file_mime_types)
-                self.assertIn("video/mp4", profile.file_mime_types)
-                self.assertIn("video/x-msvideo", profile.file_mime_types)
-                self.assertNotIn("audio/mpeg", profile.file_mime_types)
-
-        for model_id in ("qwen3.5-omni-plus", "qwen3-omni-flash"):
-            with self.subTest(model_id=model_id):
-                profile = provider.normalize_capabilities({}, model_id)
-
-                self.assertIn("image/png", profile.file_mime_types)
-                self.assertIn("audio/mpeg", profile.file_mime_types)
-                self.assertIn("audio/amr", profile.file_mime_types)
-                self.assertIn("video/mp4", profile.file_mime_types)
-
-        for model_id in ("qwen3.7-max", "qwen3.7-max-2026-05-20", "qwen3-max"):
-            with self.subTest(model_id=model_id):
-                profile = provider.normalize_capabilities({}, model_id)
-
-                self.assertEqual(profile.file_mime_types, [])
+        self.assertEqual(
+            DeepSeekProvider().native_attachment_mime_types(),
+            {"image/jpeg", "image/png", "image/gif", "image/webp"},
+        )
+        aliyun_types = AliyunBailianProvider().native_attachment_mime_types()
+        self.assertIn("image/bmp", aliyun_types)
+        self.assertIn("image/tiff", aliyun_types)
+        self.assertIn("audio/mpeg", aliyun_types)
+        self.assertIn("video/mp4", aliyun_types)
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_invalid_stored_model_profiles_raise_a_schema_error():
+    import pytest
+    from backend.app.storage.model_codec import capability_profiles_from_row
+    from backend.app.storage.sqlite import UnsupportedSchemaError
+    for value in (None, '', '{invalid'):
+        with pytest.raises(UnsupportedSchemaError):
+            capability_profiles_from_row({'capability_profiles': value})

@@ -1,19 +1,26 @@
 import { useEffect } from "react";
 
+import { PatientShell } from "./app/PatientShell";
 import {
   APP_PATH,
+  healthPathForMember,
+  isAuthRoute,
+  reportPathForReport,
+  REPORTS_PATH,
   SIGN_IN_PATH,
   SIGN_UP_PATH,
-  isAuthRoute,
   type RoutePath
 } from "./app/routes";
-import { PatientShell } from "./app/PatientShell";
 import { useBrowserRoute } from "./app/useBrowserRoute";
+import { useScrollbarMetrics } from "./app/useScrollbarMetrics";
+import { WorkspacePage } from "./app/workspace/WorkspacePage";
+import { StatusNotificationCenter } from "./components/StatusNotificationCenter";
 import { AuthPage } from "./features/auth/AuthPage";
 import { useAuthSession } from "./features/auth/useAuthSession";
-import { WorkspacePage } from "./features/conversations/WorkspacePage";
+import { MemberProvider } from "./features/members/MemberProvider";
 
 export function App() {
+  useScrollbarMetrics();
   const { route, navigateTo: navigateBrowserTo } = useBrowserRoute();
   const {
     checkingSession,
@@ -21,7 +28,7 @@ export function App() {
     signInWithPassword,
     signUpWithPassword,
     signOut,
-    updateUserName
+    updateAccountProfile
   } = useAuthSession();
 
   function navigateTo(path: RoutePath, replace = false) {
@@ -64,8 +71,8 @@ export function App() {
             await signInWithPassword(account, password);
             navigateTo(APP_PATH);
           }}
-          onSignUp={async (account, userName, password, confirmPassword) => {
-            await signUpWithPassword(account, userName, password, confirmPassword);
+          onSignUp={async (account, accountName, password, confirmPassword) => {
+            await signUpWithPassword(account, accountName, password, confirmPassword);
             navigateTo(APP_PATH);
           }}
         />
@@ -73,16 +80,26 @@ export function App() {
     }
 
     return (
+      <MemberProvider key={session.account_id} onStartMember={(destination, memberId) => navigateTo(destination.type === "health"
+        && memberId ? healthPathForMember(memberId)
+        : destination.type === "reports" && memberId ? destination.reportId ? reportPathForReport(destination.reportId, memberId) : REPORTS_PATH
+        : APP_PATH)}>
       <WorkspacePage
         route={route}
         onNavigate={navigateTo}
         session={session}
         onSignOut={signOut}
-        onUserNameChange={updateUserName}
+        onAccountProfileChange={updateAccountProfile}
         ShellComponent={PatientShell}
       />
+      </MemberProvider>
     );
   }
 
-  return renderRoute();
+  return (
+    <>
+      {renderRoute()}
+      <StatusNotificationCenter />
+    </>
+  );
 }

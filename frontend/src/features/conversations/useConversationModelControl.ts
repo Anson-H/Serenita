@@ -3,36 +3,38 @@ import {
   type MutableRefObject,
   type SetStateAction,
   useEffect,
+  useRef,
   useState
 } from "react";
+import { captureAuthContext, isAuthContextCurrent } from "../../api/authLifecycle";
 
 import {
-  type AddedModel,
   apiClient
 } from "../../api/client";
-import { mergeModelsWithChatDefault } from "./conversationModels";
+import { fetchModelCatalog, type ModelCatalog } from "../modelConfiguration/modelCatalog";
 
 type ConversationModelControlOptions = {
   composerModelControlRef: MutableRefObject<HTMLDivElement | null>;
-  models: AddedModel[];
+  modelCatalog: ModelCatalog;
   setComposerError: Dispatch<SetStateAction<string>>;
-  setModels: Dispatch<SetStateAction<AddedModel[]>>;
-  setVisionParseModel: Dispatch<SetStateAction<AddedModel | null>>;
+  setModelCatalog: Dispatch<SetStateAction<ModelCatalog>>;
 };
 
 export function useConversationModelControl(options: ConversationModelControlOptions) {
   const {
     composerModelControlRef,
-    models,
+    modelCatalog,
     setComposerError,
-    setModels,
-    setVisionParseModel
+    setModelCatalog
   } = options;
+  const models = modelCatalog.models;
+  const requestSequence = useRef(0);
+  const saveSequence = useRef(0);
   const [selectedModelId, setSelectedModelId] = useState("");
-  const [thinkingMode, setThinkingMode] = useState("default");
+  const [preferredThinkingMode, setPreferredThinkingMode] = useState("default");
+  const [effectiveThinkingMode, setEffectiveThinkingMode] = useState<string | null>(null);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const defaultModel = models[0];
-  const defaultModelThinkingModesKey = defaultModel?.thinking_modes.join("|") ?? "";
+  const defaultModel = modelCatalog.defaults.chat ?? undefined;
   const selectedModel = models.find((model) => model.model_id === selectedModelId) ?? defaultModel;
   const selectedThinkingModes = selectedModel?.thinking_modes.length
     ? selectedModel.thinking_modes
@@ -43,28 +45,22 @@ export function useConversationModelControl(options: ConversationModelControlOpt
       if (selectedModelId) {
         setSelectedModelId("");
       }
-      setThinkingMode("default");
+      setPreferredThinkingMode("default");
+      setEffectiveThinkingMode(null);
       return;
     }
-    if (selectedModelId !== defaultModel.model_id) {
-      setSelectedModelId(defaultModel.model_id);
-    }
-    setThinkingMode((currentMode) =>
-      defaultModel.thinking_modes.includes(currentMode)
-        ? currentMode
-        : defaultModel.thinking_modes[0] ?? "default"
-    );
-  }, [defaultModel?.model_id, defaultModelThinkingModesKey, selectedModelId]);
+    setSelectedModelId(defaultModel.model_id);
+  }, [defaultModel?.model_id]);
 
   useEffect(() => {
     const activeModel = models.find((model) => model.model_id === selectedModelId);
     if (!activeModel) {
       return;
     }
-    if (!activeModel.thinking_modes.includes(thinkingMode)) {
-      setThinkingMode(activeModel.thinking_modes[0] ?? "default");
+    if (!activeModel.thinking_modes.includes(preferredThinkingMode)) {
+      setPreferredThinkingMode(activeModel.thinking_modes[0] ?? "default");
     }
-  }, [models, selectedModelId, thinkingMode]);
+  }, [models, preferredThinkingMode, selectedModelId]);
 
   useEffect(() => {
     if (!modelPickerOpen) {
@@ -79,20 +75,35 @@ export function useConversationModelControl(options: ConversationModelControlOpt
       }
     }
 
+    function closeModelPickerOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+      setModelPickerOpen(false);
+      composerModelControlRef.current
+        ?.querySelector<HTMLButtonElement>(".composer-model-trigger")
+        ?.focus();
+    }
+
     document.addEventListener("pointerdown", closeModelPickerOnOutsidePointerDown);
-    return () => document.removeEventListener("pointerdown", closeModelPickerOnOutsidePointerDown);
+    document.addEventListener("keydown", closeModelPickerOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeModelPickerOnOutsidePointerDown);
+      document.removeEventListener("keydown", closeModelPickerOnEscape);
+    };
   }, [composerModelControlRef, modelPickerOpen]);
 
   async function refreshConversationModels() {
+    const sequence = ++requestSequence.current;
+    const context = captureAuthContext();
     try {
-      const [modelResponse, defaultsResponse] = await Promise.all([
-        apiClient.fetchModels(),
-        apiClient.fetchModelDefaults().catch(() => null)
-      ]);
-      setModels(mergeModelsWithChatDefault(modelResponse.models, defaultsResponse?.defaults.chat ?? null));
-      setVisionParseModel(defaultsResponse?.defaults.vision_parse ?? null);
+      const catalog = await fetchModelCatalog();
+      if (isAuthContextCurrent(context) && sequence === requestSequence.current) setModelCatalog(catalog);
     } catch (error) {
-      setComposerError(error instanceof Error ? error.message : "模型列表刷新失败。");
+      if (!isAuthContextCurrent(context) || sequence !== requestSequence.current) return;
+      const message = error instanceof Error ? error.message : "模型列表刷新失败。";
+      setModelCatalog(current => ({ ...current, status: "error", error: message }));
+      setComposerError(message);
     }
   }
 
@@ -101,50 +112,64 @@ export function useConversationModelControl(options: ConversationModelControlOpt
     if (!nextModel) {
       return;
     }
-    const previousModelId = selectedModelId;
-    const previousThinkingMode = thinkingMode;
+    const sequence = ++saveSequence.current;
+    const context = captureAuthContext();
+    requestSequence.current += 1;
     setSelectedModelId(modelId);
-    setThinkingMode((currentMode) =>
+    setPreferredThinkingMode((currentMode) =>
       nextModel.thinking_modes.includes(currentMode)
         ? currentMode
         : nextModel.thinking_modes[0] ?? "default"
     );
+    setEffectiveThinkingMode(null);
     setModelPickerOpen(false);
     setComposerError("");
     try {
       const defaultsResponse = await apiClient.updateModelDefaults({ chat: modelId });
-      setModels((currentModels) =>
-        mergeModelsWithChatDefault(currentModels, defaultsResponse.defaults.chat)
-      );
-      setVisionParseModel(defaultsResponse.defaults.vision_parse);
+      if (!isAuthContextCurrent(context) || sequence !== saveSequence.current) return;
+      setModelCatalog(current => ({ ...current, defaults: defaultsResponse.defaults, status: "ready", error: "" }));
     } catch (error) {
-      setSelectedModelId(previousModelId);
-      setThinkingMode(previousThinkingMode);
+      if (!isAuthContextCurrent(context) || sequence !== saveSequence.current) return;
       setComposerError(error instanceof Error ? error.message : "聊天模型更新失败。");
     }
   }
 
   function chooseThinkingMode(mode: string) {
-    setThinkingMode(mode);
-    setModelPickerOpen(false);
+    setPreferredThinkingMode(mode);
+  }
+
+  function applyEffectiveThinkingMode(mode: string) {
+    setEffectiveThinkingMode(mode);
+  }
+
+  function clearEffectiveThinkingMode() {
+    setEffectiveThinkingMode(null);
   }
 
   function resetModelControl() {
     setSelectedModelId("");
-    setThinkingMode("default");
+    setPreferredThinkingMode("default");
+    setEffectiveThinkingMode(null);
     setModelPickerOpen(false);
   }
 
   return {
+    applyEffectiveThinkingMode,
     chooseSessionModel,
     chooseThinkingMode,
+    clearEffectiveThinkingMode,
     defaultModel,
+    effectiveThinkingMode,
     modelPickerOpen,
     resetModelControl,
     selectedModel,
     selectedModelId: selectedModel?.model_id ?? "",
-    selectedThinkingModes,
+    selectedThinkingModes: effectiveThinkingMode && !selectedThinkingModes.includes(effectiveThinkingMode)
+      ? [effectiveThinkingMode, ...selectedThinkingModes]
+      : selectedThinkingModes,
     setModelPickerOpen,
-    thinkingMode
+    preferredThinkingMode,
+    temporaryThinkingModeActive: effectiveThinkingMode !== null,
+    thinkingMode: effectiveThinkingMode ?? preferredThinkingMode
   };
 }

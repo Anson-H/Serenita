@@ -2,13 +2,19 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { SIGN_IN_PATH, SIGN_UP_PATH, type RoutePath } from "../../app/routes";
 import { SecretInput } from "../../components/SecretInput";
-import { validateUserNameForSignUp } from "./validation";
+import { useStatusNotification } from "../../components/StatusNotificationCenter";
+import {
+  formTextValue,
+  keepTextControlFocused,
+  syncCommittedText
+} from "../../utils/inputMethod";
+import { validateAccountNameForSignUp } from "./validation";
 
 type AuthPageProps = {
   mode: "sign_in" | "sign_up";
   onModeChange: (path: RoutePath) => void;
   onSignIn: (account: string, password: string) => Promise<void>;
-  onSignUp: (account: string, userName: string, password: string, confirmPassword: string) => Promise<void>;
+  onSignUp: (account: string, accountName: string, password: string, confirmPassword: string) => Promise<void>;
 };
 
 type AuthMode = "sign_in" | "sign_up";
@@ -16,11 +22,17 @@ type AuthMode = "sign_in" | "sign_up";
 export function AuthPage({ mode, onModeChange, onSignIn, onSignUp }: AuthPageProps) {
   const [authMode, setAuthMode] = useState<AuthMode>(mode);
   const [authAccount, setAuthAccount] = useState("");
-  const [authUserName, setAuthUserName] = useState("");
+  const [authAccountName, setAuthAccountName] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authConfirmPassword, setAuthConfirmPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
+
+  useStatusNotification(authError, {
+    id: "authentication-error",
+    title: "认证未完成",
+    tone: "error"
+  });
 
   useEffect(() => {
     setAuthMode(mode);
@@ -29,8 +41,16 @@ export function AuthPage({ mode, onModeChange, onSignIn, onSignUp }: AuthPagePro
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthError("");
+    const submittedAccount = formTextValue(event.currentTarget, "account", authAccount);
+    const submittedAccountName = formTextValue(event.currentTarget, "account-name", authAccountName);
+    const submittedPassword = formTextValue(event.currentTarget, "password", authPassword);
+    const submittedConfirmPassword = formTextValue(
+      event.currentTarget,
+      "confirm-password",
+      authConfirmPassword
+    );
 
-    const validationMessage = authMode === "sign_up" ? validateUserNameForSignUp(authUserName) : "";
+    const validationMessage = authMode === "sign_up" ? validateAccountNameForSignUp(submittedAccountName) : "";
     if (validationMessage) {
       setAuthError(validationMessage);
       return;
@@ -40,9 +60,14 @@ export function AuthPage({ mode, onModeChange, onSignIn, onSignUp }: AuthPagePro
 
     try {
       if (authMode === "sign_in") {
-        await onSignIn(authAccount, authPassword);
+        await onSignIn(submittedAccount, submittedPassword);
       } else {
-        await onSignUp(authAccount, authUserName, authPassword, authConfirmPassword);
+        await onSignUp(
+          submittedAccount,
+          submittedAccountName,
+          submittedPassword,
+          submittedConfirmPassword
+        );
       }
       setAuthPassword("");
       setAuthConfirmPassword("");
@@ -79,22 +104,25 @@ export function AuthPage({ mode, onModeChange, onSignIn, onSignUp }: AuthPagePro
         <form className={authMode === "sign_in" ? "login-form" : "register-form"} onSubmit={submitAuth}>
           {authMode === "sign_up" ? (
             <div className="registration-guidance" role="note">
-              <p>账号：1-20 位英文、数字、下划线或短横线，登录时不区分大小写。</p>
+              <p>用户标识：1-20 位英文、数字、下划线或短横线，登录时不区分大小写。</p>
+              <p>账号名称：1-50 个字符，允许 Unicode 和内部空格。</p>
               <p>密码：不能为空，请妥善保存；确认密码必须完全一致。</p>
             </div>
           ) : null}
           <label>
-            账号
+            用户标识
             <input
               autoComplete="username"
+              name="account"
               value={authAccount}
               onChange={(event) => setAuthAccount(event.target.value)}
+              onCompositionEnd={(event) => syncCommittedText(event, setAuthAccount)}
             />
           </label>
           {authMode === "sign_up" ? (
             <label>
-              用户名称
-              <input value={authUserName} onChange={(event) => setAuthUserName(event.target.value)} />
+              账号名称
+              <input name="account-name" value={authAccountName} onChange={(event) => setAuthAccountName(event.target.value)} onCompositionEnd={(event) => syncCommittedText(event, setAuthAccountName)} />
             </label>
           ) : null}
           <div className="secret-field">
@@ -103,8 +131,10 @@ export function AuthPage({ mode, onModeChange, onSignIn, onSignUp }: AuthPagePro
               autoComplete={authMode === "sign_in" ? "current-password" : "new-password"}
               id="auth-password"
               labelForAction="密码"
+              name="password"
               value={authPassword}
               onChange={(event) => setAuthPassword(event.target.value)}
+              onCompositionEnd={(event) => syncCommittedText(event, setAuthPassword)}
             />
           </div>
           {authMode === "sign_up" ? (
@@ -114,15 +144,16 @@ export function AuthPage({ mode, onModeChange, onSignIn, onSignUp }: AuthPagePro
                 autoComplete="new-password"
                 id="auth-confirm-password"
                 labelForAction="确认密码"
+                name="confirm-password"
                 value={authConfirmPassword}
                 onChange={(event) => setAuthConfirmPassword(event.target.value)}
+                onCompositionEnd={(event) => syncCommittedText(event, setAuthConfirmPassword)}
               />
             </div>
           ) : null}
-          <button className="command-button" disabled={authSubmitting} type="submit">
+          <button className="control control--primary command-button control-primary" disabled={authSubmitting} onMouseDown={keepTextControlFocused} type="submit">
             {authSubmitting ? "处理中..." : authMode === "sign_in" ? "登录" : "注册并进入"}
           </button>
-          {authError ? <p className="status-message error">{authError}</p> : null}
         </form>
       </section>
     </main>

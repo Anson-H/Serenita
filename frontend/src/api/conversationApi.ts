@@ -1,15 +1,26 @@
+import { assertAuthContext, captureAuthContext, isAuthContextCurrent } from "./authLifecycle";
+import {
+  parseContextResourceUploadResponse,
+  type ContextResourceUploadResponse
+} from "./contextResourceUpload";
+import { API_BASE_URL, apiResponseError, networkFailureMessage, request, requestResponse } from "./request";
 import {
   CancelTurnResponse,
   ConversationDetail,
   ConversationStreamEvent,
   ConversationSummary,
+  ForkConversationResponse,
+  QueuedConversationInput,
   SendMessageResponse,
-  UploadedResource
+  StartedMessageResponse
 } from "./types";
-import { networkFailureMessage, request, serverFailureMessage } from "./request";
-import { getSessionToken } from "./sessionToken";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
+export type AttachmentCapabilities = { model_id: string | null; file_mime_types: string[] };
+
+export function fetchAttachmentCapabilities(modelId?: string | null) {
+  const query = modelId ? `?model_id=${encodeURIComponent(modelId)}` : "";
+  return request<AttachmentCapabilities>(`/conversations/attachment-capabilities${query}`);
+}
 
 export function fetchConversations() {
   return request<{ sessions: ConversationSummary[]; has_more: boolean; next_cursor: string | null }>(
@@ -17,13 +28,41 @@ export function fetchConversations() {
   );
 }
 
-export function getConversation(sessionId: string) {
-  return request<ConversationDetail>(`/conversations/${sessionId}`);
+export function updateConversation(
+  sessionId: string,
+  input: { title?: string; is_pinned?: boolean }
+) {
+  return request<{ session: ConversationSummary }>(`/conversations/${sessionId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export function batchPinConversations(sessionIds: string[], isPinned: boolean) {
+  return request<{ sessions: ConversationSummary[] }>("/conversations/batch-pin", {
+    method: "POST",
+    body: JSON.stringify({ session_ids: sessionIds, is_pinned: isPinned })
+  });
+}
+
+export function batchDeleteConversations(sessionIds: string[]) {
+  return request<{
+    success: boolean;
+    deleted_ids: string[];
+    failed: Array<{ session_id: string; code: string; message: string }>;
+  }>("/conversations/batch-delete", {
+    method: "POST",
+    body: JSON.stringify({ session_ids: sessionIds })
+  });
+}
+
+export function getConversation(sessionId: string, signal?: AbortSignal) {
+  return request<ConversationDetail>(`/conversations/${sessionId}`, { signal });
 }
 
 export function sendMessage(input: {
+  memberId: string | null;
   sessionId?: string | null;
-  parentMessageId?: string | null;
   rawText: string;
   modelId?: string | null;
   thinkingMode: string;
@@ -33,17 +72,64 @@ export function sendMessage(input: {
     method: "POST",
     body: JSON.stringify({
       session_id: input.sessionId ?? null,
-      parent_message_id: input.parentMessageId ?? null,
+      member_id: input.memberId,
       raw_text: input.rawText,
       model_id: input.modelId ?? null,
       thinking_mode: input.thinkingMode,
-      context_resources: input.contextResources ?? []
+      context_resources: contextResourceRefs(input.contextResources ?? [])
     })
   });
 }
 
+export function editMessage(
+  sessionId: string,
+  messageId: string,
+  input: {
+    rawText: string;
+    modelId?: string | null;
+    thinkingMode: string;
+    contextResources?: Array<Record<string, unknown>>;
+  }
+) {
+  return request<StartedMessageResponse>(
+    `/conversations/${sessionId}/messages/${messageId}/edit`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        raw_text: input.rawText,
+        model_id: input.modelId ?? null,
+        thinking_mode: input.thinkingMode,
+        context_resources: contextResourceRefs(input.contextResources ?? [])
+      })
+    }
+  );
+}
+
+function contextResourceRefs(resources: Array<Record<string, unknown>>) {
+  return resources.map((resource) => ({
+    resource_type: resource.resource_type,
+    resource_id: resource.resource_id,
+    ...(resource.resource_type === "record_annotation"
+      ? {
+        source_record_id: resource.source_record_id,
+        annotation_text: resource.annotation_text
+      }
+      : {}),
+    ...(resource.resource_type === "report" && typeof resource.member_id === "string"
+      ? { member_id: resource.member_id }
+      : {})
+  }));
+}
+
+export function forkConversation(sessionId: string, atSeq?: number | null) {
+  return request<ForkConversationResponse>(`/conversations/${sessionId}/fork`, {
+    method: "POST",
+    body: JSON.stringify(atSeq == null ? {} : { at_seq: atSeq })
+  });
+}
+
 export function regenerateMessage(sessionId: string, messageId: string, thinkingMode: string) {
-  return request<SendMessageResponse>(`/conversations/${sessionId}/messages/${messageId}/regenerate`, {
+  return request<StartedMessageResponse>(`/conversations/${sessionId}/messages/${messageId}/regenerate`, {
     method: "POST",
     body: JSON.stringify({ thinking_mode: thinkingMode })
   });
@@ -54,86 +140,104 @@ export function cancelTurn(
   turnId: string,
   input: {
     preservePartial: boolean;
-    partialContent?: string;
-    partialThinking?: string;
   }
 ) {
   return request<CancelTurnResponse>(`/conversations/${sessionId}/turns/${turnId}/cancel`, {
     method: "POST",
     body: JSON.stringify({
-      preserve_partial: input.preservePartial,
-      partial_content: input.partialContent ?? "",
-      partial_thinking: input.partialThinking ?? ""
+      preserve_partial: input.preservePartial
     })
   });
 }
 
-export function setActivePath(sessionId: string, activePathMessageIds: string[]) {
-  return request<{ success: boolean; session_id: string }>(`/conversations/${sessionId}/active-path`, {
+type QueueMutationResponse = {
+  session_id: string;
+  queued_inputs: QueuedConversationInput[];
+  queued_input?: QueuedConversationInput;
+};
+
+export function reorderQueuedInputs(sessionId: string, inputIds: string[]) {
+  return request<QueueMutationResponse>(`/conversations/${sessionId}/queued-inputs/order`, {
     method: "PATCH",
-    body: JSON.stringify({ active_path_message_ids: activePathMessageIds })
+    body: JSON.stringify({ input_ids: inputIds })
   });
 }
 
+export function deleteQueuedInput(sessionId: string, inputId: string) {
+  return request<QueueMutationResponse>(`/conversations/${sessionId}/queued-inputs/${inputId}`, {
+    method: "DELETE"
+  });
+}
+
+export function restoreQueuedInputToDraft(sessionId: string, inputId: string) {
+  return request<Required<QueueMutationResponse>>(
+    `/conversations/${sessionId}/queued-inputs/${inputId}/restore-to-draft`,
+    { method: "POST" }
+  );
+}
+
+export function runQueuedInputNow(sessionId: string, inputId: string) {
+  return request<QueueMutationResponse & { started_turn: Record<string, unknown> | null }>(
+    `/conversations/${sessionId}/queued-inputs/${inputId}/run-now`,
+    { method: "POST" }
+  );
+}
+
 export function uploadContextResource(
+  memberId: string | null,
   sessionId: string | null,
   file: File,
   modelId?: string | null,
   onUploadProgress?: (progress: number) => void
 ) {
+  const context = captureAuthContext();
   const formData = new FormData();
+  if (memberId !== null) formData.append("member_id", memberId);
   formData.append("session_id", sessionId ?? "");
   formData.append("model_id", modelId ?? "");
   formData.append("file", file);
 
-  return new Promise<{ session_id: string; resource: UploadedResource }>((resolve, reject) => {
+  return new Promise<ContextResourceUploadResponse>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${API_BASE_URL}/conversations/context-resources`);
-    const token = getSessionToken();
-    if (token) {
-      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-    }
+    xhr.withCredentials = true;
+    if (context.accountId) xhr.setRequestHeader("X-Serenita-Account-ID", context.accountId);
     xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable || event.total <= 0) {
+      if (!isAuthContextCurrent(context) || !event.lengthComputable || event.total <= 0) {
         return;
       }
       onUploadProgress?.(Math.min(99, Math.max(1, Math.round((event.loaded / event.total) * 100))));
     };
     xhr.onload = () => {
+      try { assertAuthContext(context); } catch (error) { reject(error); return; }
       if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(xhrFailureMessage(xhr)));
+        reject(xhrFailure(xhr));
         return;
       }
       try {
+        const response = parseContextResourceUploadResponse(JSON.parse(xhr.responseText));
         onUploadProgress?.(100);
-        resolve(JSON.parse(xhr.responseText));
+        resolve(response);
       } catch {
-        reject(new Error("上传响应不是有效 JSON。"));
+        reject(new Error("上传响应无效。"));
       }
     };
-    xhr.onerror = () => reject(new Error(networkFailureMessage(new Error("XMLHttpRequest error"))));
+    xhr.onerror = () => {
+      try { assertAuthContext(context); } catch (error) { reject(error); return; }
+      reject(new Error(networkFailureMessage(new Error("XMLHttpRequest error"))));
+    };
     xhr.send(formData);
   });
 }
 
-function xhrFailureMessage(xhr: XMLHttpRequest) {
-  try {
-    const errorBody = JSON.parse(xhr.responseText);
-    if (typeof errorBody.detail === "string") {
-      return errorBody.detail;
-    }
-    if (errorBody.detail?.message) {
-      return errorBody.detail.message;
-    }
-    if (errorBody.detail?.code) {
-      return errorBody.detail.code;
-    }
-  } catch {
-    if (xhr.status >= 500) {
-      return serverFailureMessage({ status: xhr.status } as Response);
-    }
-  }
-  return `请求失败：${xhr.status}`;
+export function conversationContextResourceUrl(sessionId: string, resourceId: string) {
+  return `${API_BASE_URL}/conversations/${encodeURIComponent(sessionId)}/context-resources/${encodeURIComponent(resourceId)}`;
+}
+
+function xhrFailure(xhr: XMLHttpRequest) {
+  let body: unknown = null;
+  try { body = JSON.parse(xhr.responseText); } catch { /* Use the status-based error. */ }
+  return apiResponseError(xhr.status, body);
 }
 
 export function deleteConversation(sessionId: string) {
@@ -143,24 +247,22 @@ export function deleteConversation(sessionId: string) {
 }
 
 export async function streamConversation(
+  sessionId: string,
   streamId: string,
   handlers: {
     signal?: AbortSignal;
     onEvent: (event: ConversationStreamEvent) => void;
   }
 ) {
-  const token = getSessionToken();
-  const response = await fetch(`${API_BASE_URL}/conversations/streams/${encodeURIComponent(streamId)}`, {
+  const context = captureAuthContext();
+  const response = await requestResponse(`/conversations/${encodeURIComponent(sessionId)}/streams/${encodeURIComponent(streamId)}`, {
+    credentials: "include",
     headers: {
-      "Accept": "text/event-stream",
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
+      "Accept": "text/event-stream"
     },
     signal: handlers.signal
   });
 
-  if (!response.ok) {
-    throw new Error(await streamErrorMessage(response));
-  }
   if (!response.body) {
     throw new Error("浏览器不支持读取流式响应。");
   }
@@ -168,37 +270,32 @@ export async function streamConversation(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let terminal = false;
+  const onEvent = (event: ConversationStreamEvent) => {
+    assertAuthContext(context);
+    if (terminal) return;
+    terminal = event.event === "turn_completed"
+      || event.event === "turn_cancelled"
+      || event.event === "turn_failed";
+    handlers.onEvent(event);
+  };
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) {
-      break;
-    }
-    buffer += decoder.decode(value, { stream: true });
-    buffer = await emitCompleteSseEvents(buffer, handlers.onEvent);
-  }
-
-  buffer += decoder.decode();
-  await emitCompleteSseEvents(`${buffer}\n\n`, handlers.onEvent);
-}
-
-async function streamErrorMessage(response: Response) {
-  let message = `流式订阅失败：${response.status}`;
   try {
-    const errorBody = await response.json();
-    if (typeof errorBody.detail === "string") {
-      message = errorBody.detail;
-    } else if (errorBody.detail?.message) {
-      message = errorBody.detail.message;
-    } else if (errorBody.detail?.code) {
-      message = errorBody.detail.code;
+    while (!terminal) {
+      const { value, done } = await reader.read();
+      if (done) {
+        buffer += decoder.decode();
+        await emitCompleteSseEvents(`${buffer}\n\n`, onEvent);
+        return;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      buffer = await emitCompleteSseEvents(buffer, onEvent);
     }
-  } catch {
-    if (response.status >= 500) {
-      message = serverFailureMessage(response);
-    }
+  } finally {
+    // A terminal event completes the subscription even if the transport stays open.
+    void reader.cancel().catch(() => undefined);
+    reader.releaseLock();
   }
-  return message;
 }
 
 async function emitCompleteSseEvents(
@@ -211,20 +308,9 @@ async function emitCompleteSseEvents(
     const event = parseSseEvent(block);
     if (event) {
       onEvent(event);
-      await yieldToBrowserPaint();
     }
   }
   return pending;
-}
-
-function yieldToBrowserPaint() {
-  return new Promise<void>((resolve) => {
-    if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
-      setTimeout(resolve, 0);
-      return;
-    }
-    window.requestAnimationFrame(() => window.setTimeout(resolve, 0));
-  });
 }
 
 function parseSseEvent(block: string): ConversationStreamEvent | null {
@@ -241,7 +327,7 @@ function parseSseEvent(block: string): ConversationStreamEvent | null {
   if (!dataLines.length) {
     return null;
   }
-  if (!["thinking_delta", "content_delta", "completed", "failed", "cancelled"].includes(eventName)) {
+  if (!["thinking_mode_changed", "session_title_updated", "record_started", "record_delta", "record_completed", "turn_completed", "turn_failed", "turn_cancelled"].includes(eventName)) {
     return null;
   }
   return {

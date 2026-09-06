@@ -1,0 +1,51 @@
+/* Member-specific layout; surfaces and states come from shared components. */
+.member-load-error { display: flex; align-items: center; justify-content: space-between; gap: var(--space-content); padding: var(--space-content); }
+.member-grants-section form { display: grid; gap: var(--space-content); min-width: 0; }
+.member-settings-group { display: grid; gap: var(--space-related); min-width: 0; }
+.member-settings-group > .group-heading { margin: 0; }
+.member-grant-row { grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-control-block) var(--space-control-inline); }
+.member-grant-row:has(> .member-grant-identity) { grid-template-columns: minmax(0, 1fr) auto var(--size-inline-button); }
+.member-grant-toggle { display: flex; align-items: center; gap: var(--space-control-inline); min-width: 0; padding: 0; border: 0; background: transparent; text-align: left; }
+.member-grant-toggle > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.member-grant-identity { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.member-grant-identity > span:last-child { color: var(--color-foreground-muted); font-size: var(--text-meta); line-height: var(--line-meta); }
+.member-grant-row > .select-popover { width: auto; }
+
+.health-member-nav { min-width: 0; padding-bottom: var(--space-content); border-bottom: 1px solid var(--color-divider); }
+.health-member-nav-current { position: relative; min-width: 0; }
+.health-member-nav-current .health-member-avatar { background: var(--color-rail); }
+.health-member-nav-open { position: absolute; z-index: 0; inset: 0; width: 100%; min-height: 100%; padding: 0; border-radius: inherit; }
+.health-member-nav-current > :is(.health-member-avatar, .health-member-nav-name) { position: relative; z-index: 1; pointer-events: none; }
+.health-member-nav-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--weight-strong); }
+.health-member-nav-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: var(--space-item); pointer-events: none; }
+.health-member-nav-action { pointer-events: auto; }
+.health-member-overview { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
+.sidebar-identity-row.health-member-detail-identity { position: relative; grid-template-columns: var(--size-account-avatar) minmax(0, 1fr); width: auto; margin: var(--space-content) var(--space-content) 0; }
+.health-member-detail-open { position: absolute; z-index: 0; inset: 0; width: 100%; min-height: 100%; padding: 0; border-radius: inherit; }
+.health-member-detail-identity > :is(.health-member-avatar, .health-member-detail-name, .health-member-detail-metadata) { position: relative; z-index: 1; pointer-events: none; }
+.health-member-detail-identity .health-member-avatar { background: var(--color-rail); }
+.health-member-detail-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-body); line-height: var(--line-body); }
+.health-member-detail-metadata { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-related); min-width: 0; margin: 0; color: var(--color-foreground-muted); font-size: var(--text-meta); line-height: var(--line-meta); white-space: nowrap; }
+.health-member-identity-copy { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.health-member-identity-copy strong { font-size: var(--text-body); line-height: var(--line-body); }
+.health-member-identity-copy > span { font-size: var(--text-meta); line-height: var(--line-meta); color: var(--color-foreground-muted); }
+.health-member-sections { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: var(--space-item); row-gap: var(--space-content); min-width: 0; padding: var(--space-content) var(--space-content) 0; }
+.health-member-sections::before { grid-column: 1 / -1; height: 1px; background: var(--color-divider); content: ""; }
+.health-section-entry { --control-icon-size: var(--size-titlebar-icon); display: flex; flex-direction: column; align-items: center; gap: var(--space-related); min-width: 0; padding: var(--space-related); border-radius: var(--radius-titlebar-control); }
+.health-section-icon { display: grid; place-items: center; flex: 0 0 var(--size-titlebar-control); width: var(--size-titlebar-control); height: var(--size-titlebar-control); }
+.health-section-label { font-size: var(--text-meta); line-height: var(--line-meta); white-space: nowrap; }
+.health-member-section-content { display: grid; min-width: 0; min-height: 0; overflow: hidden; }
+.member-information-detail { grid-row: 1 / -1; display: grid; grid-template-rows: var(--workspace-titlebar-height) minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; }
+.member-information-pane { display: grid; min-width: 0; min-height: 0; overflow: hidden; }
+.member-information-scroll { display: grid; grid-auto-rows: max-content; align-content: start; gap: var(--space-content); min-width: 0; min-height: 0; padding: var(--space-content); }
+.member-information-scroll > p { margin: 0; }
+.member-dialog-body { display: grid; grid-auto-rows: max-content; align-content: start; gap: var(--space-content); }
+.member-dialog-body > p { margin: 0; }
+.member-switch-entry { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; text-align: left; }
+.member-switch-trailing-label { font-size: var(--text-meta); line-height: var(--line-meta); color: var(--color-foreground-muted); white-space: nowrap; }
+.member-add-action { width: 100%; }
+.member-grants-empty { margin: 0; text-align: center; }
+.member-birth-date-trigger,
+.field-row > .report-date-time-editor { grid-column: 2; width: 100%; min-width: 0; justify-self: stretch; }
+.member-birth-date-trigger { display: flex; align-items: center; justify-content: flex-end; min-height: var(--line-body); padding: 0; border: 0; background: transparent; color: var(--color-foreground); font: inherit; text-align: right; }
+.field-row > .report-date-time-editor > .report-date-time-anchor { min-height: var(--line-body); }

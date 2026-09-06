@@ -1,0 +1,5 @@
+allowed_tools:
+  - "validate_parsed_reports"
+  - "create_report"
+  - "link_duplicate_sources"
+  - "merge_report"

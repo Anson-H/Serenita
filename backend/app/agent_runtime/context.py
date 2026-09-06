@@ -4,8 +4,9 @@ from typing import Any, Dict, List, Optional
 
 @dataclass(frozen=True)
 class AgentContext:
-    account: str
+    account_id: str
     task_type: str
+    member_id: Optional[str] = None
     input_text: str = ""
     session_id: Optional[str] = None
     model_id: Optional[str] = None

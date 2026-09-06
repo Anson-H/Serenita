@@ -1,57 +1,144 @@
 /* Tokens surface styles. */
 
 :root {
-  --page-bg: oklch(97.6% 0.014 286);
-  --page-wash: oklch(94.9% 0.024 276);
-  --ink: oklch(31% 0.031 272);
-  --ink-strong: oklch(20% 0.042 274);
-  --muted: oklch(52% 0.029 274);
-  --muted-soft: oklch(66% 0.026 278);
-  --line: oklch(89% 0.016 279);
-  --line-strong: oklch(78% 0.034 278);
-  --surface-strong: oklch(99.2% 0.006 286);
-  --surface: oklch(97.7% 0.012 284);
-  --surface-raised: oklch(98.7% 0.009 286);
-  --surface-muted: oklch(96.2% 0.014 283);
-  --surface-accent: oklch(94.6% 0.03 278);
-  --accent-strong: oklch(43% 0.106 276);
-  --accent: oklch(56% 0.122 276);
-  --accent-soft: oklch(92.8% 0.045 278);
-  --accent-ink: oklch(29% 0.079 276);
-  --warm-accent: oklch(69% 0.096 26);
-  --warning: oklch(56% 0.106 75);
-  --warning-soft: oklch(94.5% 0.038 82);
-  --danger: oklch(52% 0.142 24);
-  --danger-soft: oklch(94.2% 0.041 20);
-  --success: oklch(47% 0.086 168);
-  --success-soft: oklch(93.5% 0.036 166);
-  --focus-ring: 0 0 0 3px oklch(70% 0.098 276 / 0.28);
-  --shadow-panel: 0 24px 70px oklch(31% 0.055 276 / 0.11);
-  --shadow-soft: 0 14px 34px oklch(31% 0.046 276 / 0.08);
-  --shadow-button: 0 10px 22px oklch(34% 0.06 276 / 0.1);
-  --radius-panel: 8px;
-  --radius-control: 8px;
-  --radius-small: 6px;
-  --radius-tight: 4px;
-  --radius-icon: var(--radius-control);
-  --radius-chip: var(--radius-control);
-  --control-height: 40px;
-  --icon-button-size: 34px;
-  --back-button-size: 30px;
-  --icon-size: 16px;
-  --workspace-titlebar-height: 52px;
-  --workspace-titlebar-side: 44px;
+  /* 表面、前景、文字与分隔 */
+  --color-surface: oklch(99% 0.004 75);
+  --color-rail: oklch(94% 0.026 70);
+  --color-header-surface: oklch(92% 0.034 70);
+  --color-control-surface: oklch(97.022% 0.01432 70.7);
+  --color-content-inset: oklch(97.022% 0.01432 70.7);
+  --color-foreground: oklch(0% 0 0);
+  --color-foreground-muted: oklch(48.5% 0.022 65);
+  --color-divider: oklch(84% 0.012 70);
+  --color-danger: oklch(51% 0.18 25);
+  --color-danger-soft: oklch(94% 0.024 25);
+
+  /* 强调、交互与状态 */
+  --color-accent: oklch(57% 0.15 50);
+  --color-primary-surface: oklch(76% 0.16 58);
+  --color-primary-hover: oklch(71% 0.17 53);
+  --color-item-hover: oklch(91% 0.047 65);
+  --color-item-current: oklch(89% 0.07 60);
+  --color-danger-hover: oklch(90% 0.045 25);
+  --color-warning: oklch(49% 0.095 82);
+  --color-warning-soft: oklch(95.5% 0.045 88);
+  --color-success: oklch(47% 0.105 155);
+
+  /* 补充表面、前景与分隔 */
+  --color-surface-error: oklch(97.7% 0.012 70);
+  --color-surface-raised: oklch(100% 0 0);
+
+  /* 反色表面、前景与边框 */
+  --color-inverse-surface: oklch(24% 0.018 70);
+  --color-inverse-text: oklch(96.5% 0.009 70);
+  --color-inverse-divider: oklch(32% 0.018 70);
+
+  /* 滚动条、引用与进度 */
+  --color-scrollbar-thumb: oklch(70% 0.018 70 / 0.42);
+  --color-scrollbar-thumb-hover: oklch(60% 0.018 70 / 0.55);
+  --color-upload-progress: oklch(82% 0.105 155);
+
+  /* 焦点与阴影 */
+  --focus-outline: 2px solid var(--color-accent);
+  --shadow-overlay: 0 18px 44px oklch(31% 0.018 70 / 0.13);
+
+  --radius-message-bubble: 10px;
+  --radius-dialog: 12.5px;
+  --radius-panel: 12px;
+  --radius-list: 10px;
+  --radius-control: var(--radius-list);
+  --radius-account-avatar: 7.5px;
+  --radius-titlebar-control: 7.5px;
+  --radius-inline-button: 5px;
+  --radius-inline-button-compact: 4.5px;
+  --radius-compact-bar: 7.5px;
+  --radius-selection-control: 4px;
+  --radius-stop-graphic: 4px;
+  --size-slider-track: 16px;
+  --size-slider-thumb: 20px;
+  --size-slider-tick: 4px;
+  --radius-slider-track: 4px;
+  --radius-slider-thumb: 5px;
+  --radius-slider-tick: 1px;
+  --radius-switch-track: 4px;
+  --radius-switch-thumb: 3px;
+  --radius-brand-mark: 2.75px;
+  --radius-notification-mark: 7px;
+  --radius-citation: 0.3rem;
+  --radius-progress-track: 1.5px;
+  --radius-scrollbar-thumb: 2.5px;
+  --size-control-primary: 40px;
+  --size-touch-target: 44px;
+  --size-standard-bar: var(--size-control-primary);
+  --size-inline-button: 20px;
+  --size-inline-button-compact: 18px;
+  --size-titlebar-control: 30px;
+  --size-switch-track-width: 32px;
+  --size-switch-track-height: 16px;
+  --size-switch-thumb: 12px;
+  --size-brand-mark-width: 11px;
+  --size-brand-mark-height: 30px;
+  --size-notification-mark: 28px;
+  --size-citation: 1.2rem;
+  --size-progress-track-height: 6px;
+  --size-account-avatar: 30px;
+  --size-compact-bar: calc(var(--line-meta) + var(--space-control-block-compact) * 2);
+  --size-selection-control: 16px;
+  --size-stop-graphic: 16px;
+  --size-message-bubble-reference: 40px;
+  --size-scrollbar: 10px;
+  --size-scrollbar-thumb-inset: 1px;
+  --scrollbar-layout-width: var(--size-scrollbar);
+  --size-page-min-width: 300px;
+  --size-conversation-content: 750px;
+  --icon-button-size: var(--size-titlebar-control);
+  --back-button-size: var(--size-titlebar-control);
+  --size-icon-control: 16px;
+  --size-icon-default: 16px;
+  --size-inline-icon: 16px;
+  --size-inline-icon-compact: 14px;
+  --size-titlebar-icon: 22px;
+  --workspace-titlebar-height: 50px;
+  --workspace-titlebar-side: var(--size-titlebar-control);
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --text-xs: 12px;
-  --text-sm: 13px;
-  --text-ui: 15px;
-  --text-title: 16px;
-  --text-section-title: 18px;
-  --text-brand: 24px;
-  --line-ui: 1.25;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --weight-regular: 500;
+  --weight-strong: 700;
+  --text-meta: 13px;
+  --line-meta: 18px;
+  --text-body: 15px;
+  --line-body: 20px;
+  --text-subtitle: 16px;
+  --line-subtitle: 21px;
+  --text-page-title: 18px;
+  --line-page-title: 24px;
+  --text-brand: 22px;
+  --line-brand: 30px;
   --line-copy: 1.55;
   --transition-fast: 170ms cubic-bezier(0.22, 1, 0.36, 1);
-  color: var(--ink);
-  background: var(--page-bg);
-  font-family: var(--font-ui);
+  --space-item: 2px;
+  --space-related: 5px;
+  --space-control-inline: 10px;
+  --space-control-block: 10px;
+  --space-control-block-compact: 6px;
+  --space-content: 15px;
+  --size-global-sidebar: 275px;
+  --size-content-row: var(--size-control-primary);
+  --size-settings-primary-nav: 250px;
+  --size-settings-content: 760px;
+  --size-settings-nav-row: var(--size-control-primary);
+  --size-settings-row: var(--size-content-row);
+  --size-icon-button: var(--size-control-primary);
+  --layer-modal: 100;
+  --layer-menu: 1000;
+
+  /* Preserve standard dimensions for list-local density and nested list boundaries. */
+  --grouped-standard-row-height: var(--size-control-primary);
+  --grouped-standard-padding-block: var(--space-control-block);
+  --grouped-standard-font-size: var(--text-body);
+  --grouped-standard-line-height: var(--line-body);
+  --grouped-standard-icon-size: var(--size-icon-default);
+  --grouped-standard-inline-size: var(--size-inline-button);
+  --grouped-standard-inline-radius: var(--radius-inline-button);
+  --grouped-standard-radius: var(--radius-list);
 }

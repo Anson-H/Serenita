@@ -1,0 +1,132 @@
+/* Shared state ownership. Hover has one specificity unit; persistent and editing states win. */
+
+:where(:focus) {
+  outline: none;
+}
+
+/* Destructive controls keep their semantic surface even inside page-specific layouts. */
+.control.control--danger.removal-action-control {
+  border: 0;
+  box-shadow: none;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.control.control--danger.removal-action-control:hover:not(:disabled) {
+  background: var(--color-danger-hover);
+  color: var(--color-danger);
+}
+
+.context-action-menu > .control.control--danger.removal-action-control {
+  background: transparent;
+  color: var(--color-danger);
+}
+
+.context-action-menu > .control.control--danger.removal-action-control:hover:not(:disabled) {
+  background: var(--color-danger-hover);
+  color: var(--color-danger);
+}
+
+:is(button, summary, [role="button"], .control, .select-popover-trigger):where(:hover):where(:not(:disabled, [aria-disabled="true"], [data-disabled="true"], [data-hover="none"], [data-interaction-owner="row"], .control--primary, .control--danger, .selection-check-control, .toggle-switch)):where(:not(:has(:disabled):not(:has(:enabled)))):where(:not(:has(:is(button, summary, [role="button"], .control):hover))) {
+  background: var(--color-item-hover);
+}
+
+.markdown-content .citation-link:where(:hover) {
+  background-color: var(--color-item-hover);
+}
+
+:is(input, textarea, [contenteditable="true"]):where(:read-write:hover):where(:not(.field-row *, [data-input-surface] *)) {
+  background: var(--color-item-hover);
+}
+
+/* A row-primary control keeps hover on its row; a self-owned accessory suppresses transient row hover. */
+.grouped-object-list > :where(:hover):where(:not(:disabled, [aria-disabled="true"], [data-disabled="true"], [data-hover="none"])):where(:not(:has(:disabled):not(:has(:enabled)))):where(:not(:has(:is(button, summary, [role="button"], .control):not([data-interaction-owner="row"]):hover))),
+[data-row-surface]:where(:hover):where(:not([aria-disabled="true"], [data-disabled="true"], [data-hover="none"])):where(:not(:has(> [data-interaction-owner="row"]:is(:disabled, [aria-disabled="true"])))):where(:not(:has(:is(button, summary, [role="button"], .control):not([data-interaction-owner="row"]):hover))),
+.grouped-object-list > [data-context-menu-open="true"]:where(:not(:disabled, [aria-disabled="true"], [data-disabled="true"])),
+[data-row-surface][data-context-menu-open="true"]:where(:not([aria-disabled="true"], [data-disabled="true"])),
+[data-input-surface]:where(:has([data-input-area]:hover)):where(:has(input:read-write, textarea:read-write)) {
+  background: var(--color-item-hover);
+  border-radius: var(--radius-list);
+}
+
+/* Self-owned nested controls outrank transient row hover; persistent states below still win. */
+:is(.grouped-object-list, [data-row-surface], .field-row) :is(button, summary, [role="button"], .control):hover:where(:not(:disabled, [aria-disabled="true"], [data-disabled="true"], [data-hover="none"], [data-interaction-owner="row"], .control--primary, .control--danger, .selection-check-control, .toggle-switch)) {
+  background: var(--color-item-hover);
+}
+
+/* Current object, single choice and toggled action are persistent, not an after-click effect. */
+:is(button, [role="button"], .control, [data-row-surface]):is(.active, [data-active="true"], [data-current="true"], [aria-current="page"], [aria-pressed="true"], [aria-selected="true"], [role="radio"][aria-checked="true"], [role="menuitemradio"][aria-checked="true"]):where(:not(.control--primary, .control--danger, .selection-check-control, .toggle-switch, [data-interaction-owner="row"], [data-row-trigger], .grouped-object-list > :is(li, [data-grouped-list-item]) > :only-child, [data-selection-mode="multiple"] *, [aria-multiselectable="true"] *)),
+.grouped-object-list > :is(.active, [aria-current="page"], [data-active="true"], :has(> [aria-current="page"])):where(:not([data-selection-mode="multiple"] *, [aria-multiselectable="true"] *)),
+.grouped-object-list[role="listbox"]:not([aria-multiselectable="true"]) > [aria-selected="true"] {
+  background: var(--color-item-current);
+}
+
+/* Popup state follows the same explicit owner contract; values are not persistent selection. */
+:is([aria-haspopup], [data-popup-trigger])[aria-expanded="true"]:where(:not([data-interaction-owner="row"])),
+.field-row:has([data-interaction-owner="row"]:is([aria-haspopup], [data-popup-trigger])[aria-expanded="true"]),
+.grouped-object-list > *:has([data-interaction-owner="row"]:is([aria-haspopup], [data-popup-trigger])[aria-expanded="true"]),
+[data-row-surface]:has([data-interaction-owner="row"]:is([aria-haspopup], [data-popup-trigger])[aria-expanded="true"]) {
+  background: var(--color-item-current);
+}
+
+/* The base fill does not remove input state capability: every editable surface follows focus. */
+:is(input, textarea):read-write:focus:where(:not(.field-row *, [data-input-surface] *)),
+.field-row:has(:is(input, textarea):read-write:focus),
+[data-input-surface]:has(:is(input, textarea):read-write:focus),
+.interactive-data-grid tbody tr:has(:is(input, textarea):read-write:focus) {
+  background: var(--color-item-current);
+}
+
+.field-row :is(input, textarea),
+.field-row [data-interaction-owner="row"]:where(:not(.selection-check-control)),
+.grouped-object-list > * [data-interaction-owner="row"]:where(:not(.selection-check-control)),
+[data-row-surface] [data-interaction-owner="row"]:where(:not(.selection-check-control)),
+[data-input-surface] :is(input, textarea),
+[data-row-surface] > [data-row-trigger]:where(:not(:hover)) {
+  background: transparent;
+}
+
+.interactive-data-grid tbody tr:where(:hover):where(:not(:has(:disabled):not(:has(:enabled)))) {
+  background: var(--color-item-hover);
+}
+
+/* A row's corners and separators follow its surface, not its inner input or button. */
+.grouped-object-list > :is(.active, [aria-current="page"], [data-active="true"], :has(> [aria-current="page"]), :has(:is(input, textarea):read-write:focus), :has([data-interaction-owner="row"]:is([aria-haspopup], [data-popup-trigger])[aria-expanded="true"]), [data-keyboard-focus="inset"]),
+.grouped-object-list > :is([role="radio"][aria-checked="true"], [role="menuitemradio"][aria-checked="true"]),
+[data-row-surface]:is(.active, [data-current="true"], [data-active="true"], [data-keyboard-focus]),
+.grouped-object-list[role="listbox"]:not([aria-multiselectable="true"]) > [aria-selected="true"] {
+  border-radius: var(--radius-list);
+}
+
+.grouped-object-list > :where(:hover):where(:not(:disabled, [aria-disabled="true"], [data-disabled="true"])):where(:not(:has(:disabled):not(:has(:enabled)))):where(:not(:has(:is(button, summary, [role="button"], .control):not([data-interaction-owner="row"]):hover)))::before,
+.grouped-object-list > :where(:hover):where(:not(:disabled, [aria-disabled="true"], [data-disabled="true"])):where(:not(:has(:disabled):not(:has(:enabled)))):where(:not(:has(:is(button, summary, [role="button"], .control):not([data-interaction-owner="row"]):hover))) + *::before,
+.grouped-object-list > [data-context-menu-open="true"]::before,
+.grouped-object-list > [data-context-menu-open="true"] + *::before,
+.grouped-object-list > :is(.active, [aria-current="page"], [data-active="true"], :has(> [aria-current="page"]), :has(:is(input, textarea):read-write:focus), :has([data-interaction-owner="row"]:is([aria-haspopup], [data-popup-trigger])[aria-expanded="true"]), [data-keyboard-focus="inset"])::before,
+.grouped-object-list > :is(.active, [aria-current="page"], [data-active="true"], :has(> [aria-current="page"]), :has(:is(input, textarea):read-write:focus), :has([data-interaction-owner="row"]:is([aria-haspopup], [data-popup-trigger])[aria-expanded="true"]), [data-keyboard-focus="inset"]) + *::before,
+.grouped-object-list[role="listbox"]:not([aria-multiselectable="true"]) > [aria-selected="true"]::before,
+.grouped-object-list[role="listbox"]:not([aria-multiselectable="true"]) > [aria-selected="true"] + *::before {
+  opacity: 0;
+}
+
+/* The tracker marks one surface. Native :focus-visible also matches pointer-focused text fields,
+   so it must not be used as the application's input-modality signal. */
+[data-keyboard-focus] {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+[data-keyboard-focus="inset"] {
+  outline-offset: -2px;
+}
+
+/* Inline popup/action outlines must remain visible in an otherwise clipped value track. */
+.field-value:has([data-keyboard-focus]) {
+  overflow: visible;
+}
+
+:is(input, textarea, select):disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.48;
+}

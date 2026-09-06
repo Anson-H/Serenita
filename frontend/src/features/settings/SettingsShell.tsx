@@ -1,12 +1,41 @@
-import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-
-import { AddedModel, ModelDefaults, ProviderSummary, RemoteModel, apiClient } from "../../api/client";
-import { SettingsView } from "./SettingsView";
+import type { Dispatch, SetStateAction } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import {
-  accountAutoSaveDelayMs,
+  AddedModel,
+  ModelDefaults,
+  ProviderSummary,
+  RemoteModel,
+  WebAccessSettings,
+  apiClient,
+  type AuthenticatedSession
+} from "../../api/client";
+import { SerialTasks } from "../../utils/serialTasks";
+import { useActiveScope } from "../../utils/useActiveScope";
+import { useScopedState } from "../../utils/useScopedState";
+import {
+  useComposerSubmitShortcut
+} from "../accountPreferences/composerSubmitShortcut";
+import {
+  useContextAssemblyDisplaySettings
+} from "../accountPreferences/contextAssemblyDisplay";
+import {
+  useToolExecutionDisplayTypes
+} from "../accountPreferences/toolExecutionDisplay";
+import type { ModelCatalog } from "../modelConfiguration/modelCatalog";
+import { SettingsView } from "./SettingsView";
+import { createAccountSettingsActions } from './accountSettingsActions';
+import { createConversationSettingsActions } from './conversationSettingsActions';
+import { createDefaultModelActions } from './defaultModelActions';
+import { createModelSettingsActions } from './modelSettingsActions';
+import { createProviderSettingsActions } from './providerSettingsActions';
+import { createSettingsNavigationActions } from './settingsNavigationActions';
+import {
+  accountIdentifierPattern,
+  accountNameLength,
   draftsMatch,
-  userNameSpacePattern,
+  settingsAutoSaveDelayMs,
   type AccountPanel,
+  type ConversationSettingsSection,
   type DefaultModelUsage,
   type ProviderConnectionTestState,
   type ProviderDraft,
@@ -14,93 +43,162 @@ import {
   type SettingsSection,
   type TestState
 } from "./settingsTypes";
+import { createWebSettingsActions } from './webSettingsActions';
 
 type SettingsShellProps = {
+  accountId: string;
   account: string;
-  userName: string;
+  accountName: string;
   mobileSidebarToggle?: ReactNode;
   onSignOut: () => void;
-  onUserNameChange: (userName: string) => void;
-  onModelsChanged: () => Promise<void>;
-};
-
-const emptyModelDefaults: ModelDefaults = {
-  chat: null,
-  title: null,
-  vision_parse: null,
-  compact: null
+  onAccountProfileChange: (session: AuthenticatedSession) => void;
+  modelCatalog: ModelCatalog;
+  onModelsChanged: Dispatch<SetStateAction<ModelCatalog>>;
+  onReportsChanged: () => void;
 };
 
 const defaultModelUsages: Array<{
   key: DefaultModelUsage;
   label: string;
 }> = [
-  { key: "chat", label: "聊天模型" },
-  { key: "title", label: "标题生成模型" },
-  { key: "vision_parse", label: "视觉解析模型" },
-  { key: "compact", label: "压缩上下文模型" }
-];
-
-const providerConnectionFeedbackDurationMs = 5000;
-const defaultConnectionTestState: ProviderConnectionTestState = {
-  status: "idle",
-  message: ""
-};
+    { key: "chat", label: "聊天模型" },
+    { key: "title", label: "标题生成模型" },
+    { key: "vision_parse", label: "视觉解析模型" },
+    { key: "compact", label: "压缩上下文模型" }
+  ];
 
 export function SettingsShell({
+  accountId,
   account,
-  userName,
+  accountName,
   mobileSidebarToggle,
   onSignOut,
-  onUserNameChange,
-  onModelsChanged
+  onAccountProfileChange,
+  modelCatalog,
+  onModelsChanged,
+  onReportsChanged
 }: SettingsShellProps) {
-  const [activeSection, setActiveSection] = useState<SettingsSection>("account");
-  const [accountPanel, setAccountPanel] = useState<AccountPanel>("profile");
-  const [mobileLayer, setMobileLayer] = useState<SettingsMobileLayer>("root");
-  const [providers, setProviders] = useState<ProviderSummary[]>([]);
-  const [selectedProviderId, setSelectedProviderId] = useState("");
-  const [drafts, setDrafts] = useState<Record<string, ProviderDraft>>({});
+  const isCurrentScope = useActiveScope(accountId);
+  const serialTasks = useRef(new SerialTasks());
+  const credentialDraftRevisions = useRef<Record<string, number>>({});
+  const webSettingsSequence = useRef(0);
+  const draftsRef = useRef<Record<string, ProviderDraft>>({});
+  const defaultSaveSequences = useRef<Record<string, number>>({});
+  const [activeSection, setActiveSection] = useScopedState<SettingsSection>("account", isCurrentScope);
+  const [accountPanel, setAccountPanel] = useScopedState<AccountPanel>("profile", isCurrentScope);
+  const [conversationSection, setConversationSection] = useScopedState<ConversationSettingsSection>("composer", isCurrentScope);
+  const [mobileLayer, setMobileLayer] = useScopedState<SettingsMobileLayer>("root", isCurrentScope);
+  const [detailOpen, setDetailOpen] = useScopedState(false, isCurrentScope);
+  const [providers, setProviders] = useScopedState<ProviderSummary[]>([], isCurrentScope);
+  const [selectedProviderId, setSelectedProviderId] = useScopedState("", isCurrentScope);
+  const [drafts, setDrafts] = useScopedState<Record<string, ProviderDraft>>({}, isCurrentScope);
+  draftsRef.current = drafts;
   const savedDraftsRef = useRef<Record<string, ProviderDraft>>({});
-  const [testStates, setTestStates] = useState<Record<string, TestState>>({});
-  const [connectionTestStates, setConnectionTestStates] = useState<Record<string, ProviderConnectionTestState>>({});
-  const [remoteModels, setRemoteModels] = useState<RemoteModel[]>([]);
-  const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const [modelPickerLoading, setModelPickerLoading] = useState(false);
-  const [modelPickerError, setModelPickerError] = useState("");
-  const [addedModels, setAddedModels] = useState<AddedModel[]>([]);
-  const [modelDefaults, setModelDefaults] = useState<ModelDefaults>(emptyModelDefaults);
-  const [loadError, setLoadError] = useState("");
-  const [nameDraft, setNameDraft] = useState(userName);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [accountFeedback, setAccountFeedback] = useState<TestState>({
+  const [testStates, setTestStates] = useScopedState<Record<string, TestState>>({}, isCurrentScope);
+  const [connectionTestStates, setConnectionTestStates] = useScopedState<Record<string, ProviderConnectionTestState>>({}, isCurrentScope);
+  const [providerPageEntryVersion, setProviderPageEntryVersion] = useScopedState(0, isCurrentScope);
+  const [remoteModels, setRemoteModels] = useScopedState<RemoteModel[]>([], isCurrentScope);
+  const [modelPickerOpen, setModelPickerOpen] = useScopedState(false, isCurrentScope);
+  const [modelPickerLoading, setModelPickerLoading] = useScopedState(false, isCurrentScope);
+  const [modelPickerError, setModelPickerError] = useScopedState("", isCurrentScope);
+  const addedModels = modelCatalog.models;
+  function setAddedModels(next: SetStateAction<AddedModel[]>) {
+    if (isCurrentScope()) onModelsChanged(current => ({ ...current, models: typeof next === "function" ? next(current.models) : next }));
+  }
+  function setModelDefaults(next: SetStateAction<ModelDefaults>) {
+    if (isCurrentScope()) onModelsChanged(current => ({ ...current, defaults: typeof next === "function" ? next(current.defaults) : next }));
+  }
+  function publishModelCatalog(models: AddedModel[], defaults: ModelDefaults) {
+    if (isCurrentScope()) onModelsChanged({ models, defaults, status: "ready", error: "" });
+  }
+  const [addingRemoteModelIds, setAddingRemoteModelIds] = useScopedState<string[]>([], isCurrentScope);
+  const [probingModelIds, setProbingModelIds] = useScopedState<string[]>([], isCurrentScope);
+  const [savingModelIds, setSavingModelIds] = useScopedState<string[]>([], isCurrentScope);
+  const modelDefaults = modelCatalog.defaults;
+  const composerSubmitShortcut = useComposerSubmitShortcut(accountId);
+  const contextDisplaySettings = useContextAssemblyDisplaySettings(accountId);
+  const toolDisplayTypes = useToolExecutionDisplayTypes(accountId);
+  const [webAccess, setWebAccess] = useScopedState<WebAccessSettings | null>(null, isCurrentScope);
+  const [webApiUrls, setWebApiUrls] = useScopedState<Record<string, string>>({}, isCurrentScope);
+  const [webApiKeys, setWebApiKeys] = useScopedState<Record<string, string>>({}, isCurrentScope);
+  const [dirtyWebApiUrls, setDirtyWebApiUrls] = useScopedState<Record<string, boolean>>({}, isCurrentScope);
+  const [dirtyWebCredentials, setDirtyWebCredentials] = useScopedState<Record<string, boolean>>({}, isCurrentScope);
+  const [webFeedback, setWebFeedback] = useScopedState<TestState>({
     status: "idle",
     message: ""
-  });
-  const connectionFeedbackTimeoutsRef = useRef<Record<string, number>>({});
+  }, isCurrentScope);
+  const [webProviderFeedback, setWebProviderFeedback] = useScopedState<Record<string, TestState>>({}, isCurrentScope);
+  const [webConnectionTestStates, setWebConnectionTestStates] = useScopedState<Record<string, ProviderConnectionTestState>>({}, isCurrentScope);
+  const [loadError, setLoadError] = useScopedState("", isCurrentScope);
+  const [accountDraft, setAccountDraft] = useScopedState(account, isCurrentScope);
+  const [nameDraft, setNameDraft] = useScopedState(accountName, isCurrentScope);
+  const [currentPassword, setCurrentPassword] = useScopedState("", isCurrentScope);
+  const [newPassword, setNewPassword] = useScopedState("", isCurrentScope);
+  const [confirmPassword, setConfirmPassword] = useScopedState("", isCurrentScope);
+  const [accountFeedback, setAccountFeedback] = useScopedState<TestState>({
+    status: "idle",
+    message: ""
+  }, isCurrentScope);
+  const revealingProviderIdsRef = useRef(new Set<string>());
+  const revealingWebProviderIdsRef = useRef(new Set<string>());
+  const webApiUrlsRef = useRef<Record<string, string>>({});
+  const savedWebApiUrlsRef = useRef<Record<string, string>>({});
+  const webApiUrlSavePromisesRef = useRef<Record<string, Promise<boolean>>>({});
+  const webApiKeysRef = useRef<Record<string, string>>({});
+  const savedWebApiKeysRef = useRef<Record<string, string>>({});
+  const webCredentialSavePromisesRef = useRef<Record<string, Promise<boolean>>>({});
+  const providerConnectionTestRequestIdsRef = useRef(new Map<string, number>());
+  const webConnectionTestRequestIdsRef = useRef(new Map<string, number>());
+  const modelProbeAbortControllersRef = useRef(new Map<string, AbortController>());
+  const previousAccountRef = useRef(account);
+  const previousAccountNameRef = useRef(accountName);
+  const accountSaveRequestIdRef = useRef(0);
 
   useEffect(() => {
-    setNameDraft(userName);
-  }, [userName]);
+    const previousAccount = previousAccountRef.current;
+    previousAccountRef.current = account;
+    setAccountDraft((current) => current === previousAccount ? account : current);
+  }, [account]);
 
   useEffect(() => {
+    const previousAccountName = previousAccountNameRef.current;
+    previousAccountNameRef.current = accountName;
+    setNameDraft((current) => current === previousAccountName ? accountName : current);
+  }, [accountName]);
+
+  useEffect(() => {
+    const trimmedAccount = accountDraft.trim();
     const trimmedName = nameDraft.trim();
-    if (trimmedName === userName) {
+    if (trimmedAccount === account && trimmedName === accountName) {
+      return;
+    }
+    accountSaveRequestIdRef.current += 1;
+    const requestId = accountSaveRequestIdRef.current;
+    if (!accountIdentifierPattern.test(trimmedAccount)) {
+      setAccountFeedback({
+        status: "error",
+        message: "用户标识只能包含字母、数字、下划线和短横线，长度不超过 20。"
+      });
+      return;
+    }
+    if (trimmedAccount.toLowerCase() === "all_users") {
+      setAccountFeedback({
+        status: "error",
+        message: "该用户标识不可使用。"
+      });
       return;
     }
     if (!trimmedName) {
       setAccountFeedback({
         status: "error",
-        message: "用户名称不能为空。"
+        message: "账号名称不能为空。"
       });
       return;
     }
-    if (userNameSpacePattern.test(nameDraft)) {
+    if (accountNameLength(trimmedName) > 50) {
       setAccountFeedback({
         status: "error",
-        message: "用户名称不能包含空格。"
+        message: "账号名称不能超过 50 个字符。"
       });
       return;
     }
@@ -111,20 +209,14 @@ export function SettingsShell({
     });
 
     const autosaveHandle = window.setTimeout(() => {
-      void autoSaveAccountName(trimmedName);
-    }, accountAutoSaveDelayMs);
+      void autoSaveAccountProfile(trimmedAccount, trimmedName, requestId);
+    }, settingsAutoSaveDelayMs);
 
     return () => window.clearTimeout(autosaveHandle);
-  }, [nameDraft, userName]);
+  }, [account, accountDraft, nameDraft, accountName]);
 
   useEffect(() => {
     void loadSettings();
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      Object.values(connectionFeedbackTimeoutsRef.current).forEach((timeoutId) => window.clearTimeout(timeoutId));
-    };
   }, []);
 
   const selectedProvider = useMemo(
@@ -142,72 +234,49 @@ export function SettingsShell({
   }));
   const chatDefaultModelId = modelDefaults.chat?.model_id ?? "";
   const providerIdsKey = providers.map((provider) => provider.provider_id).join("|");
+  const dirtyWebCredentialIds = Object.entries(dirtyWebCredentials)
+    .filter(([, dirty]) => dirty)
+    .map(([providerId]) => providerId)
+    .sort();
+  const dirtyWebCredentialIdsKey = dirtyWebCredentialIds.join("|");
+  const dirtyWebApiUrlIds = Object.entries(dirtyWebApiUrls)
+    .filter(([, dirty]) => dirty)
+    .map(([providerId]) => providerId)
+    .sort();
+  const dirtyWebApiUrlIdsKey = dirtyWebApiUrlIds.join("|");
 
   useEffect(() => {
     if (activeSection !== "providers" || !providers.length) {
       return;
     }
     testAllProviderConnections(providers, drafts);
-  }, [activeSection, providerIdsKey]);
+  }, [activeSection, providerIdsKey, providerPageEntryVersion]);
 
-  function selectAccountPanel(panel: AccountPanel) {
-    setActiveSection("account");
-    setAccountPanel(panel);
-    setMobileLayer(panel === "profile" ? "account-profile" : "account-password");
-  }
-
-  function selectProvidersRoot() {
-    setActiveSection("providers");
-    setMobileLayer("provider-list");
-  }
-
-  function selectDefaultsRoot() {
-    setActiveSection("defaults");
-    setMobileLayer("default-models");
-  }
-
-  function selectProvider(providerId: string) {
-    setActiveSection("providers");
-    setSelectedProviderId(providerId);
-    setRemoteModels([]);
-    setModelPickerError("");
-    setMobileLayer("provider-detail");
-  }
-
-  function settingsMobileLayerTitle() {
-    if (mobileLayer === "provider-list") {
-      return "模型提供方";
-    }
-    if (mobileLayer === "default-models") {
-      return "默认模型";
-    }
-    if (mobileLayer === "account-profile") {
-      return "账号资料";
-    }
-    if (mobileLayer === "account-password") {
-      return "密码安全";
-    }
-    if (mobileLayer === "provider-detail") {
-      return selectedProvider?.provider_name ?? "模型提供方";
-    }
-    return "账号设置";
-  }
-
-  function goBackSettingsLayer() {
-    if (mobileLayer === "account-profile" || mobileLayer === "account-password") {
-      setMobileLayer("root");
+  useEffect(() => {
+    if (activeSection !== "web" || !dirtyWebCredentialIds.length) {
       return;
     }
-    if (mobileLayer === "provider-detail") {
-      setMobileLayer("provider-list");
+    const providerIds = dirtyWebCredentialIds.filter(
+      (providerId) => Boolean(webApiKeys[providerId]?.trim())
+    );
+    if (!providerIds.length) {
       return;
     }
-    if (mobileLayer === "default-models") {
-      setMobileLayer("root");
+    const autosaveHandle = window.setTimeout(() => {
+      providerIds.forEach((providerId) => void saveWebCredential(providerId));
+    }, settingsAutoSaveDelayMs);
+    return () => window.clearTimeout(autosaveHandle);
+  }, [activeSection, dirtyWebCredentialIdsKey, webApiKeys]);
+
+  useEffect(() => {
+    if (activeSection !== "web" || !dirtyWebApiUrlIds.length) {
       return;
     }
-    setMobileLayer("root");
-  }
+    const autosaveHandle = window.setTimeout(() => {
+      dirtyWebApiUrlIds.forEach((providerId) => void saveWebApiUrl(providerId));
+    }, settingsAutoSaveDelayMs);
+    return () => window.clearTimeout(autosaveHandle);
+  }, [activeSection, dirtyWebApiUrlIdsKey, webApiUrls]);
 
   useEffect(() => {
     if (activeSection !== "providers" || !selectedProvider || !selectedDraft) {
@@ -226,27 +295,35 @@ export function SettingsShell({
     activeSection,
     selectedProvider?.provider_id,
     selectedDraft?.officialUrl,
-    selectedDraft?.baseUrl,
+    selectedDraft?.apiUrl,
     selectedDraft?.apiKey
   ]);
 
   async function loadSettings() {
     try {
-      const [providerResponse, modelResponse] = await Promise.all([
+      const [providerResponse, modelResponse, webResponse] = await Promise.all([
         apiClient.fetchModelProviders(),
-        apiClient.fetchModels()
+        apiClient.fetchModels(),
+        apiClient.fetchWebAccessSettings()
       ]);
       const defaultsResponse = await apiClient.fetchModelDefaults();
       setProviders(providerResponse.providers);
-      setAddedModels(modelResponse.models);
-      setModelDefaults(defaultsResponse.defaults);
+      publishModelCatalog(modelResponse.models, defaultsResponse.defaults);
+      setWebAccess(webResponse);
+      const nextWebApiUrls = Object.fromEntries(
+        webResponse.providers.map((provider) => [provider.provider_id, provider.api_url])
+      );
+      webApiUrlsRef.current = nextWebApiUrls;
+      savedWebApiUrlsRef.current = nextWebApiUrls;
+      setWebApiUrls(nextWebApiUrls);
+      setDirtyWebApiUrls({});
       setSelectedProviderId((current) => current || providerResponse.providers[0]?.provider_id || "");
       const nextDrafts = { ...drafts };
       for (const provider of providerResponse.providers) {
         nextDrafts[provider.provider_id] = {
           officialUrl: provider.official_url || provider.default_official_url || "",
-          baseUrl: provider.base_url || provider.default_base_url || "",
-          apiKey: provider.api_key || nextDrafts[provider.provider_id]?.apiKey || ""
+          apiUrl: provider.api_url || provider.default_api_url || "",
+          apiKey: nextDrafts[provider.provider_id]?.apiKey || ""
         };
       }
       savedDraftsRef.current = nextDrafts;
@@ -258,340 +335,150 @@ export function SettingsShell({
       setLoadError(error instanceof Error ? error.message : "模型提供方加载失败");
     }
   }
-
-  function updateDraft(providerId: string, patch: Partial<ProviderDraft>) {
-    setDrafts((current) => ({
-      ...current,
-      [providerId]: {
-        ...current[providerId],
-        ...patch
-      }
-    }));
-  }
-
-  async function autoSaveAccountName(trimmedName: string) {
-    try {
-      const result = await apiClient.updateAccount(trimmedName);
-      onUserNameChange(result.user_name);
-      setAccountFeedback({
-        status: "success",
-        message: "已保存。"
-      });
-    } catch (error) {
-      setAccountFeedback({
-        status: "error",
-        message: error instanceof Error ? error.message : "保存失败。"
-      });
-    }
-  }
-
-  async function changePassword(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!currentPassword.trim()) {
-      setAccountFeedback({
-        status: "error",
-        message: "请输入当前密码。"
-      });
-      return;
-    }
-    if (!newPassword.trim()) {
-      setAccountFeedback({
-        status: "error",
-        message: "新密码不能为空。"
-      });
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setAccountFeedback({
-        status: "error",
-        message: "两次输入的新密码不一致。"
-      });
-      return;
-    }
-
-    try {
-      const result = await apiClient.changePassword(currentPassword, newPassword, confirmPassword);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setAccountFeedback({
-        status: "success",
-        message: result.message
-      });
-    } catch (error) {
-      setAccountFeedback({
-        status: "error",
-        message: error instanceof Error ? error.message : "密码更新失败。"
-      });
-    }
-  }
-
-  async function autoSaveProviderDraft(providerId: string, draft: ProviderDraft) {
-    const provider = providers.find((item) => item.provider_id === providerId);
-    if (!provider) {
-      return;
-    }
-    try {
-      setTestStates((current) => ({
-        ...current,
-        [providerId]: {
-          status: "saving",
-          message: "保存中..."
-        }
-      }));
-      const shouldBecomeDefault = provider.default;
-      const result = await apiClient.saveModelProvider(
-        providerId,
-        draft.baseUrl,
-        draft.officialUrl,
-        draft.apiKey,
-        shouldBecomeDefault
-      );
-      savedDraftsRef.current = {
-        ...savedDraftsRef.current,
-        [providerId]: {
-          officialUrl: result.official_url || draft.officialUrl,
-          baseUrl: result.base_url || draft.baseUrl,
-          apiKey: result.api_key ?? draft.apiKey
-        }
-      };
-      setProviders((current) =>
-        current.map((item) => (item.provider_id === providerId ? { ...item, ...result } : item))
-      );
-      setTestStates((current) => ({
-        ...current,
-        [providerId]: {
-          status: "success",
-          message: "已保存。"
-        }
-      }));
-    } catch (error) {
-      setTestStates((current) => ({
-        ...current,
-        [providerId]: {
-          status: "error",
-          message: error instanceof Error ? error.message : "保存失败。"
-        }
-      }));
-    }
-  }
-
-  function setProviderConnectionTestState(providerId: string, state: ProviderConnectionTestState) {
-    setConnectionTestStates((current) => ({
-      ...current,
-      [providerId]: state
-    }));
-  }
-
-  function scheduleProviderConnectionFeedbackReset(providerId: string) {
-    const existingTimeoutId = connectionFeedbackTimeoutsRef.current[providerId];
-    if (existingTimeoutId) {
-      window.clearTimeout(existingTimeoutId);
-    }
-    connectionFeedbackTimeoutsRef.current[providerId] = window.setTimeout(() => {
-      setProviderConnectionTestState(providerId, defaultConnectionTestState);
-      delete connectionFeedbackTimeoutsRef.current[providerId];
-    }, providerConnectionFeedbackDurationMs);
-  }
-
-  function testAllProviderConnections(providerItems: ProviderSummary[], draftSource: Record<string, ProviderDraft>) {
-    setConnectionTestStates((current) => {
-      const next = { ...current };
-      for (const provider of providerItems) {
-        next[provider.provider_id] = {
-          status: "idle",
-          message: ""
-        };
-      }
-      return next;
-    });
-    for (const provider of providerItems) {
-      void testProviderConnection(provider.provider_id, {}, draftSource);
-    }
-  }
-
-  async function testProviderConnection(
-    providerId: string,
-    options: { notify?: boolean } = {},
-    draftSource: Record<string, ProviderDraft> = drafts
-  ) {
-    const draft = draftSource[providerId];
-    if (!draft) {
-      return;
-    }
-
-    setProviderConnectionTestState(providerId, {
-      status: "testing",
-      message: "测试连接"
-    });
-
-    try {
-      const result = await apiClient.testModelProvider(
-        providerId,
-        draft.baseUrl,
-        draft.apiKey
-      );
-      setProviderConnectionTestState(providerId, {
-        status: result.reachable ? "success" : "error",
-        message: result.reachable ? "连接成功" : "连接失败"
-      });
-      scheduleProviderConnectionFeedbackReset(providerId);
-    } catch (error) {
-      setProviderConnectionTestState(providerId, {
-        status: "error",
-        message: error instanceof Error ? error.message : "连接失败"
-      });
-      scheduleProviderConnectionFeedbackReset(providerId);
-    }
-  }
-
-  async function openAddModelModal() {
-    if (!selectedProvider || !selectedDraft) {
-      return;
-    }
-    setModelPickerOpen(true);
-    await loadRemoteModels();
-  }
-
-  async function loadRemoteModels() {
-    if (!selectedProvider || !selectedDraft) {
-      return;
-    }
-    const providerId = selectedProvider.provider_id;
-    setModelPickerLoading(true);
-    setModelPickerError("");
-    setRemoteModels([]);
-    try {
-      await autoSaveProviderDraft(providerId, selectedDraft);
-      const result = await apiClient.fetchProviderModels(providerId);
-      setRemoteModels(result.models);
-      setTestStates((current) => ({
-        ...current,
-        [providerId]: {
-          status: "success",
-          message: "已加载。"
-        }
-      }));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "模型列表加载失败。";
-      setModelPickerError(message);
-      setTestStates((current) => ({
-        ...current,
-        [providerId]: {
-          status: "error",
-          message
-        }
-      }));
-    } finally {
-      setModelPickerLoading(false);
-    }
-  }
-
-  function retryLoadRemoteModels() {
-    void loadRemoteModels();
-  }
-
-  async function addRemoteModel(model: RemoteModel) {
-    if (!selectedProvider) {
-      return;
-    }
-    try {
-      const addedModel = await apiClient.addModel(
-        selectedProvider.provider_id,
-        model.remote_model_id,
-        model.model_name,
-        model
-      );
-      const modelResponse = await apiClient.fetchModels();
-      setAddedModels(modelResponse.models);
-      if (!chatDefaultModelId) {
-        const defaultsResponse = await apiClient.updateModelDefaults({
-          chat: addedModel.model_id
-        });
-        setModelDefaults(defaultsResponse.defaults);
-      }
-      await onModelsChanged();
-      setTestStates((current) => ({
-        ...current,
-        [selectedProvider.provider_id]: {
-          status: "success",
-          message: "模型已添加。"
-        }
-      }));
-    } catch (error) {
-      setTestStates((current) => ({
-        ...current,
-        [selectedProvider.provider_id]: {
-          status: "error",
-          message: error instanceof Error ? error.message : "模型保存失败。"
-        }
-      }));
-    }
-  }
-
-  async function updateDefaultModel(usage: DefaultModelUsage, nextModelId: string) {
-    const previousDefaults = modelDefaults;
-    try {
-      const nextModel = addedModels.find((model) => model.model_id === nextModelId) ?? null;
-      setModelDefaults((current) => ({
-        ...current,
-        [usage]: nextModel
-      }));
-      const defaultsResponse = await apiClient.updateModelDefaults({ [usage]: nextModelId || null });
-      setModelDefaults(defaultsResponse.defaults);
-      if (usage === "chat") {
-        await onModelsChanged();
-      }
-    } catch {
-      setModelDefaults(previousDefaults);
-    }
-  }
-
-  async function deleteAddedModel(modelId: string) {
-    if (!selectedProvider) {
-      return;
-    }
-    try {
-      await apiClient.deleteModel(modelId);
-      const [modelResponse, defaultsResponse] = await Promise.all([
-        apiClient.fetchModels(),
-        apiClient.fetchModelDefaults()
-      ]);
-      setAddedModels(modelResponse.models);
-      setModelDefaults(defaultsResponse.defaults);
-      await onModelsChanged();
-      setTestStates((current) => ({
-        ...current,
-        [selectedProvider.provider_id]: {
-          status: "success",
-          message: "模型已删除。"
-        }
-      }));
-    } catch (error) {
-      setTestStates((current) => ({
-        ...current,
-        [selectedProvider.provider_id]: {
-          status: "error",
-          message: error instanceof Error ? error.message : "模型删除失败。"
-        }
-      }));
-    }
-  }
+  const { autoSaveAccountProfile, changePassword } = createAccountSettingsActions({
+    serialTasks,
+    isCurrentScope,
+    accountSaveRequestIdRef,
+    onAccountProfileChange,
+    setAccountDraft,
+    setNameDraft,
+    setAccountFeedback,
+    currentPassword,
+    newPassword,
+    confirmPassword,
+    setCurrentPassword,
+    setNewPassword,
+    setConfirmPassword
+  });
+  const { updateDraft, revealModelCredential, autoSaveProviderDraft, testAllProviderConnections, testProviderConnection } = createProviderSettingsActions({
+    credentialDraftRevisions,
+    drafts,
+    providerConnectionTestRequestIdsRef,
+    setDrafts,
+    providers,
+    revealingProviderIdsRef,
+    isCurrentScope,
+    draftsRef,
+    savedDraftsRef,
+    setTestStates,
+    serialTasks,
+    setProviders,
+    setConnectionTestStates
+  });
+  const { openAddModelModal, retryLoadRemoteModels, addRemoteModel, probeAddedModel, updateAddedModel, deleteAddedModel } = createModelSettingsActions({
+    selectedProvider,
+    selectedDraft,
+    setModelPickerOpen,
+    setModelPickerLoading,
+    setModelPickerError,
+    setRemoteModels,
+    autoSaveProviderDraft,
+    setTestStates,
+    setAddingRemoteModelIds,
+    setAddedModels,
+    chatDefaultModelId,
+    setModelDefaults,
+    modelProbeAbortControllersRef,
+    setProbingModelIds,
+    publishModelCatalog,
+    setSavingModelIds
+  });
+  const { updateDefaultModel } = createDefaultModelActions({ defaultSaveSequences, addedModels, setModelDefaults, serialTasks, isCurrentScope });
+  const { updateWebApiUrl, saveWebApiUrl, updateWebApiKey, revealWebCredential, updateWebSettings, saveWebCredential, testWebProvider } = createWebSettingsActions({
+    webConnectionTestRequestIdsRef,
+    setWebConnectionTestStates,
+    setWebProviderFeedback,
+    credentialDraftRevisions,
+    webApiUrlsRef,
+    setWebApiUrls,
+    setDirtyWebApiUrls,
+    savedWebApiUrlsRef,
+    webApiUrlSavePromisesRef,
+    setWebFeedback,
+    serialTasks,
+    isCurrentScope,
+    setWebAccess,
+    webApiKeysRef,
+    setWebApiKeys,
+    setDirtyWebCredentials,
+    savedWebApiKeysRef,
+    webAccess,
+    webApiKeys,
+    revealingWebProviderIdsRef,
+    webSettingsSequence,
+    dirtyWebCredentials,
+    webCredentialSavePromisesRef,
+    dirtyWebApiUrls
+  });
+  const {
+    selectAccountPanel,
+    selectProvidersRoot,
+    selectDefaultsRoot,
+    selectConversationRoot,
+    selectConversationSection,
+    selectMembersRoot,
+    selectWebRoot,
+    selectLabCatalogRoot,
+    openSettingsDetail,
+    selectProvider,
+    closeSettingsDetail,
+    settingsMobileLayerTitle,
+    goBackSettingsLayer
+  } = createSettingsNavigationActions({
+    setActiveSection,
+    setAccountPanel,
+    setMobileLayer,
+    setDetailOpen,
+    providers,
+    providerConnectionTestRequestIdsRef,
+    setConnectionTestStates,
+    setProviderPageEntryVersion,
+    setConversationSection,
+    webAccess,
+    webConnectionTestRequestIdsRef,
+    setWebConnectionTestStates,
+    setWebProviderFeedback,
+    activeSection,
+    setSelectedProviderId,
+    setRemoteModels,
+    setModelPickerError,
+    mobileLayer
+  });
+  const {
+    updateContextDisplayType,
+    updateComposerSubmitShortcut,
+    updateBaseContextDisplayMode,
+    updateShowContextWindowUsage,
+    updateShowRelatedContent,
+    updateShowTokenUsage,
+    updateToolDisplayType
+  } = createConversationSettingsActions({ accountId, contextDisplaySettings, toolDisplayTypes });
 
   return (
     <SettingsView
-      account={account}
+      accountDraft={accountDraft}
       accountFeedback={accountFeedback}
       accountPanel={accountPanel}
       activeSection={activeSection}
       addedModels={addedModels}
       addRemoteModel={addRemoteModel}
+      addingRemoteModelIds={addingRemoteModelIds}
       changePassword={changePassword}
       confirmPassword={confirmPassword}
+      conversationSection={conversationSection}
+      composerSubmitShortcut={composerSubmitShortcut}
+      baseContextDisplayModes={contextDisplaySettings.baseModes}
+      contextDisplayTypes={contextDisplaySettings.visibleContextTypes}
+      showContextWindowUsage={contextDisplaySettings.showContextWindowUsage}
+      showRelatedContent={contextDisplaySettings.showRelatedContent}
+      showTokenUsage={contextDisplaySettings.showTokenUsage}
+      toolDisplayTypes={toolDisplayTypes}
       currentPassword={currentPassword}
       deleteAddedModel={deleteAddedModel}
       defaultModelItems={defaultModelItems}
       defaultModelOptions={addedModels}
+      detailOpen={detailOpen}
+      closeSettingsDetail={closeSettingsDetail}
       goBackSettingsLayer={goBackSettingsLayer}
       loadError={loadError}
       mobileLayer={mobileLayer}
@@ -599,9 +486,12 @@ export function SettingsShell({
       modelPickerError={modelPickerError}
       modelPickerLoading={modelPickerLoading}
       modelPickerOpen={modelPickerOpen}
+      probingModelIds={probingModelIds}
+      probeAddedModel={probeAddedModel}
       nameDraft={nameDraft}
       newPassword={newPassword}
       openAddModelModal={openAddModelModal}
+      onReportsChanged={onReportsChanged}
       onSignOut={onSignOut}
       providerConnectionStates={connectionTestStates}
       providers={providers}
@@ -612,19 +502,48 @@ export function SettingsShell({
       selectedProviderId={selectedProviderId}
       selectedProviderModels={selectedProviderModels}
       selectAccountPanel={selectAccountPanel}
+      selectConversationRoot={selectConversationRoot}
+      selectConversationSection={selectConversationSection}
       selectDefaultsRoot={selectDefaultsRoot}
+      selectLabCatalogRoot={selectLabCatalogRoot}
+      openSettingsDetail={openSettingsDetail}
       selectProvider={selectProvider}
       selectProvidersRoot={selectProvidersRoot}
       setConfirmPassword={setConfirmPassword}
       setCurrentPassword={setCurrentPassword}
+      setAccountDraft={setAccountDraft}
       setModelPickerOpen={setModelPickerOpen}
       setNameDraft={setNameDraft}
       setNewPassword={setNewPassword}
       retryLoadRemoteModels={retryLoadRemoteModels}
+      revealModelCredential={revealModelCredential}
+      revealWebCredential={revealWebCredential}
       settingsMobileLayerTitle={settingsMobileLayerTitle}
       testProviderConnection={testProviderConnection}
+      savingModelIds={savingModelIds}
       updateDefaultModel={updateDefaultModel}
+      updateBaseContextDisplayMode={updateBaseContextDisplayMode}
+      updateComposerSubmitShortcut={updateComposerSubmitShortcut}
+      updateContextDisplayType={updateContextDisplayType}
+      updateShowRelatedContent={updateShowRelatedContent}
+      updateShowContextWindowUsage={updateShowContextWindowUsage}
+      updateShowTokenUsage={updateShowTokenUsage}
+      updateToolDisplayType={updateToolDisplayType}
       updateDraft={updateDraft}
+      updateAddedModel={updateAddedModel}
+      updateWebApiKey={updateWebApiKey}
+      updateWebSettings={updateWebSettings}
+      selectWebRoot={selectWebRoot}
+      selectMembersRoot={selectMembersRoot}
+      webAccess={webAccess}
+      webApiUrls={webApiUrls}
+      webApiKeys={webApiKeys}
+      webFeedback={webFeedback}
+      webConnectionTestStates={webConnectionTestStates}
+      webProviderFeedback={webProviderFeedback}
+      saveWebApiUrl={saveWebApiUrl}
+      testWebProvider={testWebProvider}
+      updateWebApiUrl={updateWebApiUrl}
     />
   );
 }

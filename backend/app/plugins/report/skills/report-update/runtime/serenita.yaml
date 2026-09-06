@@ -1,0 +1,7 @@
+allowed_tools:
+  - "validate_parsed_reports"
+  - "update_report_fields"
+  - "add_lab_report_items"
+  - "delete_lab_report_items"
+  - "reclassify_report"
+  - "delete_report"

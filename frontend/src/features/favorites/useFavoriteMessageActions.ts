@@ -8,6 +8,7 @@ import {
   type Favorite,
   apiClient
 } from "../../api/client";
+import { showStatusNotification } from "../../components/StatusNotificationCenter";
 
 type FavoriteMessageActionsOptions = {
   currentSessionId: string | null;
@@ -35,6 +36,11 @@ export function useFavoriteMessageActions({
       }
       const response = await apiClient.fetchFavorites();
       setFavorites(response.favorites);
+      showStatusNotification({
+        id: `favorite-message-${message.message_id}`,
+        message: existing ? "已取消收藏。" : "已收藏。",
+        tone: "success"
+      });
     } catch (error) {
       setComposerError(error instanceof Error ? error.message : "收藏操作失败。");
     }

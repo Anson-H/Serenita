@@ -1,29 +1,57 @@
 /* Base reset and native element defaults */
 
 :root {
-  color: var(--ink);
-  background: var(--page-bg);
+  color: var(--color-foreground);
   font-family: var(--font-ui);
-  font-size: var(--text-ui);
-  line-height: var(--line-copy);
-  --conversation-copy-line-height: 20px;
+  font-size: var(--text-body);
+  line-height: var(--line-body);
 }
 
 * {
   box-sizing: border-box;
 }
 
+/* Standard scrollbar colors override WebKit sizing when both are supported. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar-thumb) transparent;
+  }
+}
+
+*::-webkit-scrollbar {
+  width: var(--size-scrollbar);
+  height: var(--size-scrollbar);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: var(--size-scrollbar-thumb-inset) solid transparent;
+  border-radius: var(--radius-scrollbar-thumb);
+  background-color: var(--color-scrollbar-thumb);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-scrollbar-thumb-hover);
+}
+
 body {
   margin: 0;
-  min-width: 300px;
+  min-width: var(--size-page-min-width);
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 20% 8%, oklch(91.5% 0.055 292 / 0.62), transparent 34rem),
-    radial-gradient(circle at 88% 14%, oklch(92.5% 0.046 255 / 0.5), transparent 32rem),
-    linear-gradient(135deg, var(--page-bg) 0%, var(--surface) 48%, var(--page-wash) 100%);
-  color: var(--ink);
+  color: var(--color-foreground);
   font-feature-settings: "ss01" 1;
   text-rendering: optimizeLegibility;
+}
+
+@supports (height: 100dvh) {
+  body {
+    min-height: 100dvh;
+  }
 }
 
 button,
@@ -48,51 +76,11 @@ button:disabled {
   opacity: 0.72;
 }
 
-button:hover:not(:disabled) {
-  transform: none;
-}
-
-button:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible,
-summary:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-input,
-select {
-  min-height: 44px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--surface-strong);
-  color: var(--ink);
-  padding: 0 12px;
-  font-size: var(--text-ui);
-  line-height: var(--line-ui);
-}
-
-input {
-  width: 100%;
-}
-
-select {
-  max-width: 240px;
-}
-
-input:focus-visible,
-select:focus-visible {
-  border-color: var(--line-strong);
-}
-
-input[readonly] {
-  background: var(--surface-muted);
-  color: var(--muted);
-}
-
-input:hover,
-select:hover,
-textarea:hover {
-  border-color: var(--line-strong);
+@media (prefers-reduced-motion: reduce) {
+*,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
 }

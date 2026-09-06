@@ -1,14 +1,14 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 
 import type { AuthSession, ConversationSummary } from "../api/client";
-import { SidebarBackIcon } from "../components/icons";
+import { SidebarCollapsedIcon } from "../components/icons";
+import type { ScenarioTab } from "../features/conversations/workspaceTypes";
 import { PatientShell } from "./PatientShell";
 import type { RoutePath } from "./routes";
 import { useResponsiveSidebar } from "./useResponsiveSidebar";
-import type { ScenarioTab } from "../features/conversations/workspaceTypes";
 
 export type WorkspaceRouteShellControls = {
-  closeMobileSidebar: () => void;
+  collapseMobileSidebar: () => void;
   collapseSidebarFromSidebar: () => void;
   mobileSidebarOpen: boolean;
   renderSidebarToggle: (extraClassName?: string) => ReactNode;
@@ -18,18 +18,21 @@ export type WorkspaceRouteShellControls = {
 };
 
 type WorkspaceRouteShellProps = {
+  healthNavigation: ReactNode;
   activeScenario: ScenarioTab;
-  activeView: "home" | "health";
   children: ReactNode;
   conversations: ConversationSummary[];
   currentSession: Extract<AuthSession, { authenticated: true }>;
   currentSessionId: string | null;
-  onDeleteConversation: (sessionId: string) => void;
+  onBatchDeleteConversations: (sessionIds: string[]) => Promise<string[]>;
+  onBatchPinConversations: (sessionIds: string[], isPinned: boolean) => Promise<boolean>;
+  onDeleteConversation: (sessionId: string) => Promise<boolean>;
+  onForkConversation: (sessionId: string) => void;
   onNavigate: (path: RoutePath) => void;
   onOpenConversation: (sessionId: string) => void;
-  onScenarioChange: (scenario: ScenarioTab) => void;
+  onRenameConversation: (sessionId: string, title: string) => Promise<boolean>;
+  onSetConversationPinned: (sessionId: string, isPinned: boolean) => Promise<boolean>;
   onStartConversation: () => void;
-  onSwitchView: (view: "home" | "health") => void;
   route: RoutePath;
   shellControls: WorkspaceRouteShellControls;
   ShellComponent?: typeof PatientShell;
@@ -49,7 +52,7 @@ export function useWorkspaceRouteShell(): WorkspaceRouteShellControls {
   const sidebarToggleLabel = sidebarToggleExpanded ? "折叠侧边栏" : "展开侧边栏";
   const showWorkspaceSidebarToggle = compactSidebarMode ? !mobileSidebarOpen : sidebarCollapsed;
 
-  function closeMobileSidebar() {
+  function collapseMobileSidebar() {
     setMobileSidebarOpen(false);
   }
 
@@ -57,7 +60,12 @@ export function useWorkspaceRouteShell(): WorkspaceRouteShellControls {
     if (!showWorkspaceSidebarToggle) {
       return null;
     }
-    const className = ["sidebar-toggle-button", extraClassName].filter(Boolean).join(" ");
+    const className = [
+      "control control--titlebar control--icon control--ghost",
+      "sidebar-toggle-button",
+      "titlebar-icon-control",
+      extraClassName
+    ].filter(Boolean).join(" ");
     return (
       <button
         aria-expanded={sidebarToggleExpanded}
@@ -67,13 +75,13 @@ export function useWorkspaceRouteShell(): WorkspaceRouteShellControls {
         title={sidebarToggleLabel}
         type="button"
       >
-        <SidebarBackIcon />
+        <SidebarCollapsedIcon />
       </button>
     );
   }
 
   return {
-    closeMobileSidebar,
+    collapseMobileSidebar,
     collapseSidebarFromSidebar,
     mobileSidebarOpen,
     renderSidebarToggle,
@@ -84,38 +92,44 @@ export function useWorkspaceRouteShell(): WorkspaceRouteShellControls {
 }
 
 export function WorkspaceRouteShell({
+  healthNavigation,
   activeScenario,
-  activeView,
   children,
   conversations,
   currentSession,
   currentSessionId,
+  onBatchDeleteConversations,
+  onBatchPinConversations,
   onDeleteConversation,
+  onForkConversation,
   onNavigate,
   onOpenConversation,
-  onScenarioChange,
+  onRenameConversation,
+  onSetConversationPinned,
   onStartConversation,
-  onSwitchView,
   route,
   shellControls,
   ShellComponent = PatientShell
 }: WorkspaceRouteShellProps) {
   return (
     <ShellComponent
+      healthNavigation={healthNavigation}
       activeScenario={activeScenario}
-      activeView={activeView}
       conversations={conversations}
       currentSession={currentSession}
       currentSessionId={currentSessionId}
       mobileSidebarOpen={shellControls.mobileSidebarOpen}
-      onCloseMobileSidebar={shellControls.closeMobileSidebar}
+      onBatchDeleteConversations={onBatchDeleteConversations}
+      onBatchPinConversations={onBatchPinConversations}
+      onCollapseMobileSidebar={shellControls.collapseMobileSidebar}
       onCollapseSidebar={shellControls.collapseSidebarFromSidebar}
       onDeleteConversation={onDeleteConversation}
+      onForkConversation={onForkConversation}
       onNavigate={onNavigate}
       onOpenConversation={onOpenConversation}
-      onScenarioChange={onScenarioChange}
+      onRenameConversation={onRenameConversation}
+      onSetConversationPinned={onSetConversationPinned}
       onStartConversation={onStartConversation}
-      onSwitchView={onSwitchView}
       route={route}
       sidebarCollapsed={shellControls.sidebarCollapsed}
     >

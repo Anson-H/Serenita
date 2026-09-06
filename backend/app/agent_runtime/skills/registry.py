@@ -8,7 +8,27 @@ class SkillRegistry:
         self._skills: Dict[str, Skill] = {}
 
     def register(self, skill: Skill) -> None:
-        self._skills[skill.skill_id] = skill
+        if not str(skill.name or "").strip():
+            raise ValueError("技能名称不能为空。")
+        if skill.name in self._skills:
+            raise ValueError(f"重复的技能名称：{skill.name}")
+        self._skills[skill.name] = skill
 
-    def get(self, skill_id: str) -> Skill:
-        return self._skills[skill_id]
+    def get(self, name: str) -> Skill:
+        try:
+            return self._skills[name]
+        except KeyError as exc:
+            raise SkillNotFoundError(name) from exc
+
+    def catalog(self) -> list[dict[str, str]]:
+        return [
+            {
+                "name": name,
+                "description": str(getattr(skill, "description", "") or ""),
+            }
+            for name, skill in sorted(self._skills.items())
+        ]
+
+
+class SkillNotFoundError(KeyError):
+    pass

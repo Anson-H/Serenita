@@ -1,0 +1,314 @@
+{
+  "started_at": "2026-09-07T02:28:22.231609+08:00",
+  "base_url": "http://127.0.0.1:8000",
+  "data_root": "/Users/anson/Documents/Employment/Serenita/serenita_files",
+  "checks": [
+    {
+      "name": "真实开发账号登录",
+      "status": "passed"
+    },
+    {
+      "name": "HTTP /api/auth/session",
+      "status": "passed",
+      "http_status": 200
+    },
+    {
+      "name": "HTTP /api/members",
+      "status": "passed",
+      "http_status": 200
+    },
+    {
+      "name": "HTTP /api/conversations",
+      "status": "passed",
+      "http_status": 200
+    },
+    {
+      "name": "HTTP /api/favorites",
+      "status": "passed",
+      "http_status": 200
+    },
+    {
+      "name": "HTTP /api/model-providers",
+      "status": "passed",
+      "http_status": 200
+    },
+    {
+      "name": "HTTP /api/models",
+      "status": "passed",
+      "http_status": 200
+    },
+    {
+      "name": "HTTP /api/model-access-settings",
+      "status": "passed",
+      "http_status": 200
+    },
+    {
+      "name": "HTTP /api/account-settings/web-access",
+      "status": "passed",
+      "http_status": 200
+    },
+    {
+      "name": "默认用途 chat",
+      "status": "passed",
+      "model_id": "aliyun_bailian:qwen3.8-flash",
+      "provider_id": "aliyun_bailian",
+      "vision": false,
+      "response_characters": 2,
+      "usage": {
+        "completion_tokens": 1,
+        "prompt_tokens": 29,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 29
+        },
+        "total_tokens": 30
+      },
+      "request_count": 1,
+      "elapsed_seconds": 0.55
+    },
+    {
+      "name": "默认用途 compact",
+      "status": "passed",
+      "model_id": "aliyun_bailian:qwen3.8-flash",
+      "provider_id": "aliyun_bailian",
+      "vision": false,
+      "response_characters": 2,
+      "usage": {
+        "completion_tokens": 1,
+        "prompt_tokens": 29,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 29
+        },
+        "total_tokens": 30
+      },
+      "request_count": 1,
+      "elapsed_seconds": 0.62
+    },
+    {
+      "name": "默认用途 title",
+      "status": "passed",
+      "model_id": "aliyun_bailian:qwen3.8-flash",
+      "provider_id": "aliyun_bailian",
+      "vision": false,
+      "response_characters": 2,
+      "usage": {
+        "completion_tokens": 1,
+        "prompt_tokens": 29,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 29
+        },
+        "total_tokens": 30
+      },
+      "request_count": 1,
+      "elapsed_seconds": 0.66
+    },
+    {
+      "name": "默认用途 vision_parse",
+      "status": "passed",
+      "model_id": "aliyun_bailian:qwen3.8-flash",
+      "provider_id": "aliyun_bailian",
+      "vision": true,
+      "response_characters": 21,
+      "usage": {
+        "completion_tokens": 12,
+        "completion_tokens_details": {},
+        "prompt_tokens": 83,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "image_tokens": 66,
+          "text_tokens": 17
+        },
+        "total_tokens": 95
+      },
+      "request_count": 1,
+      "elapsed_seconds": 0.84
+    },
+    {
+      "name": "已配置模型 deepseek:deepseek-v4-flash",
+      "status": "passed",
+      "model_id": "deepseek:deepseek-v4-flash",
+      "provider_id": "deepseek",
+      "vision": false,
+      "response_characters": 2,
+      "usage": {
+        "prompt_tokens": 8,
+        "completion_tokens": 1,
+        "total_tokens": 9,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 8
+      },
+      "request_count": 1,
+      "elapsed_seconds": 0.46
+    },
+    {
+      "name": "已配置模型 deepseek:deepseek-v4-flash-vision-exp",
+      "status": "passed",
+      "model_id": "deepseek:deepseek-v4-flash-vision-exp",
+      "provider_id": "deepseek",
+      "vision": true,
+      "response_characters": 26,
+      "usage": {
+        "prompt_tokens": 127,
+        "completion_tokens": 18,
+        "total_tokens": 145,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 127
+      },
+      "request_count": 1,
+      "elapsed_seconds": 0.73
+    },
+    {
+      "name": "已配置模型 deepseek:deepseek-v4-pro",
+      "status": "passed",
+      "model_id": "deepseek:deepseek-v4-pro",
+      "provider_id": "deepseek",
+      "vision": false,
+      "response_characters": 2,
+      "usage": {
+        "prompt_tokens": 8,
+        "completion_tokens": 1,
+        "total_tokens": 9,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 8
+      },
+      "request_count": 1,
+      "elapsed_seconds": 0.91
+    },
+    {
+      "name": "已配置模型 openrouter:tencent/hy4-preview",
+      "status": "passed",
+      "model_id": "openrouter:tencent/hy4-preview",
+      "provider_id": "openrouter",
+      "vision": false,
+      "response_characters": 2,
+      "usage": {
+        "prompt_tokens": 28,
+        "completion_tokens": 2,
+        "total_tokens": 30,
+        "cost": 2.8354e-05,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 2.8354e-05,
+          "upstream_inference_prompt_cost": 2.3352e-05,
+          "upstream_inference_completions_cost": 5.002e-06
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "request_count": 1,
+      "elapsed_seconds": 1.97
+    },
+    {
+      "name": "Exa 搜索",
+      "status": "passed",
+      "result_count": 10
+    },
+    {
+      "name": "Exa 网页正文",
+      "status": "passed",
+      "total_characters": 867,
+      "pages": 1,
+      "url": "https://www.who.int/en/"
+    },
+    {
+      "name": "Tavily 真实服务",
+      "status": "not_applicable",
+      "reason": "无配置凭证，模拟适配器已由后端测试覆盖"
+    },
+    {
+      "name": "账号身份、全部配置及配套主密钥保留",
+      "status": "passed"
+    }
+  ],
+  "external_requests": [
+    {
+      "method": "POST",
+      "host": "dashscope.aliyuncs.com",
+      "path": "/compatible-mode/v1/chat/completions"
+    },
+    {
+      "method": "POST",
+      "host": "dashscope.aliyuncs.com",
+      "path": "/compatible-mode/v1/chat/completions"
+    },
+    {
+      "method": "POST",
+      "host": "dashscope.aliyuncs.com",
+      "path": "/compatible-mode/v1/chat/completions"
+    },
+    {
+      "method": "POST",
+      "host": "dashscope.aliyuncs.com",
+      "path": "/compatible-mode/v1/chat/completions"
+    },
+    {
+      "method": "POST",
+      "host": "api.deepseek.com",
+      "path": "/chat/completions"
+    },
+    {
+      "method": "POST",
+      "host": "api.deepseek.com",
+      "path": "/chat/completions"
+    },
+    {
+      "method": "POST",
+      "host": "api.deepseek.com",
+      "path": "/chat/completions"
+    },
+    {
+      "method": "POST",
+      "host": "openrouter.ai",
+      "path": "/api/v1/chat/completions"
+    },
+    {
+      "method": "POST",
+      "host": "api.exa.ai",
+      "path": "/search"
+    },
+    {
+      "method": "POST",
+      "host": "api.exa.ai",
+      "path": "/contents"
+    }
+  ],
+  "finished_at": "2026-09-07T02:28:32.104698+08:00",
+  "external_request_count": 10,
+  "status": "passed",
+  "backend_restart": {
+    "checked_at": "2026-09-07T02:40:36.668890+08:00",
+    "supervisor": "uv run / uvicorn --reload",
+    "supervisor_pid": 75832,
+    "previous_worker_pid": 4403,
+    "current_worker_pid": 5046,
+    "address": "127.0.0.1:8000",
+    "data_root": "/Users/anson/Documents/Employment/Serenita/serenita_files",
+    "status": "passed",
+    "http_checks": {
+      "/api/auth/session": 200,
+      "/api/members": 200,
+      "/api/models": 200,
+      "/api/model-access-settings": 200
+    }
+  }
+}

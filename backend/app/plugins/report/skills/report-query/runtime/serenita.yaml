@@ -1,0 +1,5 @@
+allowed_tools:
+  - "read_report_catalog"
+  - "read_report_information"
+  - "read_report_analysis"
+  - "read_lab_dictionary"

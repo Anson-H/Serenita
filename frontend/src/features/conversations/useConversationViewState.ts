@@ -1,8 +1,12 @@
 import { useMemo } from "react";
+import { useAttachmentCapabilities } from "./useAttachmentCapabilities";
 
-import type { AddedModel, ConversationDetail } from "../../api/client";
-import { canAttachFilesForScenario, mergeModelFileMimeTypes } from "./attachmentSupport";
-import { createMessageIndex } from "./branching";
+import {
+  isConversationMessage,
+  type AddedModel,
+  type ConversationDetail
+} from "../../api/client";
+import { canAttachFilesForScenario } from "./attachmentSupport";
 import {
   scenarioCopy,
   type ScenarioTab
@@ -11,7 +15,6 @@ import {
 type ConversationViewStateOptions = {
   activeScenario: ScenarioTab;
   conversationDetail: ConversationDetail | null;
-  parentForNextMessage: string | null | undefined;
   selectedModel: AddedModel | undefined;
   visionParseModel: AddedModel | null;
 };
@@ -19,34 +22,29 @@ type ConversationViewStateOptions = {
 export function useConversationViewState({
   activeScenario,
   conversationDetail,
-  parentForNextMessage,
   selectedModel,
   visionParseModel
 }: ConversationViewStateOptions) {
   const selectedScenario = scenarioCopy[activeScenario];
   const workspaceTitle = activeScenario === "home" && conversationDetail ? conversationDetail.title : selectedScenario.title;
-  const messages = conversationDetail?.messages ?? [];
-  const allMessages = conversationDetail?.all_messages ?? messages;
-  const selectedModelFileMimeTypes = mergeModelFileMimeTypes(selectedModel, visionParseModel);
-  const canAttachFiles = canAttachFilesForScenario(activeScenario, selectedModelFileMimeTypes);
-  const messagesById = useMemo(() => createMessageIndex(allMessages), [allMessages]);
-  const branchPreviewMessageIndex = parentForNextMessage !== undefined
-    ? messages.findIndex((message) => message.message_id === parentForNextMessage)
-    : -1;
-  const visibleMessages = branchPreviewMessageIndex >= 0
-    ? messages.slice(0, branchPreviewMessageIndex + 1)
-    : messages;
-  const showBranchRestoreDivider = branchPreviewMessageIndex >= 0;
-
+  const records = useMemo(
+    () => conversationDetail?.records ?? [],
+    [conversationDetail?.records]
+  );
+  const messages = useMemo(() => records.filter(isConversationMessage), [records]);
+  const capabilities = useAttachmentCapabilities(selectedModel, visionParseModel);
+  const { selectedModelFileMimeTypes } = capabilities;
+  const canAttachFiles = canAttachFilesForScenario(
+    activeScenario,
+    selectedModelFileMimeTypes
+  );
   return {
-    allMessages,
+    ...capabilities,
     canAttachFiles,
     messages,
-    messagesById,
     selectedModelFileMimeTypes,
     selectedScenario,
-    showBranchRestoreDivider,
-    visibleMessages,
+    visibleMessages: records,
     workspaceTitle
   };
 }

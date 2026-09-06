@@ -1,16 +1,16 @@
-import { AuthResponse, AuthSession } from "./types";
 import { request } from "./request";
+import type { AuthenticatedSession, AuthSession } from "./types";
 
 export function checkSession() {
   return request<AuthSession>("/auth/session");
 }
 
-export function signUp(account: string, userName: string, password: string, confirmPassword: string) {
-  return request<AuthResponse>("/auth/sign_up", {
+export function signUp(account: string, accountName: string, password: string, confirmPassword: string) {
+  return request<AuthenticatedSession>("/auth/sign_up", {
     method: "POST",
     body: JSON.stringify({
       account,
-      user_name: userName,
+      account_name: accountName,
       password,
       confirm_password: confirmPassword
     })
@@ -18,7 +18,7 @@ export function signUp(account: string, userName: string, password: string, conf
 }
 
 export function signIn(account: string, password: string) {
-  return request<AuthResponse>("/auth/sign_in", {
+  return request<AuthenticatedSession>("/auth/sign_in", {
     method: "POST",
     body: JSON.stringify({ account, password })
   });

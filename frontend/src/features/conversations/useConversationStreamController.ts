@@ -6,189 +6,297 @@ import {
 
 import {
   type ConversationDetail,
-  type SendMessageResponse,
+  type ConversationSummary,
+  type StartedMessageResponse,
   apiClient
 } from "../../api/client";
+import { showStatusNotification } from "../../components/StatusNotificationCenter";
 import {
-  appendStreamDeltaToDetail,
+  appendRecordDeltaToDetail,
   cancelStreamingTurnInDetail,
-  completeStreamingThinkingInDetail,
+  completeStreamingRecordInDetail,
   completeStreamingTurnInDetail,
-  currentStreamingContentForDetail
+  startStreamingRecordInDetail
 } from "./streamingMessages";
-import {
-  MIN_THINKING_DURATION_MS,
-  isAbortError
-} from "./thinking";
+import { isAbortError, thinkingModeLabel } from "./thinking";
 import { type ActiveStream } from "./workspaceTypes";
 
 type ConversationStreamControllerOptions = {
   activeStreamRef: MutableRefObject<ActiveStream | null>;
-  conversationDetail: ConversationDetail | null;
   openConversation: (sessionId: string, sourceMessageId?: string | null) => Promise<boolean>;
+  onThinkingModeChanged: (mode: string) => void;
+  onTurnSettled: () => void;
+  prepareConversationMutation?: (key: string) => void;
   refreshConversations: () => Promise<void>;
   setActiveStreamTurnId: Dispatch<SetStateAction<string | null>>;
-  setActivelyThinkingTurnId: Dispatch<SetStateAction<string | null>>;
   setCancellingTurnId: Dispatch<SetStateAction<string | null>>;
   setComposerError: Dispatch<SetStateAction<string>>;
   setConversationDetail: Dispatch<SetStateAction<ConversationDetail | null>>;
-  setSending: Dispatch<SetStateAction<boolean>>;
+  setConversations: Dispatch<SetStateAction<ConversationSummary[]>>;
 };
 
 export function useConversationStreamController({
   activeStreamRef,
-  conversationDetail,
   openConversation,
+  onThinkingModeChanged,
+  onTurnSettled,
+  prepareConversationMutation = () => undefined,
   refreshConversations,
   setActiveStreamTurnId,
-  setActivelyThinkingTurnId,
   setCancellingTurnId,
   setComposerError,
   setConversationDetail,
-  setSending
+  setConversations
 }: ConversationStreamControllerOptions) {
-  function applyStreamDelta(messageId: string | null | undefined, delta: string) {
-    setConversationDetail((current) => appendStreamDeltaToDetail(current, messageId, delta));
-  }
-
-  function markStreamingTurnCompleted(response: SendMessageResponse) {
-    setConversationDetail((current) => completeStreamingTurnInDetail(current, response.assistant_message_id));
-  }
-
-  function markStreamingThinkingCompleted(turnId: string, durationMs: number) {
-    setActivelyThinkingTurnId((current) => (current === turnId ? null : current));
-    setConversationDetail((current) =>
-      completeStreamingThinkingInDetail(current, turnId, durationMs, MIN_THINKING_DURATION_MS)
-    );
+  function markStreamingTurnCompleted(response: StartedMessageResponse) {
+    prepareConversationMutation(`stream-completed:${response.turn_id}`);
+    setConversationDetail((current) => {
+      if (current?.session_id !== response.session_id) {
+        return current;
+      }
+      const completed = completeStreamingTurnInDetail(current, response.final_assistant_message_id);
+      return completed
+        ? {
+          ...completed,
+          pending_turns: completed.pending_turns.filter(
+            (turn) => turn.turn_id !== response.turn_id
+          )
+        }
+        : completed;
+    });
   }
 
   function markStreamingTurnCancelled(turnId: string) {
-    setConversationDetail((current) => cancelStreamingTurnInDetail(current, turnId));
-  }
-
-  function currentStreamingContent(turnId: string) {
-    return currentStreamingContentForDetail(conversationDetail, turnId);
+    prepareConversationMutation(`stream-cancelled:${turnId}`);
+    setConversationDetail((current) =>
+      current?.session_id === activeStreamRef.current?.sessionId
+        ? cancelStreamingTurnInDetail(current, turnId)
+        : current
+    );
   }
 
   async function cancelActiveGeneration({
     preservePartial,
     refreshAfterCancel = true,
-    keepSending = false
   }: {
     preservePartial: boolean;
     refreshAfterCancel?: boolean;
-    keepSending?: boolean;
   }) {
     const activeStream = activeStreamRef.current;
     if (!activeStream) {
       return false;
     }
-    const { partialContent, partialThinking } = currentStreamingContent(activeStream.turnId);
     setCancellingTurnId(activeStream.turnId);
     setComposerError("");
     try {
       await apiClient.cancelTurn(activeStream.sessionId, activeStream.turnId, {
-        preservePartial,
-        partialContent,
-        partialThinking
+        preservePartial
       });
-      if (preservePartial) {
-        markStreamingTurnCancelled(activeStream.turnId);
+      const stillVisible = activeStreamRef.current === activeStream;
+      if (stillVisible) {
+        if (preservePartial) {
+          markStreamingTurnCancelled(activeStream.turnId);
+        }
+        activeStreamRef.current = null;
+        setActiveStreamTurnId(null);
+        onTurnSettled();
       }
       activeStream.abortController.abort();
-      if (refreshAfterCancel) {
+      if (refreshAfterCancel && stillVisible) {
         await openConversation(activeStream.sessionId);
         await refreshConversations();
       }
       return true;
     } catch (error) {
-      setComposerError(error instanceof Error ? error.message : "取消生成失败。");
+      if (activeStreamRef.current === activeStream) {
+        setComposerError(error instanceof Error ? error.message : "取消生成失败。");
+      }
       return false;
     } finally {
-      if (activeStreamRef.current?.turnId === activeStream.turnId) {
-        activeStreamRef.current = null;
-        setActiveStreamTurnId(null);
-      }
-      setCancellingTurnId(null);
-      if (!keepSending) {
-        setSending(false);
-      }
+      setCancellingTurnId(current => current === activeStream.turnId ? null : current);
     }
   }
 
-  async function startResponseStream(response: SendMessageResponse): Promise<"completed" | "cancelled"> {
-    const streamingAssistant = response.assistant_message_id;
-    const streamingThinking = response.thinking_message_id ?? null;
+  async function startResponseStream(response: StartedMessageResponse): Promise<"completed" | "failed" | "cancelled" | "detached"> {
+    const previous = activeStreamRef.current;
+    if (previous?.streamId === response.stream_id && !previous.abortController.signal.aborted) {
+      return "detached";
+    }
+    if (previous) {
+      activeStreamRef.current = null;
+      previous.abortController.abort();
+    }
     const abortController = new AbortController();
-    activeStreamRef.current = {
+    const subscription: ActiveStream = {
       sessionId: response.session_id,
       turnId: response.turn_id,
       streamId: response.stream_id,
-      assistantMessageId: response.assistant_message_id,
-      thinkingMessageId: streamingThinking,
+      finalAssistantMessageId: response.final_assistant_message_id,
       abortController
     };
+    activeStreamRef.current = subscription;
+    const isCurrent = () => activeStreamRef.current === subscription;
+    prepareConversationMutation(`stream-start:${response.turn_id}:${response.stream_id}`);
     setActiveStreamTurnId(response.turn_id);
-    setActivelyThinkingTurnId(streamingThinking ? response.turn_id : null);
-    const thinkingStartedAt = performance.now();
-    let thinkingCompleted = false;
-    let streamResult: "completed" | "cancelled" = "completed";
-    try {
-      await apiClient.streamConversation(response.stream_id, {
-        signal: abortController.signal,
-        onEvent: (event) => {
-          if (event.event === "thinking_delta") {
-            applyStreamDelta(event.data.message_id ?? streamingThinking, event.data.delta);
-          }
-          if (event.event === "content_delta") {
-            if (streamingThinking && !thinkingCompleted) {
-              thinkingCompleted = true;
-              markStreamingThinkingCompleted(response.turn_id, performance.now() - thinkingStartedAt);
-            }
-            applyStreamDelta(event.data.message_id ?? streamingAssistant, event.data.delta);
-          }
-          if (event.event === "completed") {
-            markStreamingTurnCompleted(response);
-            finishActiveStream(response.stream_id);
-          }
-          if (event.event === "cancelled") {
-            streamResult = "cancelled";
-            markStreamingTurnCancelled(response.turn_id);
-            finishActiveStream(response.stream_id);
-          }
-          if (event.event === "failed") {
-            finishActiveStream(response.stream_id);
-            throw new Error(event.data.message || event.data.code || "生成失败。");
-          }
+    setConversations((current) => current.map((conversation) =>
+      conversation.session_id === response.session_id
+        ? {
+          ...conversation,
+          pending_turn_status: response.message_status === "queued" ? "queued" : "streaming"
         }
-      });
-    } catch (error) {
-      if (!isAbortError(error)) {
-        throw error;
+        : conversation
+    ));
+    const terminalState: { result: "completed" | "failed" | "cancelled" | null } = {
+      result: null
+    };
+    try {
+      let retryDelay = 250;
+      while (
+        isCurrent() &&
+        terminalState.result === null
+      ) {
+        try {
+          await apiClient.streamConversation(response.session_id, response.stream_id, {
+            signal: abortController.signal,
+            onEvent: (event) => {
+              if (!isCurrent()) {
+                return;
+              }
+              if (event.event === "thinking_mode_changed") {
+                onThinkingModeChanged(event.data.effective_mode);
+                const reason = event.data.reasons.includes("tool_calling")
+                  ? "使用原生工具"
+                  : "处理当前附件";
+                showStatusNotification({
+                  id: `thinking-mode-changed-${event.data.turn_id}`,
+                  message: `本轮为${reason}，已临时切换为${thinkingModeLabel(event.data.effective_mode)}`,
+                  tone: "info"
+                });
+              }
+              if (event.event === "session_title_updated") {
+                setConversations((current) => current.map((conversation) =>
+                  conversation.session_id === event.data.session_id
+                    ? { ...conversation, title: event.data.title }
+                    : conversation
+                ));
+                setConversationDetail((current) =>
+                  current?.session_id === event.data.session_id
+                    ? { ...current, title: event.data.title }
+                    : current
+                );
+              }
+              if (event.event === "record_started") {
+                prepareConversationMutation(`record-started:${event.data.record_id}`);
+                setConversationDetail((current) =>
+                  current?.session_id === response.session_id
+                    ? startStreamingRecordInDetail(current, event.data)
+                    : current
+                );
+              }
+              if (event.event === "record_delta") {
+                prepareConversationMutation(
+                  `record-delta:${event.data.record_id}:${event.data.channel}:${event.data.offset}`
+                );
+                setConversationDetail((current) =>
+                  current?.session_id === response.session_id
+                    ? appendRecordDeltaToDetail(
+                      current,
+                      event.data.record_id,
+                      event.data.delta,
+                      event.data.offset,
+                      event.data.channel
+                    )
+                    : current
+                );
+              }
+              if (event.event === "record_completed") {
+                prepareConversationMutation(`record-completed:${event.data.record_id}`);
+                setConversationDetail((current) =>
+                  current?.session_id === response.session_id
+                    ? completeStreamingRecordInDetail(current, event.data)
+                    : current
+                );
+              }
+              if (event.event === "turn_completed") {
+                terminalState.result = "completed";
+                markStreamingTurnCompleted(response);
+              }
+              if (event.event === "turn_cancelled") {
+                terminalState.result = "cancelled";
+                markStreamingTurnCancelled(response.turn_id);
+              }
+              if (event.event === "turn_failed") {
+                terminalState.result = "failed";
+              }
+              if (terminalState.result !== null) {
+                setConversations((current) => current.map((conversation) =>
+                  conversation.session_id === response.session_id
+                    ? { ...conversation, pending_turn_status: null }
+                    : conversation
+                ));
+              }
+            }
+          });
+          if (terminalState.result === null) {
+            throw new Error("流式连接在轮次结束前断开。");
+          }
+        } catch (error) {
+          if (
+            !isCurrent() ||
+            isAbortError(error)
+          ) {
+            return "detached";
+          }
+          await waitForReconnect(retryDelay, abortController.signal);
+          retryDelay = Math.min(5000, retryDelay * 2);
+        }
       }
-      streamResult = "cancelled";
-    } finally {
-      if (activeStreamRef.current?.streamId === response.stream_id) {
+      if (
+        terminalState.result !== null &&
+        isCurrent()
+      ) {
+        prepareConversationMutation(`stream-terminal:${response.turn_id}:${terminalState.result}`);
         activeStreamRef.current = null;
         setActiveStreamTurnId(null);
-        setActivelyThinkingTurnId(null);
+        onTurnSettled();
+        await openConversation(response.session_id);
       }
+    } catch (error) {
+      if (
+        !isCurrent() ||
+        isAbortError(error)
+      ) {
+        return "detached";
+      }
+      throw error;
+    } finally {
+      if (isCurrent()) {
+        activeStreamRef.current = null;
+        setActiveStreamTurnId(null);
+        onTurnSettled();
+      }
+      await refreshConversations().catch(() => undefined);
     }
-    return streamResult;
-  }
-
-  function finishActiveStream(streamId: string) {
-    if (activeStreamRef.current?.streamId !== streamId) {
-      return;
-    }
-    activeStreamRef.current = null;
-    setActiveStreamTurnId(null);
-    setActivelyThinkingTurnId(null);
-    setSending(false);
+    return terminalState.result ?? "detached";
   }
 
   return {
     cancelActiveGeneration,
     startResponseStream
   };
+}
+
+function waitForReconnect(delay: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      window.clearTimeout(timeout);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const timeout = window.setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, delay);
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+  });
 }

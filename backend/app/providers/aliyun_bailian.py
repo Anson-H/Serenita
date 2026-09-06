@@ -1,19 +1,20 @@
 import re
+from typing import Any
 
 from backend.app.providers.base import ModelProvider
-from backend.app.model_capabilities import ModelCapabilityProfile
+from backend.app.providers.errors import _can_classify_context_error
 
 
-ALIYUN_IMAGE_FILE_MIME_TYPES = [
+ALIYUN_IMAGE_FILE_MIME_TYPES = (
     "image/bmp",
     "image/jpeg",
     "image/png",
     "image/tiff",
     "image/webp",
     "image/heic",
-]
+)
 
-ALIYUN_AUDIO_FILE_MIME_TYPES = [
+ALIYUN_AUDIO_FILE_MIME_TYPES = (
     "audio/amr",
     "audio/wav",
     "audio/x-wav",
@@ -22,9 +23,9 @@ ALIYUN_AUDIO_FILE_MIME_TYPES = [
     "audio/aac",
     "audio/mpeg",
     "audio/mp3",
-]
+)
 
-ALIYUN_VIDEO_FILE_MIME_TYPES = [
+ALIYUN_VIDEO_FILE_MIME_TYPES = (
     "video/mp4",
     "video/x-msvideo",
     "video/x-matroska",
@@ -32,14 +33,36 @@ ALIYUN_VIDEO_FILE_MIME_TYPES = [
     "video/quicktime",
     "video/x-flv",
     "video/x-ms-wmv",
-]
+)
 
 
 class AliyunBailianProvider(ModelProvider):
     provider_id = "aliyun_bailian"
-    display_name = "阿里云百炼"
-    default_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    provider_name = "阿里云百炼"
+    default_api_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     default_official_url = "https://bailian.console.aliyun.com/?tab=model#/api-key"
+
+    def is_context_overflow(self, details: dict[str, Any]) -> bool:
+        if not _can_classify_context_error(details):
+            return False
+        if super().is_context_overflow(details):
+            return True
+        code = details.get("code")
+        if isinstance(code, str) and code in {
+            "InputTooLong",
+            "InvalidParameter.InputTooLong",
+        }:
+            return True
+        message = details.get("message")
+        # DashScope documents this specific input-range error as input overflow.
+        # The similarly worded max_tokens range error is an output parameter error.
+        return isinstance(message, str) and bool(
+            re.search(
+                r"\bRange of input length should be \[1,\s*\d+\]",
+                message,
+                re.IGNORECASE,
+            )
+        )
 
     def native_attachment_mime_types(self) -> set[str]:
         return {
@@ -48,67 +71,21 @@ class AliyunBailianProvider(ModelProvider):
             *ALIYUN_VIDEO_FILE_MIME_TYPES,
         }
 
-    def normalize_capabilities(self, raw_model, remote_model_id: str) -> ModelCapabilityProfile:
-        model_id = remote_model_id.lower()
-        file_mime_types = _attachment_mime_types(model_id)
+    def thinking_mode_payload(
+        self,
+        remote_model_id: str,
+        thinking_mode: str,
+    ) -> dict[str, object]:
+        if thinking_mode == "off":
+            return {"enable_thinking": False}
+        if thinking_mode == "default":
+            return {}
+        return {
+            "enable_thinking": True,
+            "reasoning_effort": thinking_mode,
+        }
 
-        thinking_modes = ["default"]
-        if _is_thinking_only_model(model_id) or _is_hybrid_thinking_model(model_id):
-            thinking_modes = ["default", "high"]
-
-        return ModelCapabilityProfile(
-            supports_text=True,
-            file_mime_types=file_mime_types,
-            thinking_modes=thinking_modes,
-            supports_tool_calling=_likely_supports_tool_calling(model_id),
-            supports_json_output=True,
-        )
-
-
-def _is_thinking_only_model(model_id: str) -> bool:
-    return any(marker in model_id for marker in ("-thinking", "qwq", "qvq", "deepseek-r1", "kimi-k2-thinking"))
-
-
-def _attachment_mime_types(model_id: str) -> list[str]:
-    if _is_omni_model(model_id):
-        return [
-            *ALIYUN_IMAGE_FILE_MIME_TYPES,
-            *ALIYUN_AUDIO_FILE_MIME_TYPES,
-            *ALIYUN_VIDEO_FILE_MIME_TYPES,
-        ]
-    if _is_vision_video_model(model_id):
-        return [*ALIYUN_IMAGE_FILE_MIME_TYPES, *ALIYUN_VIDEO_FILE_MIME_TYPES]
-    return []
-
-
-def _is_omni_model(model_id: str) -> bool:
-    return any(marker in model_id for marker in ("qwen3.5-omni", "qwen3-omni", "qwen-omni"))
-
-
-def _is_vision_video_model(model_id: str) -> bool:
-    if any(
-        marker in model_id
-        for marker in (
-            "qwen-vl",
-            "qwen2-vl",
-            "qwen2.5-vl",
-            "qwen3-vl",
-            "qvq",
-        )
-    ):
-        return True
-    return bool(re.search(r"\bqwen3\.[56](?:-[\w.-]+)?\b", model_id))
-
-
-def _is_hybrid_thinking_model(model_id: str) -> bool:
-    if model_id.startswith(("qwen-plus", "qwen-flash", "qwen-turbo", "qwen3-max")):
-        return True
-    if model_id.startswith("qwen3") and not any(marker in model_id for marker in ("instruct", "embedding", "rerank")):
-        return True
-    return any(marker in model_id for marker in ("deepseek-v3", "glm-5", "glm-4.6", "glm-4.7"))
-
-
-def _likely_supports_tool_calling(model_id: str) -> bool:
-    if any(marker in model_id for marker in ("embedding", "rerank", "asr", "tts", "image")):
-        return False
-    return model_id.startswith(("qwen", "deepseek-v3", "glm", "kimi"))
+    def capability_probe_tool_choice(self, state: str) -> Any:
+        if state == "thinking":
+            return "auto"
+        return super().capability_probe_tool_choice(state)

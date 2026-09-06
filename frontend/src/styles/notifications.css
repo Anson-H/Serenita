@@ -1,0 +1,147 @@
+.status-notification-region {
+  position: fixed;
+  z-index: 80;
+  top: calc(16px + env(safe-area-inset-top));
+  right: 16px;
+  display: grid;
+  width: min(380px, calc(100vw - 32px));
+  gap: var(--space-control-block) var(--space-control-inline);
+  pointer-events: none;
+}
+
+.status-notification {
+  --notification-accent: var(--color-accent);
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) var(--size-control-primary);
+  gap: var(--space-control-block) var(--space-control-inline);
+  align-items: start;
+  min-height: 72px;
+  padding: var(--space-content) var(--space-content) var(--space-content) var(--space-content);
+  border: 1px solid color-mix(in oklch, var(--notification-accent) 24%, var(--color-divider));
+  border-radius: var(--radius-panel);
+  background: color-mix(in oklch, var(--color-surface) 96%, var(--notification-accent) 4%);
+  box-shadow: var(--shadow-overlay);
+  color: var(--color-foreground);
+  pointer-events: auto;
+  animation: status-notification-in 160ms ease-out;
+}
+
+.status-notification[data-tone="success"] {
+  --notification-accent: var(--color-success);
+}
+
+.status-notification[data-tone="warning"] {
+  --notification-accent: var(--color-warning);
+}
+
+.status-notification[data-tone="error"] {
+  --notification-accent: var(--color-danger);
+}
+
+.status-notification-mark {
+  display: grid;
+  width: var(--size-notification-mark);
+  height: var(--size-notification-mark);
+  place-items: center;
+  border-radius: var(--radius-notification-mark);
+  background: color-mix(in oklch, var(--notification-accent) 13%, transparent);
+  color: var(--notification-accent);
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+  font-weight: var(--weight-strong);
+}
+
+.status-notification-mark .settings-action-icon {
+  width: var(--size-icon-default);
+  height: var(--size-icon-default);
+}
+
+.status-notification-copy {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-related);
+}
+
+.status-notification-kicker {
+  color: var(--notification-accent);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.05em;
+}
+
+.status-notification-copy strong {
+  font-size: var(--text-body);
+  font-weight: var(--weight-strong);
+  line-height: var(--line-body);
+}
+
+.status-notification-copy p {
+  margin: 0;
+  color: var(--color-foreground-muted);
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.status-notification-action {
+  justify-self: start;
+  min-height: var(--size-control-primary);
+  margin-top: var(--space-related);
+  padding: var(--space-control-block) var(--space-control-inline);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--notification-accent);
+  font: inherit;
+  font-size: var(--text-meta);
+  font-weight: var(--weight-strong);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--notification-accent) 34%, var(--color-divider));
+}
+
+.status-notification-close {
+  display: grid;
+  width: var(--size-control-primary);
+  height: var(--size-control-primary);
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-foreground-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+@keyframes status-notification-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@media (max-width: 650px) {
+  .status-notification-region {
+    top: calc(10px + env(safe-area-inset-top));
+    right: var(--space-content);
+    left: var(--space-content);
+    width: auto;
+  }
+
+  .status-notification {
+    grid-template-columns: 28px minmax(0, 1fr) var(--size-control-primary);
+    min-height: 68px;
+    padding: var(--space-content) var(--space-control-inline) var(--space-content) var(--space-content);
+  }
+
+  .status-notification-close {
+    width: var(--size-control-primary);
+    height: var(--size-control-primary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-notification {
+    animation: none;
+  }
+}

@@ -1,59 +1,55 @@
 import {
+  useEffect,
+  useRef,
   type Dispatch,
   type MutableRefObject,
-  type RefObject,
   type SetStateAction,
-  useEffect,
 } from "react";
-
 import {
-  type AddedModel,
+  apiClient,
   type ConversationDetail,
   type ConversationSummary,
   type Favorite,
-  type UploadedResource,
-  apiClient
+  type UploadedResource
 } from "../../api/client";
 import {
   APP_PATH,
-  FAVORITES_PATH,
   SIGN_IN_PATH,
   chatPathForSession,
   sessionIdFromChatPath,
   type RoutePath
 } from "../../app/routes";
+import { useActiveScope } from "../../utils/useActiveScope";
+import { emptyModelCatalog, fetchModelCatalog, type ModelCatalog } from "../modelConfiguration/modelCatalog";
 import type { UploadingResource } from "./contextResources";
-import { mergeModelsWithChatDefault } from "./conversationModels";
+import { createConversationListActions } from './conversationListActions';
 import type { HomeConversationDraft } from "./useConversationPageState";
 import type {
   ActiveStream,
-  QuoteSelection,
-  QuotedContext,
-  ScenarioTab,
-  WorkspaceView
+  AnnotatedContext,
+  AnnotationSelection,
+  ScenarioTab
 } from "./workspaceTypes";
 
 type ConversationLifecycleOptions = {
+  refreshConversations: (isRelevant?: () => boolean) => Promise<void>;
   activeScenario: ScenarioTab;
   activeStreamRef: MutableRefObject<ActiveStream | null>;
-  activeView: WorkspaceView;
   composerText: string;
   conversationDetail: ConversationDetail | null;
   conversationRequestSeqRef: MutableRefObject<number>;
-  conversationSurfaceRef: RefObject<HTMLDivElement | null>;
   currentSessionId: string | null;
   homeConversationDraftRef: MutableRefObject<HomeConversationDraft | null>;
   onNavigate: (path: RoutePath, replace?: boolean) => void;
   onSignOut: () => Promise<void>;
-  parentForNextMessage: string | null | undefined;
-  quotedContext: QuotedContext | null;
-  quoteSelection: QuoteSelection | null;
+  prepareConversationMutation: (key: string) => void;
+  annotatedContexts: AnnotatedContext[];
+  annotationSelection: AnnotationSelection | null;
   resetFavoriteWorkspaceState: () => void;
   resetModelControl: () => void;
   route: RoutePath;
   setActiveScenario: Dispatch<SetStateAction<ScenarioTab>>;
   setActiveStreamTurnId: Dispatch<SetStateAction<string | null>>;
-  setActiveView: Dispatch<SetStateAction<WorkspaceView>>;
   setCancellingTurnId: Dispatch<SetStateAction<string | null>>;
   setComposerError: Dispatch<SetStateAction<string>>;
   setComposerText: Dispatch<SetStateAction<string>>;
@@ -64,42 +60,40 @@ type ConversationLifecycleOptions = {
   setEditingMessageText: Dispatch<SetStateAction<string>>;
   setFavorites: Dispatch<SetStateAction<Favorite[]>>;
   setHighlightedMessageId: Dispatch<SetStateAction<string | null>>;
+  setHighlightedMessageRequestId: Dispatch<SetStateAction<number>>;
   setMobileSidebarOpen: Dispatch<SetStateAction<boolean>>;
-  setModels: Dispatch<SetStateAction<AddedModel[]>>;
-  setParentForNextMessage: Dispatch<SetStateAction<string | null | undefined>>;
-  setQuoteSelection: Dispatch<SetStateAction<QuoteSelection | null>>;
-  setQuotedContext: Dispatch<SetStateAction<QuotedContext | null>>;
+  setModelCatalog: Dispatch<SetStateAction<ModelCatalog>>;
+  setAnnotatedContexts: Dispatch<SetStateAction<AnnotatedContext[]>>;
+  setAnnotationSelection: Dispatch<SetStateAction<AnnotationSelection | null>>;
   setSending: Dispatch<SetStateAction<boolean>>;
   setSidebarCollapsed: Dispatch<SetStateAction<boolean>>;
   setUploadedResources: Dispatch<SetStateAction<UploadedResource[]>>;
-  setVisionParseModel: Dispatch<SetStateAction<AddedModel | null>>;
   setUploadingResources: Dispatch<SetStateAction<UploadingResource[]>>;
   uploadedResources: UploadedResource[];
   uploadingResources: UploadingResource[];
 };
 
 export function useConversationLifecycle(options: ConversationLifecycleOptions) {
+  const isCurrentScope = useActiveScope(options.route);
   const {
+    refreshConversations,
     activeScenario,
     activeStreamRef,
-    activeView,
     composerText,
     conversationDetail,
     conversationRequestSeqRef,
-    conversationSurfaceRef,
     currentSessionId,
     homeConversationDraftRef,
     onNavigate,
     onSignOut,
-    parentForNextMessage,
-    quotedContext,
-    quoteSelection,
+    prepareConversationMutation,
+    annotatedContexts,
+    annotationSelection,
     resetFavoriteWorkspaceState,
     resetModelControl,
     route,
     setActiveScenario,
     setActiveStreamTurnId,
-    setActiveView,
     setCancellingTurnId,
     setComposerError,
     setComposerText,
@@ -110,52 +104,67 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     setEditingMessageText,
     setFavorites,
     setHighlightedMessageId,
+    setHighlightedMessageRequestId,
     setMobileSidebarOpen,
-    setModels,
-    setParentForNextMessage,
-    setQuoteSelection,
-    setQuotedContext,
+    setModelCatalog,
+    setAnnotatedContexts,
+    setAnnotationSelection,
     setSending,
     setSidebarCollapsed,
     setUploadedResources,
-    setVisionParseModel,
     setUploadingResources,
     uploadedResources,
     uploadingResources
   } = options;
+  const visibleConversationRef = useRef({ currentSessionId, conversationDetail });
+  // Starting another draft can leave the URL and session ID unchanged.
+  const conversationViewRef = useRef(0);
+  const detailRequestRef = useRef<AbortController | null>(null);
+  visibleConversationRef.current = { currentSessionId, conversationDetail };
+
+  useEffect(() => () => { detailRequestRef.current?.abort(); }, []);
 
   useEffect(() => {
-    void loadWorkspaceData();
+    void loadWorkspaceData().catch((error) => {
+      const detail = error instanceof Error && error.message
+        ? error.message
+        : "工作区初始化失败。";
+      setComposerError(
+        detail.includes("UNSUPPORTED_SCHEMA")
+          ? `${detail} 当前数据目录不属于本版本；后端不会自动迁移或改写旧数据。请停止后端，设置 DATA_ROOT 指向空目录后重新启动。`
+          : detail
+      );
+    });
   }, []);
 
   useEffect(() => {
     const routeSessionId = sessionIdFromChatPath(route);
+    detachVisibleStream(routeSessionId);
     if (!routeSessionId || routeSessionId === currentSessionId) {
       return;
     }
     void openConversation(routeSessionId).catch((error) => {
       setCurrentSessionId(null);
       setConversationDetail(null);
-      setComposerError(error instanceof Error ? error.message : "会话加载失败。");
+      setComposerError(error instanceof Error ? error.message : "聊天加载失败。");
     });
   }, [currentSessionId, route]);
 
   function hasConversationActivity(detail: ConversationDetail | null) {
-    return Boolean(detail?.messages.length || detail?.all_messages?.length || detail?.pending_turns.length);
+    return Boolean(detail?.records.length || detail?.pending_turns.length);
   }
 
   function hasHomeConversationDraftContent(draft: HomeConversationDraft) {
     return Boolean(
       draft.composerText.trim() ||
-        draft.uploadedResources.length ||
-        draft.uploadingResources.length ||
-        draft.quotedContext
+      draft.uploadedResources.length ||
+      draft.uploadingResources.length ||
+      draft.annotatedContexts.length
     );
   }
 
   function isHomeConversationDraftContext() {
     return (
-      activeView === "home" &&
       activeScenario === "home" &&
       (
         currentSessionId === null ||
@@ -176,9 +185,8 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
       currentSessionId,
       conversationDetail,
       composerText,
-      parentForNextMessage,
-      quotedContext,
-      quoteSelection,
+      annotatedContexts: [...annotatedContexts],
+      annotationSelection,
       uploadedResources: [...uploadedResources],
       uploadingResources: [...uploadingResources]
     };
@@ -190,13 +198,15 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
   }
 
   function clearActiveComposerDraft() {
+    conversationViewRef.current += 1;
+    setSending(false);
     setComposerText("");
     setUploadingResources([]);
     setUploadedResources([]);
-    setQuotedContext(null);
-    setQuoteSelection(null);
-    setParentForNextMessage(undefined);
+    setAnnotatedContexts([]);
+    setAnnotationSelection(null);
     setHighlightedMessageId(null);
+    setHighlightedMessageRequestId(0);
     setEditingMessageId(null);
     setEditingMessageText("");
   }
@@ -211,10 +221,10 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     setComposerText(draft.composerText);
     setUploadingResources([...draft.uploadingResources]);
     setUploadedResources([...draft.uploadedResources]);
-    setQuotedContext(draft.quotedContext);
-    setQuoteSelection(draft.quoteSelection);
-    setParentForNextMessage(draft.parentForNextMessage);
+    setAnnotatedContexts([...draft.annotatedContexts]);
+    setAnnotationSelection(draft.annotationSelection);
     setHighlightedMessageId(null);
+    setHighlightedMessageRequestId(0);
     setEditingMessageId(null);
     setEditingMessageText("");
     setComposerError("");
@@ -222,32 +232,28 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
   }
 
   function navigateTo(path: RoutePath, replace = false) {
+    detailRequestRef.current?.abort();
+    conversationViewRef.current += 1;
+    setSending(false);
+    conversationRequestSeqRef.current += 1;
     if (path !== APP_PATH && path !== SIGN_IN_PATH) {
       saveHomeConversationDraft();
     }
+    detachVisibleStream(sessionIdFromChatPath(path));
     setMobileSidebarOpen(false);
     onNavigate(path, replace);
   }
 
   async function loadWorkspaceData() {
-    const [conversationResponse, favoriteResponse, modelResponse, defaultsResponse] = await Promise.all([
-      apiClient.fetchConversations(),
-      apiClient.fetchFavorites(),
-      apiClient.fetchModels(),
-      apiClient.fetchModelDefaults().catch(() => null)
+    await Promise.all([
+      refreshConversations(),
+      apiClient.fetchFavorites().then((response) => setFavorites(response.favorites)),
+      fetchModelCatalog().then(setModelCatalog).catch(error => {
+        const message = error instanceof Error ? error.message : "模型配置读取失败。";
+        setModelCatalog(current => ({ ...current, status: "error", error: message }));
+        setComposerError(message);
+      })
     ]);
-    setConversations(conversationResponse.sessions);
-    setFavorites(favoriteResponse.favorites);
-    setModels(mergeModelsWithChatDefault(modelResponse.models, defaultsResponse?.defaults.chat ?? null));
-    setVisionParseModel(defaultsResponse?.defaults.vision_parse ?? null);
-    const routeSessionId = sessionIdFromChatPath(route);
-    if (routeSessionId) {
-      await openConversation(routeSessionId);
-      return;
-    }
-    if (conversationResponse.sessions[0] && !currentSessionId) {
-      await openConversation(conversationResponse.sessions[0].session_id);
-    }
   }
 
   function resetWorkspaceState() {
@@ -255,7 +261,6 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     clearHomeConversationDraft();
     activeStreamRef.current?.abortController.abort();
     activeStreamRef.current = null;
-    setActiveView("home");
     setActiveScenario("home");
     setComposerText("");
     setComposerError("");
@@ -268,54 +273,99 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     setConversationDetail(null);
     setConversations([]);
     resetFavoriteWorkspaceState();
-    setModels([]);
-    setVisionParseModel(null);
+    setModelCatalog(emptyModelCatalog());
     resetModelControl();
     setUploadingResources([]);
     setUploadedResources([]);
-    setParentForNextMessage(undefined);
-    setQuotedContext(null);
-    setQuoteSelection(null);
+    setAnnotatedContexts([]);
+    setAnnotationSelection(null);
     setHighlightedMessageId(null);
+    setHighlightedMessageRequestId(0);
     setEditingMessageId(null);
     setEditingMessageText("");
   }
 
+  function resetForMemberSelection() {
+    conversationRequestSeqRef.current += 1;
+    clearHomeConversationDraft();
+    detachVisibleStream(null);
+    setActiveScenario("home");
+    setComposerError("");
+    setSending(false);
+    setActiveStreamTurnId(null);
+    setCancellingTurnId(null);
+    setMobileSidebarOpen(false);
+    setCurrentSessionId(null);
+    setConversationDetail(null);
+    resetModelControl();
+    clearActiveComposerDraft();
+  }
+
   async function openConversation(sessionId: string, sourceMessageId: string | null = null) {
-    saveHomeConversationDraft();
+    const visible = visibleConversationRef.current;
+    const switchingConversation =
+      visible.currentSessionId !== sessionId || visible.conversationDetail?.session_id !== sessionId;
+    if (switchingConversation) {
+      saveHomeConversationDraft();
+      detachVisibleStream(sessionId);
+    }
     const requestId = conversationRequestSeqRef.current + 1;
     conversationRequestSeqRef.current = requestId;
+    detailRequestRef.current?.abort();
+    const request = new AbortController();
+    detailRequestRef.current = request;
     let detail: ConversationDetail;
     try {
-      detail = await apiClient.getConversation(sessionId);
+      detail = await apiClient.getConversation(sessionId, request.signal);
     } catch (error) {
-      if (requestId !== conversationRequestSeqRef.current) {
+      if (!isCurrentScope() || requestId !== conversationRequestSeqRef.current) {
         return false;
       }
       throw error;
     }
-    if (requestId !== conversationRequestSeqRef.current) {
+    if (!isCurrentScope() || requestId !== conversationRequestSeqRef.current) {
       return false;
     }
-    conversationSurfaceRef.current?.scrollTo({ top: 0, behavior: "auto" });
     setCurrentSessionId(sessionId);
+    if (!switchingConversation) {
+      prepareConversationMutation(`conversation-refresh:${sessionId}:${requestId}`);
+    }
     setConversationDetail(detail);
-    clearActiveComposerDraft();
     setComposerError("");
-    setActiveView("home");
-    setActiveScenario("home");
-    setHighlightedMessageId(sourceMessageId);
+    if (switchingConversation) {
+      clearActiveComposerDraft();
+      setActiveScenario("home");
+      setHighlightedMessageId(sourceMessageId);
+    } else if (sourceMessageId !== null) {
+      setHighlightedMessageId(sourceMessageId);
+    }
+    if (sourceMessageId !== null) {
+      setHighlightedMessageRequestId((current) => current + 1);
+    }
     return true;
   }
 
+  function detachVisibleStream(nextSessionId: string | null) {
+    const activeStream = activeStreamRef.current;
+    if (!activeStream || activeStream.sessionId === nextSessionId) {
+      return;
+    }
+    activeStreamRef.current = null;
+    activeStream.abortController.abort();
+    setActiveStreamTurnId(null);
+    setCancellingTurnId(null);
+  }
+
   async function openFavoriteSourceConversation(sessionId: string, sourceMessageId: string) {
-    await openConversation(sessionId, sourceMessageId);
-    navigateTo(chatPathForSession(sessionId));
+    const opened = await openConversation(sessionId, sourceMessageId);
+    if (opened) navigateTo(chatPathForSession(sessionId));
   }
 
   async function openConversationFromSidebar(sessionId: string) {
     navigateTo(chatPathForSession(sessionId));
-    await openConversation(sessionId);
+    // The route effect owns the detail read; issuing another here queues two
+    // copies of the same request and immediately makes the first one stale.
+    if (sessionIdFromChatPath(route) === sessionId) await openConversation(sessionId);
   }
 
   async function signOut() {
@@ -327,23 +377,6 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     }
   }
 
-  function switchView(view: WorkspaceView) {
-    if (view !== "home") {
-      saveHomeConversationDraft();
-    }
-    setMobileSidebarOpen(false);
-    setActiveView(view);
-    setComposerError("");
-  }
-
-  function changeScenario(scenario: ScenarioTab) {
-    if (scenario !== "home") {
-      saveHomeConversationDraft();
-    }
-    setActiveScenario(scenario);
-    setComposerError("");
-  }
-
   function startConversation() {
     conversationRequestSeqRef.current += 1;
     const shouldRestoreDraft = !(route === APP_PATH && isHomeConversationDraftContext());
@@ -351,7 +384,6 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
       saveHomeConversationDraft();
     }
     navigateTo(APP_PATH);
-    setActiveView("home");
     setActiveScenario("home");
     if (shouldRestoreDraft && restoreHomeConversationDraft()) {
       return;
@@ -363,40 +395,55 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     setComposerError("");
   }
 
-  async function deleteConversationFromSidebar(sessionId: string) {
-    try {
-      await apiClient.deleteConversation(sessionId);
-      if (sessionId === currentSessionId) {
-        setConversationDetail(null);
-        setCurrentSessionId(null);
-        setUploadingResources([]);
-        setUploadedResources([]);
-        setQuotedContext(null);
-        setQuoteSelection(null);
-        setParentForNextMessage(undefined);
-        if (route !== FAVORITES_PATH) {
-          navigateTo(APP_PATH);
-        }
-      }
-      const conversationResponse = await apiClient.fetchConversations();
-      setConversations(conversationResponse.sessions);
-      setComposerError("");
-    } catch (error) {
-      setComposerError(error instanceof Error ? error.message : "删除会话失败。");
-    }
+  function startReportConversation() {
+    conversationRequestSeqRef.current += 1;
+    saveHomeConversationDraft();
+    navigateTo(APP_PATH);
+    setActiveScenario("home");
+    setCurrentSessionId(null);
+    setConversationDetail(null);
+    clearActiveComposerDraft();
+    setComposerError("");
   }
+  const {
+    deleteConversationFromSidebar,
+    renameConversationFromSidebar,
+    setConversationPinnedFromSidebar,
+    batchPinConversationsFromSidebar,
+    batchDeleteConversationsFromSidebar
+  } = createConversationListActions({
+    refreshConversations,
+    setConversations,
+    setComposerError,
+    visibleConversationRef,
+    currentSessionId,
+    isCurrentScope,
+    setConversationDetail,
+    setCurrentSessionId,
+    setUploadingResources,
+    setUploadedResources,
+    setAnnotatedContexts,
+    setAnnotationSelection,
+    route,
+    navigateTo
+  });
 
   return {
-    changeScenario,
+    conversationViewRef,
+    batchDeleteConversationsFromSidebar,
+    batchPinConversationsFromSidebar,
     clearHomeConversationDraft,
     deleteConversationFromSidebar,
     navigateTo,
     openConversation,
     openConversationFromSidebar,
     openFavoriteSourceConversation,
+    renameConversationFromSidebar,
+    resetForMemberSelection,
     resetWorkspaceState,
+    setConversationPinnedFromSidebar,
     signOut,
     startConversation,
-    switchView
+    startReportConversation,
   };
 }

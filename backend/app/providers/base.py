@@ -1,350 +1,169 @@
-from dataclasses import dataclass, field
-import json
-import socket
 from typing import Any, List, Optional
-from urllib import error, request
+from urllib import request
 
 from backend.app.model_capabilities import (
     DEFAULT_CAPABILITY_PROFILE,
+    ModelCapabilityProfiles,
     ModelCapabilityProfile,
+)
+from backend.app.agent_runtime.model_types import (
+    AssistantModelOutput,
+    ModelRequest,
+)
+from backend.app.core.cancellation import (
+    CancellationToken,
 )
 
 
-@dataclass(frozen=True)
-class ProviderModel:
-    remote_model_id: str
-    model_name: str
-    supports_text: bool = True
-    file_mime_types: list[str] = field(default_factory=list)
-    thinking_modes: list[str] = field(default_factory=lambda: ["default"])
-    supports_tool_calling: bool = False
-    supports_json_output: bool = False
-    context_window_tokens: Optional[int] = None
-    max_output_tokens: Optional[int] = None
-
-    @classmethod
-    def from_profile(
-        cls,
-        *,
-        remote_model_id: str,
-        model_name: str,
-        profile: ModelCapabilityProfile,
-    ) -> "ProviderModel":
-        return cls(
-            remote_model_id=remote_model_id,
-            model_name=model_name,
-            supports_text=profile.supports_text,
-            file_mime_types=profile.file_mime_types,
-            thinking_modes=profile.thinking_modes,
-            supports_tool_calling=profile.supports_tool_calling,
-            supports_json_output=profile.supports_json_output,
-            context_window_tokens=profile.context_window_tokens,
-            max_output_tokens=profile.max_output_tokens,
-        )
-
-
-@dataclass(frozen=True)
-class ProviderConnectionResult:
-    provider_id: str
-    reachable: bool
-    message: str
-
-
-@dataclass(frozen=True)
-class ChatCompletionResult:
-    content: str
-    thinking_content: str = ""
-    usage: dict[str, Any] = field(default_factory=dict)
-    stop_reason: str = "end_turn"
-
-
-@dataclass(frozen=True)
-class ChatCompletionChunk:
-    content_delta: str = ""
-    thinking_delta: str = ""
-    usage: dict[str, Any] = field(default_factory=dict)
-    stop_reason: Optional[str] = None
-
-
-class ProviderModelListError(Exception):
-    pass
-
-
-class ProviderChatCompletionError(Exception):
-    pass
+from backend.app.providers.types import (
+    ModelCapabilityProbeResult,
+    ProviderConnectionResult,
+    ProviderModel,
+)
+from backend.app.providers.errors import ProviderChatCompletionError
+from backend.app.providers.capability_probe import _THINKING_MODES
+from backend.app.providers.errors import ProviderErrorParser, is_context_overflow
+from backend.app.providers.responses import ProviderResponseParser
+from backend.app.providers.message_codec import ProviderMessageCodec
+from backend.app.providers.transport import ProviderTransport
+from backend.app.providers.capability_probe import ProviderCapabilityProbe
 
 
 class ModelProvider:
     provider_id = "provider"
-    display_name = "Provider"
-    default_base_url = ""
+    provider_name = "Provider"
+    default_api_url = ""
     default_official_url = ""
     timeout_seconds = 10
     attachment_timeout_seconds = 300
 
-    def __init__(self, urlopen=request.urlopen):
-        self._urlopen = urlopen
-
-    def test_connection(self, base_url: str, api_key: str) -> ProviderConnectionResult:
-        normalized_base_url = (base_url or self.default_base_url).rstrip("/")
-        if not normalized_base_url:
-            return self._failure("缺少 API 地址")
-        if not api_key.strip():
-            return self._failure("缺少 API key")
-
-        connection_request = request.Request(
-            f"{normalized_base_url}/models",
-            headers={
-                "Accept": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
-            method="GET",
+    def __init__(self, urlopen=request.urlopen, stream_client_factory=None):
+        self.errors = ProviderErrorParser(self.is_context_overflow)
+        self.responses = ProviderResponseParser(self.errors)
+        self.codec = ProviderMessageCodec(self)
+        self.transport = ProviderTransport(
+            self,
+            self.errors,
+            self.responses,
+            urlopen=urlopen,
+            stream_client_factory=stream_client_factory,
         )
+        self.probe = ProviderCapabilityProbe(self)
 
-        try:
-            with self._urlopen(connection_request, timeout=self.timeout_seconds) as response:
-                status = response.status if hasattr(response, "status") else response.getcode()
-        except error.HTTPError as exc:
-            if exc.code in (401, 403):
-                return self._failure("模型服务认证失败")
-            return self._failure(f"模型服务连接失败，HTTP {exc.code}")
-        except (TimeoutError, socket.timeout):
-            return self._failure("连接超时")
-        except error.URLError as exc:
-            if isinstance(exc.reason, (TimeoutError, socket.timeout)):
-                return self._failure("连接超时")
-            return self._failure("模型服务连接失败")
+    def test_connection(self, api_url: str, api_key: str) -> ProviderConnectionResult:
+        return self.transport.test_connection(api_url=api_url, api_key=api_key)
 
-        if 200 <= status < 300:
-            return ProviderConnectionResult(
-                provider_id=self.provider_id,
-                reachable=True,
-                message="连接测试成功",
-            )
-        if status in (401, 403):
-            return self._failure("模型服务认证失败")
-        return self._failure(f"模型服务连接失败，HTTP {status}")
-
-    def list_models(self, base_url: str, api_key: str) -> List[ProviderModel]:
-        normalized_base_url = (base_url or self.default_base_url).rstrip("/")
-        if not normalized_base_url:
-            raise ProviderModelListError("缺少 API 地址")
-        if not api_key.strip():
-            raise ProviderModelListError("缺少 API key")
-
-        model_request = request.Request(
-            f"{normalized_base_url}/models",
-            headers={
-                "Accept": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
-            method="GET",
+    def list_models(
+        self,
+        api_url: str,
+        api_key: str,
+        cancellation_token: CancellationToken | None = None,
+    ) -> List[ProviderModel]:
+        return self.transport.list_models(
+            api_url=api_url, api_key=api_key, cancellation_token=cancellation_token
         )
-
-        try:
-            with self._urlopen(model_request, timeout=self.timeout_seconds) as response:
-                status = response.status if hasattr(response, "status") else response.getcode()
-                body = response.read()
-        except error.HTTPError as exc:
-            if exc.code in (401, 403):
-                raise ProviderModelListError("模型服务认证失败") from exc
-            raise ProviderModelListError(f"模型服务连接失败，HTTP {exc.code}") from exc
-        except (TimeoutError, socket.timeout) as exc:
-            raise ProviderModelListError("连接超时") from exc
-        except error.URLError as exc:
-            if isinstance(exc.reason, (TimeoutError, socket.timeout)):
-                raise ProviderModelListError("连接超时") from exc
-            raise ProviderModelListError("模型服务连接失败") from exc
-
-        if not 200 <= status < 300:
-            if status in (401, 403):
-                raise ProviderModelListError("模型服务认证失败")
-            raise ProviderModelListError(f"模型服务连接失败，HTTP {status}")
-
-        try:
-            payload = json.loads(body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ProviderModelListError("模型服务返回的模型列表不是有效 JSON") from exc
-
-        return self._parse_model_payload(payload)
 
     def complete_chat(
         self,
-        base_url: str,
+        api_url: str,
         api_key: str,
         remote_model_id: str,
-        messages: list[dict[str, Any]],
+        model_request: ModelRequest,
         thinking_mode: str = "default",
-    ) -> ChatCompletionResult:
-        normalized_base_url = (base_url or self.default_base_url).rstrip("/")
-        if not normalized_base_url:
-            raise ProviderChatCompletionError("缺少 API 地址")
-        if not api_key.strip():
-            raise ProviderChatCompletionError("缺少 API key")
-        if not remote_model_id.strip():
-            raise ProviderChatCompletionError("缺少模型 ID")
-
-        serialized_messages = self._serialize_messages(messages)
-        payload = {
-            "model": remote_model_id,
-            "messages": serialized_messages,
-            "stream": False,
-            **self._request_extra_payload(serialized_messages),
-        }
-        if thinking_mode and thinking_mode != "default":
-            payload["reasoning_effort"] = _reasoning_effort(thinking_mode)
-        request_timeout_seconds = self._chat_completion_timeout_seconds(serialized_messages)
-
-        completion_request = request.Request(
-            f"{normalized_base_url}/chat/completions",
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={
-                "Accept": "application/json",
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
+        timeout_seconds: Optional[float] = None,
+        cancellation_token: CancellationToken | None = None,
+    ) -> AssistantModelOutput:
+        return self.transport.complete_chat(
+            api_url=api_url,
+            api_key=api_key,
+            remote_model_id=remote_model_id,
+            model_request=model_request,
+            thinking_mode=thinking_mode,
+            timeout_seconds=timeout_seconds,
+            cancellation_token=cancellation_token,
         )
 
-        attempts = 3
-        for attempt in range(attempts):
-            try:
-                with self._urlopen(completion_request, timeout=request_timeout_seconds) as response:
-                    status = response.status if hasattr(response, "status") else response.getcode()
-                    body = response.read()
-            except error.HTTPError as exc:
-                if exc.code in (401, 403):
-                    raise ProviderChatCompletionError("模型服务认证失败") from exc
-                if 500 <= exc.code < 600 and attempt < attempts - 1:
-                    continue
-                raise ProviderChatCompletionError(f"模型服务调用失败，HTTP {exc.code}") from exc
-            except (TimeoutError, socket.timeout) as exc:
-                if attempt < attempts - 1:
-                    continue
-                raise ProviderChatCompletionError("连接超时") from exc
-            except error.URLError as exc:
-                if isinstance(exc.reason, (TimeoutError, socket.timeout)):
-                    if attempt < attempts - 1:
-                        continue
-                    raise ProviderChatCompletionError("连接超时") from exc
-                if attempt < attempts - 1:
-                    continue
-                raise ProviderChatCompletionError("模型服务调用失败") from exc
+    def stream_chat_payload(
+        self,
+        *,
+        api_url: str,
+        api_key: str,
+        provider_payload: dict[str, Any],
+        timeout_seconds: float | None = None,
+        cancellation_token: CancellationToken | None = None,
+    ):
+        yield from self.transport.stream_chat_payload(
+            api_url=api_url,
+            api_key=api_key,
+            provider_payload=provider_payload,
+            timeout_seconds=timeout_seconds,
+            cancellation_token=cancellation_token,
+        )
 
-            if 200 <= status < 300:
-                break
-            if status in (401, 403):
-                raise ProviderChatCompletionError("模型服务认证失败")
-            if 500 <= status < 600 and attempt < attempts - 1:
-                continue
-            raise ProviderChatCompletionError(f"模型服务调用失败，HTTP {status}")
+    def build_chat_payload(
+        self,
+        *,
+        remote_model_id: str,
+        model_request: ModelRequest,
+        thinking_mode: str,
+        stream: bool,
+    ) -> dict[str, Any]:
+        return self.codec.build_chat_payload(
+            remote_model_id=remote_model_id,
+            model_request=model_request,
+            thinking_mode=thinking_mode,
+            stream=stream,
+        )
 
-        try:
-            completion_payload = json.loads(body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ProviderChatCompletionError("模型服务返回的对话结果不是有效 JSON") from exc
+    def probe_capabilities(
+        self,
+        *,
+        api_url: str,
+        api_key: str,
+        remote_model_id: str,
+        current_profiles: ModelCapabilityProfiles,
+        thinking_modes: list[str],
+        capability_declarations: Optional[dict[str, bool]] = None,
+        cancellation_token: CancellationToken | None = None,
+    ) -> ModelCapabilityProbeResult:
+        return self.probe.probe_capabilities(
+            api_url=api_url,
+            api_key=api_key,
+            remote_model_id=remote_model_id,
+            current_profiles=current_profiles,
+            thinking_modes=thinking_modes,
+            capability_declarations=capability_declarations,
+            cancellation_token=cancellation_token,
+        )
 
-        return self._parse_chat_completion(completion_payload)
+    def is_context_overflow(self, details):
+        return is_context_overflow(details)
 
     def stream_chat(
         self,
-        base_url: str,
+        api_url: str,
         api_key: str,
         remote_model_id: str,
-        messages: list[dict[str, Any]],
+        model_request: ModelRequest,
         thinking_mode: str = "default",
+        timeout_seconds: float | None = None,
+        cancellation_token: CancellationToken | None = None,
     ):
-        normalized_base_url = (base_url or self.default_base_url).rstrip("/")
-        if not normalized_base_url:
-            raise ProviderChatCompletionError("缺少 API 地址")
-        if not api_key.strip():
-            raise ProviderChatCompletionError("缺少 API key")
-        if not remote_model_id.strip():
-            raise ProviderChatCompletionError("缺少模型 ID")
-
-        serialized_messages = self._serialize_messages(messages)
-        payload = {
-            "model": remote_model_id,
-            "messages": serialized_messages,
-            "stream": True,
-            **self._request_extra_payload(serialized_messages),
-        }
-        if thinking_mode and thinking_mode != "default":
-            payload["reasoning_effort"] = _reasoning_effort(thinking_mode)
-        request_timeout_seconds = self._chat_completion_timeout_seconds(serialized_messages)
-
-        completion_request = request.Request(
-            f"{normalized_base_url}/chat/completions",
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={
-                "Accept": "text/event-stream",
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
+        payload = self.build_chat_payload(
+            remote_model_id=remote_model_id,
+            model_request=model_request,
+            thinking_mode=thinking_mode,
+            stream=True,
+        )
+        yield from self.stream_chat_payload(
+            api_url=api_url,
+            api_key=api_key,
+            provider_payload=payload,
+            timeout_seconds=timeout_seconds,
+            cancellation_token=cancellation_token,
         )
 
-        try:
-            with self._urlopen(completion_request, timeout=request_timeout_seconds) as response:
-                status = response.status if hasattr(response, "status") else response.getcode()
-                if not 200 <= status < 300:
-                    if status in (401, 403):
-                        raise ProviderChatCompletionError("模型服务认证失败")
-                    raise ProviderChatCompletionError(f"模型服务调用失败，HTTP {status}")
-                yield from self._iter_stream_chunks(response)
-        except error.HTTPError as exc:
-            if exc.code in (401, 403):
-                raise ProviderChatCompletionError("模型服务认证失败") from exc
-            raise ProviderChatCompletionError(f"模型服务调用失败，HTTP {exc.code}") from exc
-        except (TimeoutError, socket.timeout) as exc:
-            raise ProviderChatCompletionError("连接超时") from exc
-        except error.URLError as exc:
-            if isinstance(exc.reason, (TimeoutError, socket.timeout)):
-                raise ProviderChatCompletionError("连接超时") from exc
-            raise ProviderChatCompletionError("模型服务调用失败") from exc
-
-    def _iter_stream_chunks(self, response):
-        for raw_line in response:
-            line = _decode_stream_line(raw_line)
-            if not line or line.startswith(":") or not line.startswith("data:"):
-                continue
-            data = line[len("data:") :].strip()
-            if data == "[DONE]":
-                break
-            try:
-                payload = json.loads(data)
-            except json.JSONDecodeError as exc:
-                raise ProviderChatCompletionError("模型服务返回的流式片段不是有效 JSON") from exc
-            chunk = _parse_chat_stream_chunk(payload)
-            if chunk:
-                yield chunk
-
-    def _parse_chat_completion(self, payload: Any) -> ChatCompletionResult:
-        if not isinstance(payload, dict):
-            raise ProviderChatCompletionError("模型服务返回的对话结果格式不正确")
-
-        choices = payload.get("choices")
-        if not isinstance(choices, list) or not choices:
-            raise ProviderChatCompletionError("模型服务未返回对话内容")
-        choice = choices[0]
-        if not isinstance(choice, dict):
-            raise ProviderChatCompletionError("模型服务返回的对话结果格式不正确")
-        message = choice.get("message")
-        if not isinstance(message, dict):
-            raise ProviderChatCompletionError("模型服务未返回助手消息")
-
-        content = _content_text(message.get("content"))
-        if not content:
-            raise ProviderChatCompletionError("模型服务返回了空回复")
-
-        return ChatCompletionResult(
-            content=content,
-            thinking_content=_thinking_text(message),
-            usage=_usage_payload(payload.get("usage")),
-            stop_reason=choice.get("finish_reason") if isinstance(choice.get("finish_reason"), str) else "end_turn",
-        )
-
-    def _parse_model_payload(self, payload: Any) -> List[ProviderModel]:
+    def parse_model_payload(self, payload: Any) -> List[ProviderModel]:
         if isinstance(payload, dict):
             raw_models = payload.get("data") or payload.get("models") or []
         elif isinstance(payload, list):
@@ -356,16 +175,32 @@ class ModelProvider:
         for item in raw_models:
             if not isinstance(item, dict):
                 continue
-            remote_model_id = item.get("id") or item.get("model") or item.get("remote_model_id")
+            remote_model_id = (
+                item.get("id") or item.get("model") or item.get("remote_model_id")
+            )
             if not isinstance(remote_model_id, str) or not remote_model_id.strip():
                 continue
             model_name = item.get("name") or item.get("display_name") or remote_model_id
+            raw_created_at = item.get("created_at") or item.get("created")
+            created_at = (
+                int(raw_created_at)
+                if isinstance(raw_created_at, (int, float))
+                and not isinstance(raw_created_at, bool)
+                else None
+            )
             profile = self.normalize_capabilities(item, remote_model_id)
             models.append(
                 ProviderModel.from_profile(
                     remote_model_id=remote_model_id,
-                    model_name=model_name if isinstance(model_name, str) else remote_model_id,
+                    model_name=model_name
+                    if isinstance(model_name, str)
+                    else remote_model_id,
                     profile=profile,
+                    created_at=created_at,
+                    capability_declarations=self.capability_declarations(
+                        item,
+                        remote_model_id,
+                    ),
                 )
             )
         return models
@@ -375,7 +210,120 @@ class ModelProvider:
         raw_model: dict[str, Any],
         remote_model_id: str,
     ) -> ModelCapabilityProfile:
-        return DEFAULT_CAPABILITY_PROFILE
+        del remote_model_id
+        thinking_modes = [
+            mode
+            for mode in _string_list(raw_model.get("thinking_modes"))
+            if mode in _THINKING_MODES
+        ]
+        default_thinking_state = str(
+            raw_model.get("default_thinking_state")
+            or DEFAULT_CAPABILITY_PROFILE.default_thinking_state
+        )
+        if default_thinking_state not in {"thinking", "non_thinking", "unknown"}:
+            default_thinking_state = "unknown"
+        return ModelCapabilityProfile(
+            supports_text=_first_bool(
+                raw_model,
+                "supports_text",
+                "text",
+                fallback=DEFAULT_CAPABILITY_PROFILE.supports_text,
+            ),
+            file_mime_types=_string_list(raw_model.get("file_mime_types")),
+            thinking_modes=thinking_modes
+            or list(DEFAULT_CAPABILITY_PROFILE.thinking_modes),
+            supports_tool_calling=_first_bool(
+                raw_model,
+                "supports_tool_calling",
+                "tool_calling",
+                fallback=DEFAULT_CAPABILITY_PROFILE.supports_tool_calling,
+            ),
+            default_thinking_state=default_thinking_state,
+            context_window_tokens=_first_nonnegative_int(
+                raw_model,
+                "context_window_tokens",
+                "context_length",
+            ),
+            max_output_tokens=_first_nonnegative_int(
+                raw_model,
+                "max_output_tokens",
+                "max_completion_tokens",
+            ),
+        )
+
+    def capability_declarations(
+        self,
+        raw_model: dict[str, Any],
+        remote_model_id: str,
+    ) -> dict[str, bool]:
+        """Return only capabilities explicitly described by provider metadata."""
+
+        del remote_model_id
+        declarations: dict[str, bool] = {}
+        for capability, keys in (
+            ("text", ("supports_text", "text")),
+            ("tool_calling", ("supports_tool_calling", "tool_calling")),
+        ):
+            value = next(
+                (
+                    raw_model[key]
+                    for key in keys
+                    if key in raw_model and isinstance(raw_model[key], bool)
+                ),
+                None,
+            )
+            if isinstance(value, bool):
+                declarations[capability] = value
+
+        declared_mime_types = _nonempty_string_set(raw_model.get("file_mime_types"))
+        if declared_mime_types:
+            declarations.update(
+                {
+                    "image_input": any(
+                        mime_type.startswith("image/")
+                        for mime_type in declared_mime_types
+                    ),
+                    "pdf_input": "application/pdf" in declared_mime_types,
+                    "audio_input": any(
+                        mime_type.startswith("audio/")
+                        for mime_type in declared_mime_types
+                    ),
+                    "video_input": any(
+                        mime_type.startswith("video/")
+                        for mime_type in declared_mime_types
+                    ),
+                }
+            )
+        for key in ("supports_vision", "vision"):
+            if key in raw_model and isinstance(raw_model[key], bool):
+                declarations["image_input"] = raw_model[key]
+                break
+        thinking_modes = _string_list(raw_model.get("thinking_modes"))
+        if thinking_modes:
+            declarations["thinking"] = any(
+                mode not in {"default", "off"} for mode in thinking_modes
+            )
+        else:
+            for key in ("supports_thinking", "thinking", "reasoning"):
+                if key in raw_model and isinstance(raw_model[key], bool):
+                    declarations["thinking"] = raw_model[key]
+                    break
+        return declarations
+
+    def capability_probe_tool_choice(self, state: str) -> Any:
+        return {
+            "type": "function",
+            "function": {"name": "capability_probe"},
+        }
+
+    def thinking_mode_payload(
+        self,
+        remote_model_id: str,
+        thinking_mode: str,
+    ) -> dict[str, Any]:
+        if not thinking_mode or thinking_mode == "default":
+            return {}
+        return {"reasoning_effort": _reasoning_effort(thinking_mode)}
 
     def native_attachment_mime_types(self) -> set[str]:
         return set()
@@ -383,217 +331,74 @@ class ModelProvider:
     def supports_native_attachment(self, mime_type: str) -> bool:
         return mime_type in self.native_attachment_mime_types()
 
-    def _request_extra_payload(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
+    def request_extra_payload(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
         return {}
 
-    def _chat_completion_timeout_seconds(self, messages: list[dict[str, Any]]) -> int:
-        if _messages_include_native_attachment(messages):
-            return max(self.timeout_seconds, self.attachment_timeout_seconds)
-        return self.timeout_seconds
+    def serialize_file_part(self, part: dict[str, Any]) -> dict[str, Any]:
+        raise ProviderChatCompletionError(
+            "当前模型服务不支持该附件类型。", capability_rejected=True
+        )
 
-    def _serialize_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [
-            {"role": message.get("role", "user"), "content": self._serialize_content(message.get("content", ""))}
-            for message in messages
-        ]
-
-    def _serialize_content(self, content: Any) -> Any:
-        if not isinstance(content, list):
-            return content
-        return [self._serialize_content_part(part) for part in content]
-
-    def _serialize_content_part(self, part: Any) -> dict[str, Any]:
-        if not isinstance(part, dict):
-            raise ProviderChatCompletionError("模型服务不支持该消息内容格式")
-        part_type = part.get("type")
-        if part_type == "text":
-            return {"type": "text", "text": str(part.get("text", ""))}
-        if part_type == "image":
-            mime_type = str(part.get("mime_type", ""))
-            if not self.supports_native_attachment(mime_type):
-                raise ProviderChatCompletionError("当前模型服务不支持该附件类型。")
-            return {
-                "type": "image_url",
-                "image_url": {"url": _data_url(mime_type, str(part.get("data_base64", "")))},
-            }
-        if part_type == "file":
-            mime_type = str(part.get("mime_type", ""))
-            if not self.supports_native_attachment(mime_type):
-                raise ProviderChatCompletionError("当前模型服务不支持该附件类型。")
-            return self._serialize_file_part(part)
-        if part_type == "audio":
-            mime_type = str(part.get("mime_type", ""))
-            if not self.supports_native_attachment(mime_type):
-                raise ProviderChatCompletionError("当前模型服务不支持该附件类型。")
-            return {
-                "type": "input_audio",
-                "input_audio": {
-                    "data": str(part.get("data_base64", "")),
-                    "format": _audio_format(mime_type),
-                },
-            }
-        if part_type == "video":
-            mime_type = str(part.get("mime_type", ""))
-            if not self.supports_native_attachment(mime_type):
-                raise ProviderChatCompletionError("当前模型服务不支持该附件类型。")
-            return {
-                "type": "video_url",
-                "video_url": {
-                    "url": _data_url(
-                        _canonical_video_mime_type(mime_type),
-                        str(part.get("data_base64", "")),
-                    )
-                },
-            }
-        raise ProviderChatCompletionError("模型服务不支持该消息内容格式")
-
-    def _serialize_file_part(self, part: dict[str, Any]) -> dict[str, Any]:
-        raise ProviderChatCompletionError("当前模型服务不支持该附件类型。")
-
-    def _failure(self, message: str) -> ProviderConnectionResult:
+    def failure(
+        self, message: str, *, code: str = "MODEL_ERROR"
+    ) -> ProviderConnectionResult:
         return ProviderConnectionResult(
             provider_id=self.provider_id,
             reachable=False,
             message=message,
+            code=code,
         )
 
 
-def _content_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content.strip()
-    if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, dict) and isinstance(item.get("text"), str):
-                parts.append(item["text"])
-        return "\n".join(parts).strip()
-    return ""
+def _nonempty_string_set(value: Any) -> set[str]:
+    if not isinstance(value, list):
+        return set()
+    return {
+        item.strip().lower() for item in value if isinstance(item, str) and item.strip()
+    }
 
 
-def _messages_include_native_attachment(messages: list[dict[str, Any]]) -> bool:
-    attachment_types = {"image_url", "file", "input_audio", "video_url"}
-    for message in messages:
-        content = message.get("content")
-        if not isinstance(content, list):
-            continue
-        for part in content:
-            if isinstance(part, dict) and part.get("type") in attachment_types:
-                return True
-    return False
-
-
-def _content_delta_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, dict) and isinstance(item.get("text"), str):
-                parts.append(item["text"])
-        return "".join(parts)
-    return ""
-
-
-def _thinking_text(message: dict[str, Any]) -> str:
-    for key in ("reasoning_content", "thinking_content", "reasoning"):
-        value = message.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-        if isinstance(value, list):
-            text = _content_text(value)
-            if text:
-                return text
-        if isinstance(value, dict):
-            for nested_key in ("content", "summary", "text"):
-                nested_value = value.get(nested_key)
-                if isinstance(nested_value, str) and nested_value.strip():
-                    return nested_value.strip()
-    return ""
-
-
-def _thinking_delta_text(message: dict[str, Any]) -> str:
-    for key in ("reasoning_content", "thinking_content", "reasoning"):
-        value = message.get(key)
-        if isinstance(value, str):
-            return value
-        if isinstance(value, list):
-            return _content_delta_text(value)
-        if isinstance(value, dict):
-            for nested_key in ("content", "summary", "text"):
-                nested_value = value.get(nested_key)
-                if isinstance(nested_value, str):
-                    return nested_value
-    return ""
-
-
-def _parse_chat_stream_chunk(payload: Any) -> Optional[ChatCompletionChunk]:
-    if not isinstance(payload, dict):
-        raise ProviderChatCompletionError("模型服务返回的流式片段格式不正确")
-    choices = payload.get("choices")
-    if not isinstance(choices, list) or not choices:
-        usage = _usage_payload(payload.get("usage"))
-        return ChatCompletionChunk(usage=usage) if usage else None
-    choice = choices[0]
-    if not isinstance(choice, dict):
-        raise ProviderChatCompletionError("模型服务返回的流式片段格式不正确")
-    delta = choice.get("delta")
-    if not isinstance(delta, dict):
-        delta = choice.get("message") if isinstance(choice.get("message"), dict) else {}
-    usage = _usage_payload(payload.get("usage"))
-    stop_reason = choice.get("finish_reason") if isinstance(choice.get("finish_reason"), str) else None
-    return ChatCompletionChunk(
-        content_delta=_content_delta_text(delta.get("content")),
-        thinking_delta=_thinking_delta_text(delta),
-        usage=usage,
-        stop_reason=stop_reason,
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return list(
+        dict.fromkeys(
+            item.strip().lower()
+            for item in value
+            if isinstance(item, str) and item.strip()
+        )
     )
 
 
-def _decode_stream_line(raw_line: Any) -> str:
-    if isinstance(raw_line, bytes):
-        return raw_line.decode("utf-8").strip()
-    return str(raw_line).strip()
+def _first_bool(
+    payload: dict[str, Any],
+    *keys: str,
+    fallback: bool,
+) -> bool:
+    return next(
+        (
+            payload[key]
+            for key in keys
+            if key in payload and isinstance(payload[key], bool)
+        ),
+        fallback,
+    )
 
 
-def _usage_payload(usage: Any) -> dict[str, Any]:
-    if not isinstance(usage, dict):
-        return {}
-    return {key: value for key, value in usage.items() if isinstance(key, str)}
-
-
-def _data_url(mime_type: str, data_base64: str) -> str:
-    return f"data:{mime_type};base64,{data_base64}"
-
-
-def _audio_format(mime_type: str) -> str:
-    return {
-        "audio/amr": "amr",
-        "audio/wav": "wav",
-        "audio/x-wav": "wav",
-        "audio/3gpp": "3gpp",
-        "audio/3gpp2": "3gpp2",
-        "audio/mpeg": "mp3",
-        "audio/mp3": "mp3",
-        "audio/aiff": "aiff",
-        "audio/x-aiff": "aiff",
-        "audio/aac": "aac",
-        "audio/ogg": "ogg",
-        "audio/flac": "flac",
-        "audio/mp4": "m4a",
-        "audio/m4a": "m4a",
-        "audio/x-m4a": "m4a",
-    }.get(mime_type, mime_type.split("/")[-1])
-
-
-def _canonical_video_mime_type(mime_type: str) -> str:
-    return "video/mov" if mime_type == "video/quicktime" else mime_type
+def _first_nonnegative_int(
+    payload: dict[str, Any],
+    *keys: str,
+) -> Optional[int]:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+    return None
 
 
 def _reasoning_effort(thinking_mode: str) -> str:
-    if thinking_mode in {"low", "medium", "high"}:
+    if thinking_mode in {"minimal", "low", "medium", "high", "xhigh", "max"}:
         return thinking_mode
-    if thinking_mode in {"fast"}:
-        return "low"
-    if thinking_mode in {"xhigh"}:
-        return "high"
+    if thinking_mode == "off":
+        return "none"
     return thinking_mode

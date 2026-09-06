@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "vite/client",
+      "node"
+    ],
+    "moduleResolution": "Bundler"
+  },
+  "include": [
+    "fixtures/**/*.ts",
+    "fixtures/**/*.tsx",
+    "browser/**/*.ts",
+    "../playwright.config.ts",
+    "integration/**/*.ts",
+    "../playwright.integration.config.ts"
+  ]
+}

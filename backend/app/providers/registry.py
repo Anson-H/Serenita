@@ -19,3 +19,6 @@ class ProviderRegistry:
             return self._providers[provider_id]
         except KeyError:
             raise ProviderNotFoundError(provider_id)
+
+    def providers(self) -> tuple[ModelProvider, ...]:
+        return tuple(self._providers.values())

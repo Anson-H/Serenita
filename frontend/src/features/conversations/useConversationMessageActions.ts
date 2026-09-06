@@ -7,14 +7,18 @@ import {
 } from "react";
 
 import { type ConversationMessage } from "../../api/client";
+import { copyTextToClipboard } from "../../utils/clipboard";
+import {
+  focusWithoutScroll,
+  formTextValue
+} from "../../utils/inputMethod";
+import { TRANSIENT_SUCCESS_ICON_DURATION_MS } from "../../utils/transientFeedback";
 import { editDraftFromMessage, hasSubmittableDraft, removeContextResourceById } from "./conversationDraft";
-import { type QuoteSelection, type QuotedContext } from "./workspaceTypes";
+import { type AnnotatedContext, type AnnotationSelection } from "./workspaceTypes";
 
-const COPY_SUCCESS_VISIBLE_MS = 1400;
-
-type SubmitConversationMessage = (input: {
+type EditConversationMessage = (input: {
+  message: ConversationMessage;
   rawText: string;
-  parentMessageId: string | null | undefined;
   contextResources: Array<Record<string, unknown>>;
   onSubmitted?: () => void;
 }) => Promise<void>;
@@ -26,17 +30,17 @@ type ConversationMessageActionsOptions = {
   editingMessageInputRef: MutableRefObject<HTMLTextAreaElement | null>;
   editingMessageText: string;
   messageRefs: MutableRefObject<Map<string, HTMLElement>>;
-  quoteSelection: QuoteSelection | null;
+  annotationSelection: AnnotationSelection | null;
+  preserveConversationAnchor: (anchor: HTMLElement) => void;
   setComposerError: Dispatch<SetStateAction<string>>;
   setCopiedMessageId: Dispatch<SetStateAction<string | null>>;
   setEditingMessageContextResources: Dispatch<SetStateAction<Array<Record<string, unknown>>>>;
   setEditingMessageId: Dispatch<SetStateAction<string | null>>;
   setEditingMessageText: Dispatch<SetStateAction<string>>;
   setHighlightedMessageId: Dispatch<SetStateAction<string | null>>;
-  setParentForNextMessage: Dispatch<SetStateAction<string | null | undefined>>;
-  setQuoteSelection: Dispatch<SetStateAction<QuoteSelection | null>>;
-  setQuotedContext: Dispatch<SetStateAction<QuotedContext | null>>;
-  submitConversationMessage: SubmitConversationMessage;
+  setAnnotatedContexts: Dispatch<SetStateAction<AnnotatedContext[]>>;
+  setAnnotationSelection: Dispatch<SetStateAction<AnnotationSelection | null>>;
+  editConversationMessage: EditConversationMessage;
 };
 
 export function useConversationMessageActions(options: ConversationMessageActionsOptions) {
@@ -47,44 +51,29 @@ export function useConversationMessageActions(options: ConversationMessageAction
     editingMessageInputRef,
     editingMessageText,
     messageRefs,
-    quoteSelection,
+    annotationSelection,
+    preserveConversationAnchor,
     setComposerError,
     setCopiedMessageId,
     setEditingMessageContextResources,
     setEditingMessageId,
     setEditingMessageText,
     setHighlightedMessageId,
-    setParentForNextMessage,
-    setQuoteSelection,
-    setQuotedContext,
-    submitConversationMessage
+    setAnnotatedContexts,
+    setAnnotationSelection,
+    editConversationMessage
   } = options;
-
-  useEffect(() => {
-    if (!editingMessageId) {
-      return;
-    }
-    const frameHandle = window.requestAnimationFrame(() => {
-      editingMessageInputRef.current?.focus();
-      editingMessageInputRef.current?.select();
-    });
-    return () => window.cancelAnimationFrame(frameHandle);
-  }, [editingMessageId, editingMessageInputRef]);
-
   useEffect(() => {
     if (!editingMessageId) {
       return;
     }
     const frameHandle = window.requestAnimationFrame(() => {
       const input = editingMessageInputRef.current;
-      if (!input) {
-        return;
-      }
-      input.style.height = "auto";
-      input.style.height = `${input.scrollHeight}px`;
+      focusWithoutScroll(input);
+      input?.setSelectionRange(0, input.value.length);
     });
     return () => window.cancelAnimationFrame(frameHandle);
-  }, [editingMessageId, editingMessageInputRef, editingMessageText]);
+  }, [editingMessageId, editingMessageInputRef]);
 
   useEffect(() => {
     return () => {
@@ -94,11 +83,39 @@ export function useConversationMessageActions(options: ConversationMessageAction
     };
   }, [copySuccessTimeoutRef]);
 
-  async function copyMessage(message: ConversationMessage) {
-    if (!navigator.clipboard?.writeText) {
+  useEffect(() => {
+    if (!annotationSelection) {
       return;
     }
-    await navigator.clipboard.writeText(message.content);
+    function dismissOnOutsidePointer(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".selection-annotation-popover")) {
+        return;
+      }
+      setAnnotationSelection(null);
+    }
+    function dismissOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+      window.getSelection()?.removeAllRanges();
+      setAnnotationSelection(null);
+    }
+    document.addEventListener("pointerdown", dismissOnOutsidePointer);
+    document.addEventListener("keydown", dismissOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOnOutsidePointer);
+      document.removeEventListener("keydown", dismissOnEscape);
+    };
+  }, [annotationSelection, setAnnotationSelection]);
+
+  async function copyMessage(message: ConversationMessage) {
+    try {
+      await copyTextToClipboard(message.content);
+    } catch (error) {
+      setComposerError(error instanceof Error ? error.message : "消息复制失败，请检查剪贴板权限。");
+      return;
+    }
     setCopiedMessageId(message.message_id);
     if (copySuccessTimeoutRef.current !== null) {
       window.clearTimeout(copySuccessTimeoutRef.current);
@@ -108,36 +125,37 @@ export function useConversationMessageActions(options: ConversationMessageAction
         currentMessageId === message.message_id ? null : currentMessageId
       );
       copySuccessTimeoutRef.current = null;
-    }, COPY_SUCCESS_VISIBLE_MS);
+    }, TRANSIENT_SUCCESS_ICON_DURATION_MS);
   }
 
-  function updateQuoteSelection(message: ConversationMessage) {
-    if (message.role === "thinking") {
-      setQuoteSelection(null);
-      return;
-    }
+  function updateAnnotationSelection() {
     const selection = window.getSelection();
     const selectedText = selection?.toString().trim() || "";
-    const messageElement = messageRefs.current.get(message.message_id);
     const anchorNode = selection?.anchorNode ?? null;
     const focusNode = selection?.focusNode ?? null;
+    const anchorElement = anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement;
+    const focusElement = focusNode instanceof Element ? focusNode : focusNode?.parentElement;
+    const anchorSource = anchorElement?.closest<HTMLElement>("[data-annotation-source-id]") ?? null;
+    const focusSource = focusElement?.closest<HTMLElement>("[data-annotation-source-id]") ?? null;
+    const sourceRecordId = anchorSource?.dataset.annotationSourceId?.trim() || "";
     if (
       !selection ||
       !selectedText ||
-      !messageElement ||
       !anchorNode ||
       !focusNode ||
-      !messageElement.contains(anchorNode) ||
-      !messageElement.contains(focusNode) ||
+      !anchorSource ||
+      !focusSource ||
+      !sourceRecordId ||
+      focusSource.dataset.annotationSourceId?.trim() !== sourceRecordId ||
       selection.rangeCount === 0
     ) {
-      setQuoteSelection(null);
+      setAnnotationSelection(null);
       return;
     }
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
     if (!rect.width && !rect.height) {
-      setQuoteSelection(null);
+      setAnnotationSelection(null);
       return;
     }
     const popoverHalfWidth = 72;
@@ -146,9 +164,9 @@ export function useConversationMessageActions(options: ConversationMessageAction
       window.innerWidth - popoverHalfWidth - 12
     );
     const top = Math.max(rect.top, 16);
-    setQuoteSelection({
-      resource_id: message.message_id,
-      quote_text: selectedText,
+    setAnnotationSelection({
+      source_record_id: sourceRecordId,
+      annotation_text: selectedText,
       preview: selectedText.length > 60 ? `${selectedText.slice(0, 60)}...` : selectedText,
       left,
       top
@@ -156,20 +174,38 @@ export function useConversationMessageActions(options: ConversationMessageAction
   }
 
   function addSelectedTextToConversation() {
-    if (!quoteSelection) {
+    if (!annotationSelection) {
       return;
     }
-    setQuotedContext({
-      resource_id: quoteSelection.resource_id,
-      quote_text: quoteSelection.quote_text,
-      preview: quoteSelection.preview
+    setAnnotatedContexts((currentAnnotations) => {
+      const alreadyAdded = currentAnnotations.some(
+        (annotation) =>
+          annotation.source_record_id === annotationSelection.source_record_id
+          && annotation.annotation_text === annotationSelection.annotation_text
+      );
+      if (alreadyAdded) {
+        return currentAnnotations;
+      }
+      return [
+        ...currentAnnotations,
+        {
+          resource_id: window.crypto.randomUUID(),
+          source_record_id: annotationSelection.source_record_id,
+          annotation_text: annotationSelection.annotation_text,
+          preview: annotationSelection.preview
+        }
+      ];
     });
     window.getSelection()?.removeAllRanges();
-    setQuoteSelection(null);
+    setAnnotationSelection(null);
   }
 
   function editUserMessage(message: ConversationMessage) {
     const draft = editDraftFromMessage(message);
+    const messageElement = messageRefs.current.get(message.message_id);
+    if (messageElement) {
+      preserveConversationAnchor(messageElement);
+    }
     setEditingMessageId(draft.messageId);
     setEditingMessageText(draft.text);
     setEditingMessageContextResources(draft.contextResources);
@@ -177,6 +213,12 @@ export function useConversationMessageActions(options: ConversationMessageAction
   }
 
   function cancelEditingMessage() {
+    const messageElement = editingMessageId
+      ? messageRefs.current.get(editingMessageId)
+      : null;
+    if (messageElement) {
+      preserveConversationAnchor(messageElement);
+    }
     setEditingMessageId(null);
     setEditingMessageText("");
     setEditingMessageContextResources([]);
@@ -191,21 +233,20 @@ export function useConversationMessageActions(options: ConversationMessageAction
 
   async function submitEditedUserMessage(event: FormEvent<HTMLFormElement>, message: ConversationMessage) {
     event.preventDefault();
-    const trimmedText = editingMessageText.trim();
+    const trimmedText = formTextValue(event.currentTarget, "edited-message", editingMessageText).trim();
     if (!hasSubmittableDraft(trimmedText, editingMessageContextResources)) {
       setComposerError("编辑内容不能为空。");
       return;
     }
 
-    await submitConversationMessage({
+    await editConversationMessage({
+      message,
       rawText: trimmedText,
-      parentMessageId: message.parent_message_id,
       contextResources: editingMessageContextResources,
       onSubmitted: () => {
         setEditingMessageId(null);
         setEditingMessageText("");
         setEditingMessageContextResources([]);
-        setParentForNextMessage(undefined);
         setHighlightedMessageId(null);
       }
     });
@@ -218,6 +259,6 @@ export function useConversationMessageActions(options: ConversationMessageAction
     editUserMessage,
     removeEditingContextResource,
     submitEditedUserMessage,
-    updateQuoteSelection
+    updateAnnotationSelection
   };
 }

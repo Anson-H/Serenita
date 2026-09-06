@@ -1,5 +1,5 @@
-import { Favorite } from "./types";
 import { request } from "./request";
+import { type Favorite, type FavoriteSourceType } from "./types";
 
 export function fetchFavorites() {
   return request<{ favorites: Favorite[]; has_more: boolean; next_cursor: string | null }>("/favorites");
@@ -10,13 +10,29 @@ export function getFavorite(favoriteId: string) {
 }
 
 export function createFavorite(sourceSessionId: string, sourceId: string, tags: string[]) {
+  return createFavoriteSource({
+    sourceType: "message",
+    sourceSessionId,
+    sourceId,
+    tags
+  });
+}
+
+export function createFavoriteSource(input: {
+  memberId?: string;
+  sourceType: FavoriteSourceType;
+  sourceSessionId?: string | null;
+  sourceId: string;
+  tags: string[];
+}) {
   return request<Favorite>("/favorites", {
     method: "POST",
     body: JSON.stringify({
-      source_type: "message",
-      source_session_id: sourceSessionId,
-      source_id: sourceId,
-      tags
+      source_type: input.sourceType,
+      member_id: input.memberId,
+      ...(input.sourceSessionId ? { source_session_id: input.sourceSessionId } : {}),
+      source_id: input.sourceId,
+      tags: input.tags
     })
   });
 }

@@ -6,15 +6,23 @@ model/
 
 # local env / generated files
 .env
+/AGENTS.md
 node_modules/
 dist/
 *.tsbuildinfo
+frontend/test-results/
+frontend/playwright-report/
 __pycache__/
 *.pyc
 .obsidian/
 serenita_files/
+.local-backups/
+tmp/
 .worktrees/
 .superpowers/
 
 # macOS
 .DS_Store
+
+# transient in-memory session file
+:memory:.ses

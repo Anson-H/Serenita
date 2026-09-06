@@ -1,11 +1,10 @@
-const userNameSpacePattern = /\s/;
-
-export function validateUserNameForSignUp(userName: string) {
-  if (!userName.trim()) {
-    return "用户名称不能为空。";
+export function validateAccountNameForSignUp(accountName: string) {
+  const normalized = accountName.trim();
+  if (!normalized) {
+    return "账号名称不能为空。";
   }
-  if (userNameSpacePattern.test(userName)) {
-    return "用户名称不能包含空格。";
+  if (Array.from(normalized).length > 50) {
+    return "账号名称不能超过 50 个字符。";
   }
   return "";
 }

@@ -1,6 +1,19 @@
-class Skill:
-    skill_id = "skill"
-    name = "Skill"
+from __future__ import annotations
 
-    def activate(self, context):
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class SkillDocument:
+    """Skill instructions read from disk plus host-only execution metadata."""
+
+    name: str
+    content: str
+    allowed_tools: frozenset[str] = frozenset()
+
+
+class Skill:
+    name = "skill"
+
+    def read(self, context) -> SkillDocument:
         raise NotImplementedError

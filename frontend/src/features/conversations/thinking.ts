@@ -1,23 +1,18 @@
-import type { ConversationMessage } from "../../api/client";
-
-export const MIN_THINKING_DURATION_MS = 100;
+const MIN_THINKING_DURATION_MS = 100;
 
 const thinkingModeLabels: Record<string, string> = {
-  default: "默认强度推理",
-  fast: "关闭推理",
-  low: "低强度推理",
-  medium: "中强度推理",
-  high: "高强度推理",
-  xhigh: "超高强度推理"
+  default: "默认",
+  off: "关闭",
+  minimal: "最小",
+  low: "低",
+  medium: "中",
+  high: "高",
+  xhigh: "超高",
+  max: "最高"
 };
 
 export function thinkingModeLabel(mode: string) {
   return thinkingModeLabels[mode] ?? mode;
-}
-
-export function composerThinkingModeLabel(mode: string) {
-  const label = thinkingModeLabel(mode);
-  return label === "关闭推理" ? "关闭" : label.replace(/强度推理$/, "");
 }
 
 export function formatThinkingDuration(durationMs: number | undefined) {
@@ -37,11 +32,17 @@ export function formatThinkingDuration(durationMs: number | undefined) {
   return seconds ? `${minutes} 分 ${seconds} 秒` : `${minutes} 分`;
 }
 
-export function thinkingSummaryText(message: ConversationMessage, isStreaming: boolean) {
-  if (isStreaming && !message.duration_ms) {
-    return "正在思考";
-  }
-  return `思考完成（用时 ${formatThinkingDuration(message.duration_ms)}）`;
+export function liveModelRecordDurationMs(
+  nowMs: number,
+  persistedDurationMs: number,
+  startedAtMs: number | null,
+  fallbackStartedAtMs: number
+) {
+  return Math.max(
+    MIN_THINKING_DURATION_MS,
+    persistedDurationMs,
+    nowMs - (startedAtMs ?? fallbackStartedAtMs)
+  );
 }
 
 export function isAbortError(error: unknown) {

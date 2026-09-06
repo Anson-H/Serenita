@@ -1,45 +1,52 @@
 /* Auth surface styles. */
 
 .login-page {
+  background: var(--color-surface);
   display: grid;
   min-height: 100vh;
   place-items: center;
-  padding: 24px;
+  padding: var(--space-content);
 }
 
 .auth-panel {
   display: grid;
-  gap: 20px;
-  width: min(100%, 440px);
-  padding: 28px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--surface-strong) 82%, transparent);
-  box-shadow: 0 20px 50px oklch(34% 0.04 245 / 0.08);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-panel);
+  background: color-mix(in oklch, var(--color-surface) 82%, transparent);
 }
 
 .auth-switch {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
 }
 
 .login-form,
 .register-form {
   display: grid;
-  gap: 14px;
+  gap: var(--space-content);
+}
+
+.auth-panel label,
+.auth-panel .secret-field {
+  gap: var(--space-control-block) var(--space-control-inline);
+  color: var(--color-foreground);
+  font-size: var(--text-body);
+  font-weight: var(--weight-strong);
+  line-height: var(--line-body);
+}
+
+.auth-panel input {
+  color: var(--color-foreground);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-body);
 }
 
 .registration-guidance {
   display: grid;
-  gap: 4px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-control);
-  background: var(--surface-accent);
-  color: var(--accent-ink);
-  font-size: var(--text-sm);
-  font-weight: 700;
-  padding: 10px 12px;
+  gap: var(--space-related);
+  border: 1px solid var(--color-divider);
+  padding: var(--space-control-block) var(--space-content);
 }
 
 .registration-guidance p {
@@ -47,24 +54,24 @@
 }
 
 .registration-guidance {
-  border-color: var(--line-strong);
+  border-color: var(--color-divider);
   border-radius: var(--radius-control);
-  background: var(--surface-accent);
-  color: var(--accent-ink);
+  background: var(--color-content-inset);
+  color: var(--color-foreground);
 }
 
 .auth-panel {
   width: min(100%, 460px);
-  gap: 22px;
-  padding: 30px;
+  gap: var(--space-content);
+  padding: var(--space-content);
 }
 
 .auth-switch {
-  gap: 6px;
-  padding: 4px;
-  border: 1px solid var(--line);
+  gap: var(--space-related);
+  padding: var(--space-related);
+  border: 1px solid var(--color-divider);
   border-radius: var(--radius-control);
-  background: var(--surface-muted);
+  background: var(--color-control-surface);
 }
 
 .auth-switch .workspace-tab {
@@ -74,10 +81,11 @@
 .auth-panel .brand-name {
   justify-content: center;
   font-size: var(--text-brand);
+  line-height: var(--line-brand);
 }
 
 .registration-guidance {
-  font-size: var(--text-xs);
-  font-weight: 640;
+  font-size: var(--text-meta);
+  font-weight: var(--weight-strong);
   line-height: 1.55;
 }

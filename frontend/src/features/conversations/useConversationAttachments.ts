@@ -4,6 +4,8 @@ import {
   type SetStateAction,
   useEffect,
 } from "react";
+import { useActiveScope } from "../../utils/useActiveScope";
+import { useMembers } from "../members/MemberProvider";
 
 import {
   type ConversationDetail,
@@ -18,6 +20,7 @@ type ConversationAttachmentsOptions = {
   currentSessionId: string | null;
   selectedModelId: string | null;
   selectedModelFileMimeTypes: string[];
+  attachmentCapabilitiesReady: boolean;
   setComposerError: Dispatch<SetStateAction<string>>;
   setConversationDetail: Dispatch<SetStateAction<ConversationDetail | null>>;
   setCurrentSessionId: Dispatch<SetStateAction<string | null>>;
@@ -27,11 +30,14 @@ type ConversationAttachmentsOptions = {
 };
 
 export function useConversationAttachments(options: ConversationAttachmentsOptions) {
+  const { activeMemberId } = useMembers();
+  const memberId = options.conversationDetail ? options.conversationDetail.member_id : activeMemberId;
+  const isCurrentScope = useActiveScope(`${memberId ?? "unbound"}:${options.currentSessionId ?? ""}`);
   const {
-    conversationDetail,
     currentSessionId,
     selectedModelId,
     selectedModelFileMimeTypes,
+    attachmentCapabilitiesReady,
     setComposerError,
     setConversationDetail,
     setCurrentSessionId,
@@ -41,50 +47,77 @@ export function useConversationAttachments(options: ConversationAttachmentsOptio
   } = options;
 
   useEffect(() => {
-    if (!uploadedResourcesLength) {
+    if (!attachmentCapabilitiesReady || !uploadedResourcesLength) {
       return;
     }
     setUploadedResources((current) =>
       filterResourcesByMimeTypes(current, selectedModelFileMimeTypes)
     );
-  }, [selectedModelFileMimeTypes, setUploadedResources, uploadedResourcesLength]);
+  }, [attachmentCapabilitiesReady, selectedModelFileMimeTypes, setUploadedResources, uploadedResourcesLength]);
 
   async function handleFileUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-    const uploadId = `${file.name}-${file.lastModified}-${Date.now()}`;
-    const handleUploadProgress = (progress: number) => {
-      setUploadingResources((current) =>
-        current.map((resource) =>
-          resource.upload_id === uploadId ? { ...resource, progress } : resource
-        )
-      );
-    };
-    setComposerError("");
-    setUploadingResources((current) => [
-      ...current,
-      {
-        upload_id: uploadId,
-        name: file.name,
-        progress: 1
-      }
-    ]);
+    const input = event.currentTarget;
+    const files = Array.from(input.files ?? []);
+    input.value = "";
+    if (!files.length) return;
     try {
-      const result = await apiClient.uploadContextResource(currentSessionId, file, selectedModelId, handleUploadProgress);
-      setCurrentSessionId(result.session_id);
-      setUploadedResources((current) => [...current, result.resource]);
-      if (!conversationDetail || conversationDetail.session_id !== result.session_id) {
-        const detail = await apiClient.getConversation(result.session_id);
-        setConversationDetail(detail);
-      }
+      const upload = await uploadFiles(files, currentSessionId);
+      if (!isCurrentScope()) return;
+      let detail: ConversationDetail | null = null;
+      try { detail = await apiClient.getConversation(upload.sessionId); }
+      catch { if (isCurrentScope()) setComposerError("附件已上传，聊天详情暂时无法刷新，请重试。"); }
+      if (!isCurrentScope()) return;
+      setCurrentSessionId(upload.sessionId);
+      setConversationDetail(detail);
     } catch (error) {
-      setComposerError(error instanceof Error ? error.message : "文件上传失败。");
-    } finally {
-      setUploadingResources((current) => current.filter((resource) => resource.upload_id !== uploadId));
-      event.target.value = "";
+      if (isCurrentScope()) setComposerError(error instanceof Error ? error.message : "文件上传失败。");
     }
+  }
+
+  async function uploadFiles(files: File[], initialSessionId: string | null = null, batch?: {
+    memberId: string;
+    isCurrent: () => boolean;
+    onUploaded: (sessionId: string, resource: UploadedResource) => void;
+  }) {
+    let sessionId = initialSessionId;
+    const resources: UploadedResource[] = [];
+    const current = () => isCurrentScope() && (!batch || batch.isCurrent());
+    const requireScope = () => {
+      if (!current()) { const error = new Error("上传所属页面已改变。"); error.name = "AbortError"; throw error; }
+    };
+    requireScope();
+    setComposerError("");
+    for (const [index, file] of files.entries()) {
+      requireScope();
+      const progressKey = `${file.name}-${Date.now()}-${index}`;
+      setUploadingResources(current => [...current, { progress_key: progressKey, originalFilename: file.name, progress: 1 }]);
+      try {
+        const result = await apiClient.uploadContextResource(batch?.memberId ?? memberId, sessionId, file, selectedModelId, progress => {
+          if (current()) setUploadingResources(current => current.map(resource => resource.progress_key === progressKey ? { ...resource, progress } : resource));
+        });
+        requireScope();
+        sessionId = result.session_id;
+        resources.push(result.resource);
+        if (batch) batch.onUploaded(sessionId, result.resource);
+        else setUploadedResources(current => [...current, result.resource]);
+      } catch (error) {
+        requireScope();
+        const message = `${file.name} 上传失败，已上传 ${resources.length} 个文件，其余文件尚未上传。${error instanceof Error ? error.message : ""}`;
+        if (!batch) setComposerError(message);
+        if (!batch && sessionId) {
+          let detail: ConversationDetail | null = null;
+          try { detail = await apiClient.getConversation(sessionId); } catch { /* Preserve the upload error and the confirmed resource ownership. */ }
+          requireScope();
+          setCurrentSessionId(sessionId);
+          setConversationDetail(detail);
+        }
+        throw new Error(message);
+      } finally {
+        if (current()) setUploadingResources(current => current.filter(resource => resource.progress_key !== progressKey));
+      }
+    }
+    if (!sessionId) throw new Error("未能创建附件聊天。");
+    return { sessionId, resources };
   }
 
   function removeUploadedResource(resourceId: string) {
@@ -93,6 +126,7 @@ export function useConversationAttachments(options: ConversationAttachmentsOptio
 
   return {
     handleFileUpload,
+    uploadFiles,
     removeUploadedResource
   };
 }

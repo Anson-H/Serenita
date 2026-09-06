@@ -12,7 +12,7 @@ export function favoriteTagsForState(
   return favorites.find((favorite) => favorite.favorite_id === favoriteId)?.tags ?? [];
 }
 
-export function mergeUpdatedFavorite(favorite: Favorite, updated: Favorite) {
+function mergeUpdatedFavorite(favorite: Favorite, updated: Favorite) {
   return {
     ...favorite,
     content_summary: updated.content_summary,

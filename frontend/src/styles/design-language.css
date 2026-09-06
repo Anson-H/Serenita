@@ -1,0 +1,925 @@
+@import "./controls.css";
+
+/* Shared visual contracts. Feature styles may only add layout and content adaptation. */
+
+/* The shared composer keeps one surface geometry at every breakpoint. */
+
+.conversation-composer > .conversation-composer-surface {
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-control);
+  padding: var(--space-control-block) var(--space-control-inline);
+  box-shadow: none;
+}
+
+.conversation-composer > :where(.conversation-composer-surface) {
+  background: var(--color-rail);
+}
+
+/* Content groups and structured data surfaces. */
+
+.group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-content);
+  margin-bottom: var(--space-related);
+}
+
+.group-heading :is(h2, h3) {
+  margin: 0;
+  color: var(--color-foreground);
+  font-size: var(--text-subtitle);
+  font-weight: var(--weight-strong);
+  line-height: var(--line-subtitle);
+}
+
+.structured-data-grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: var(--color-foreground);
+}
+
+.structured-data-grid th,
+.structured-data-grid td {
+  padding: var(--space-related) var(--space-content);
+  border-bottom: 1px solid var(--color-divider);
+  color: var(--color-foreground);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-body);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.structured-data-grid thead th {
+  color: var(--color-foreground-muted);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-meta);
+}
+
+.structured-data-grid tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+/* Field rows are one layout of the grouped list, including read-only values. */
+.grouped-object-list[data-layout="fields"] {
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--space-content);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-content);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--size-control-primary);
+  padding: var(--space-control-block) var(--space-control-inline);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-foreground);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-body);
+}
+
+.grouped-object-list[data-layout="fields"] > .field-row {
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
+.field-row > :is(.field-label, .field-value, span, dt, dd) {
+  min-width: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+}
+
+.field-row > :is(.field-label, .field-control-label, span:first-child, dt, strong, h3) {
+  justify-self: start;
+  text-align: left;
+  white-space: nowrap;
+  font-weight: var(--weight-regular);
+}
+
+.field-row > :is(.field-value, dd) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  min-height: var(--line-body);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.field-row > :is(input, textarea, select, .secret-input, .select-popover, .toggle-switch) {
+  grid-column: 2;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  justify-self: stretch;
+}
+
+.field-row > .toggle-switch {
+  width: var(--size-switch-track-width);
+  justify-self: end;
+}
+
+.field-row > :is(input, textarea, select),
+.field-row > .secret-input input {
+  min-height: var(--line-body);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: right;
+  padding: 0;
+}
+
+.field-row .select-popover-trigger {
+  min-height: var(--line-body);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  box-shadow: none;
+  text-align: right;
+  padding: 0;
+}
+
+.field-row > :is(input, select),
+.field-row > .secret-input input {
+  height: var(--line-body);
+}
+
+.field-row > .select-popover .select-popover-trigger > span:first-child {
+  flex: 1 1 auto;
+  text-align: right;
+}
+
+.field-row > .secret-input {
+  --secret-toggle-inset: 0px;
+}
+
+.field-row > .secret-input input {
+  padding-right: calc(var(--size-inline-button) + var(--space-related));
+}
+
+/* Prose fields grow with their content; compact values remain single-line. */
+
+.grouped-object-list > .long-text-field-row {
+  height: auto;
+  min-height: var(--size-control-primary);
+}
+
+.long-text-field-row > .field-label {
+  align-self: start;
+  margin-top: 0;
+}
+
+.field-row > .auto-growing-text-control {
+  min-height: var(--line-body);
+  max-height: none;
+  padding: 0;
+  border-radius: 0;
+  color: var(--color-foreground-muted);
+  font-family: inherit;
+  font-size: var(--text-meta);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-meta);
+  overflow-wrap: anywhere;
+  overflow-y: hidden;
+  resize: none;
+  text-align: right;
+  white-space: pre-wrap;
+}
+
+.field-row > .auto-growing-text-control[data-multiline="true"] {
+  text-align: left;
+}
+
+.workspace-detail-titlebar > h2 {
+  grid-column: 2;
+  grid-row: 1;
+  text-align: center;
+}
+
+.dialog-titlebar > :first-child {
+  grid-column: 2;
+  grid-row: 1;
+  place-self: center;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  margin: 0;
+  color: var(--color-foreground);
+  font-size: var(--text-page-title);
+  font-weight: var(--weight-strong);
+  line-height: var(--line-page-title);
+  text-align: center;
+}
+
+.dialog-titlebar > :last-child {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+}
+
+/* Every content dialog begins its body on the shared 15px inset. */
+
+.content-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-modal);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+  padding: var(--space-content);
+  background: color-mix(in oklch, var(--color-foreground) 28%, transparent);
+}
+
+.content-dialog {
+  display: grid;
+  grid-template-rows: var(--workspace-titlebar-height) minmax(0, 1fr) auto;
+  width: min(560px, 100%);
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-dialog);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
+}
+
+/* Member identities share the same compact avatar across every surface. */
+.health-member-avatar {
+  --control-icon-size: var(--size-icon-default);
+  display: inline-grid;
+  place-items: center;
+  width: var(--size-account-avatar);
+  height: var(--size-account-avatar);
+  flex: none;
+  border-radius: var(--radius-account-avatar);
+  background: var(--color-control-surface);
+  color: var(--color-foreground);
+}
+
+.dialog-body {
+  padding-top: var(--space-content);
+  padding-bottom: var(--space-content);
+  padding-inline: var(--space-content);
+}
+
+/* Reserve the custom track itself: Safari's stable gutter can use a wider
+   native scrollbar width even when the custom scrollbar is only 10px. */
+.scroll-content,
+.dialog-body.scroll-content {
+  --scroll-content-padding-end: max(0px, calc(var(--space-content) - var(--scrollbar-layout-width)));
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  scrollbar-gutter: auto;
+  padding-inline: var(--space-content) var(--scroll-content-padding-end);
+}
+
+/* Overlay scrollbars do not consume layout width. Keep the shared width
+   fallback intact while preserving the same content edge as the action bar. */
+:root[data-scrollbar-layout="overlay"] .dialog-body.scroll-content,
+.dialog-body.scroll-content[data-scrollbar-layout="overlay"] {
+  --scroll-content-padding-end: var(--space-content);
+}
+
+/* Primary list actions float over the end of their owning scroll region. */
+.list-floating-actions {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  pointer-events: none;
+}
+
+.list-floating-actions > * {
+  pointer-events: auto;
+}
+
+.list-floating-actions > .creation-action-button {
+  width: 100%;
+  box-shadow: var(--shadow-overlay);
+}
+
+.content-description {
+  margin: 0;
+  color: var(--color-foreground-muted);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-meta);
+}
+
+.dialog-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-content);
+  padding: var(--space-content);
+  border-top: 0;
+}
+
+/* The body owns the shared 15px boundary; adjacent insets must not add up. */
+.dialog-body + .dialog-action-bar {
+  padding-top: 0;
+}
+
+@media (max-width: 650px) {
+  .dialog-action-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dialog-action-bar > button {
+    width: 100%;
+  }
+}
+
+.workspace-detail-titlebar h2 {
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+  margin: 0;
+  color: var(--color-foreground);
+  font-size: var(--text-page-title);
+  font-weight: var(--weight-strong);
+  letter-spacing: 0;
+  line-height: var(--line-page-title);
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+svg {
+  color: var(--color-foreground);
+}
+
+svg[class][viewBox] {
+  width: var(--control-icon-size, var(--size-icon-default));
+  height: var(--control-icon-size, var(--size-icon-default));
+  color: var(--color-foreground);
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: var(--size-switch-track-width);
+  min-width: var(--size-switch-track-width);
+  height: var(--size-switch-track-height);
+  min-height: var(--size-switch-track-height);
+  padding: 0;
+  border: 1px solid var(--color-foreground-muted);
+  border-radius: var(--radius-switch-track);
+  background: color-mix(in oklch, var(--color-foreground-muted) 20%, var(--color-control-surface));
+}
+
+.toggle-switch > span {
+  position: absolute;
+  top: 50%;
+  left: calc((var(--size-switch-track-height) - var(--size-switch-thumb)) / 2 - 1px);
+  width: var(--size-switch-thumb);
+  height: var(--size-switch-thumb);
+  border-radius: var(--radius-switch-thumb);
+  background: var(--color-foreground-muted);
+  box-shadow: none;
+  transform: translateY(-50%);
+  transition: transform var(--transition-fast);
+}
+
+.toggle-switch[aria-checked="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+
+.toggle-switch[aria-checked="true"] > span {
+  background: var(--color-surface);
+  transform: translate(calc(var(--size-switch-track-width) - var(--size-switch-track-height)), -50%);
+}
+
+.selection-check-control {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: var(--size-selection-control);
+  min-width: var(--size-selection-control);
+  height: var(--size-selection-control);
+  min-height: var(--size-selection-control);
+  padding: 0;
+  border: 1px solid var(--color-foreground-muted);
+  border-radius: var(--radius-selection-control);
+  background: var(--color-surface);
+  color: var(--color-surface);
+}
+
+.selection-check-control:is([aria-pressed="true"], [data-selected="true"]) {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-surface);
+}
+
+.selection-check-control .selection-check-icon[viewBox] {
+  width: 12px;
+  height: 12px;
+  color: var(--color-surface);
+}
+
+.multi-select-filter-picker {
+  --select-popover-max-height: 300px;
+}
+
+.multi-select-filter-picker .select-popover-trigger {
+  min-height: var(--size-control-primary);
+}
+
+.multi-select-popover-option {
+  display: grid;
+  grid-template-columns: var(--size-selection-control) minmax(0, 1fr);
+  justify-content: stretch;
+  gap: var(--space-control-block) var(--space-control-inline);
+  height: var(--size-control-primary);
+  min-height: var(--size-control-primary);
+}
+
+.multi-select-popover-option > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metadata-token-editor {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-related);
+  min-width: 0;
+  min-height: var(--size-control-primary);
+}
+
+.metadata-token {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: var(--size-control-primary);
+  padding: var(--space-control-block) var(--space-control-inline);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--color-control-surface);
+  color: var(--color-foreground);
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-body);
+}
+
+.metadata-token[data-removable="true"] {
+  padding-right: var(--space-control-inline);
+}
+
+.metadata-token-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.metadata-token-empty {
+  color: var(--color-foreground-muted);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-meta);
+}
+
+.metadata-token-add-form {
+  display: flex;
+  flex: 0 1 160px;
+  min-width: min(100%, 120px);
+}
+
+/* One container owns the surface, row sizing and separators. */
+.grouped-object-list {
+  --size-inline-icon: var(--size-icon-default);
+  /* Rebind aliases here so they follow this list rather than their root values. */
+  --size-standard-bar: var(--size-control-primary);
+  --size-content-row: var(--size-control-primary);
+  --size-icon-button: var(--size-control-primary);
+  --size-settings-row: var(--size-control-primary);
+  --size-settings-nav-row: var(--size-control-primary);
+  --size-icon-control: var(--size-icon-default);
+  --radius-control: var(--radius-list);
+  --control-icon-size: var(--size-icon-default);
+  display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-list);
+  background: var(--color-control-surface);
+  color: var(--color-foreground);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-body);
+}
+
+.grouped-object-list[data-density="standard"] {
+  /* Reset density at every list boundary, including lists nested in compact rows. */
+  --size-control-primary: var(--grouped-standard-row-height);
+  --space-control-block: var(--grouped-standard-padding-block);
+  --text-body: var(--grouped-standard-font-size);
+  --line-body: var(--grouped-standard-line-height);
+  --size-icon-default: var(--grouped-standard-icon-size);
+  --size-inline-button: var(--grouped-standard-inline-size);
+  --radius-inline-button: var(--grouped-standard-inline-radius);
+  --radius-list: var(--grouped-standard-radius);
+}
+
+.grouped-object-list[data-density="compact"] {
+  --size-control-primary: var(--size-compact-bar);
+  --space-control-block: var(--space-control-block-compact);
+  --text-body: var(--text-meta);
+  --line-body: var(--line-meta);
+  --size-icon-default: var(--size-inline-icon-compact);
+  --size-inline-button: var(--size-inline-button-compact);
+  --radius-inline-button: var(--radius-inline-button-compact);
+  --radius-list: var(--radius-compact-bar);
+}
+
+.object-list-count {
+  margin: 0;
+  color: var(--color-foreground-muted);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-meta);
+  text-align: center;
+}
+
+.grouped-object-list > * {
+  min-height: var(--size-control-primary);
+  border-radius: 0;
+}
+
+.grouped-object-list > .grouped-list-wrapping-navigation-row {
+  height: auto;
+  min-height: var(--size-control-primary);
+  align-items: start;
+  padding-block: var(--space-control-block);
+}
+
+.grouped-list-wrapping-navigation-row > :first-child {
+  margin-top: 0;
+}
+
+.grouped-list-wrapping-navigation-row > .navigation-forward-icon:last-child {
+  margin-top: calc(
+    (var(--line-body) - var(--size-icon-default)) / 2
+  );
+}
+
+.grouped-object-list[data-layout="navigation"] {
+  grid-auto-rows: max-content;
+  align-content: start;
+  grid-template-columns:
+    var(--space-control-inline)
+    max-content
+    var(--space-control-inline)
+    minmax(0, 1fr)
+    var(--space-control-inline)
+    var(--size-icon-default)
+    var(--space-control-inline);
+  column-gap: 0;
+}
+
+.grouped-object-list[data-layout="navigation"] > .grouped-labeled-navigation-row {
+  grid-column: 1 / -1;
+  display: grid;
+  align-self: start;
+  grid-template-columns: subgrid;
+  column-gap: 0;
+  padding-inline: 0;
+}
+
+.grouped-labeled-navigation-row > :first-child {
+  grid-column: 2;
+  justify-self: start;
+}
+
+.grouped-labeled-navigation-row > :nth-child(2) {
+  grid-column: 4;
+  justify-self: end;
+}
+
+.grouped-labeled-navigation-row > .navigation-forward-icon:last-child {
+  grid-column: 6;
+  justify-self: end;
+}
+
+.grouped-list-wrapping-navigation-row > .grouped-list-trailing-summary {
+  align-self: start;
+  width: 100%;
+  max-width: none;
+  margin-top: calc(
+    (var(--line-body) - var(--line-meta)) / 2
+  );
+  overflow: visible;
+  justify-self: stretch;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.grouped-list-wrapping-navigation-row > .grouped-list-trailing-summary[data-wrapped="true"] {
+  text-align: left;
+}
+
+.grouped-object-list > :is(li, [data-grouped-list-item]) > :only-child {
+  height: 100%;
+  min-height: 100%;
+  border-radius: inherit;
+  background: transparent;
+}
+
+.grouped-object-list > * + * {
+  position: relative;
+}
+
+.grouped-object-list > * + *::before {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: var(--space-control-inline);
+  left: var(--space-control-inline);
+  height: 1px;
+  background: var(--color-divider);
+  content: "";
+  pointer-events: none;
+}
+
+/* Root disclosures are separate compact lists, not rows in one shared slab. */
+
+.root-disclosure-stack {
+  display: grid;
+  gap: var(--space-content);
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.root-disclosure-list {
+  min-width: 0;
+  border: 0;
+  border-radius: var(--radius-list);
+  background: var(--color-control-surface);
+  box-shadow: none;
+}
+
+.root-disclosure-list > .root-disclosure-toggle {
+  border-radius: var(--radius-list);
+}
+
+:where(.root-disclosure-list > .root-disclosure-toggle) {
+  background: var(--color-header-surface);
+}
+
+.root-disclosure-list[open] > .root-disclosure-toggle,
+.root-disclosure-list > .root-disclosure-toggle[aria-expanded="true"] {
+  border-bottom: 0;
+  border-radius: var(--radius-list) var(--radius-list) 0 0;
+  box-shadow: inset 0 -1px 0 var(--color-divider);
+}
+
+.root-disclosure-list > .root-disclosure-content {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0 0 var(--radius-list) var(--radius-list);
+  background: transparent;
+}
+
+.root-disclosure-row + .root-disclosure-row {
+  position: relative;
+}
+
+.root-disclosure-row + .root-disclosure-row::before {
+  position: absolute;
+  top: 0;
+  right: var(--space-control-inline);
+  left: var(--space-control-inline);
+  height: 1px;
+  background: var(--color-divider);
+  content: "";
+  pointer-events: none;
+}
+
+/* Row menus and their triggers must not start native text-selection gestures. */
+
+:where([data-context-menu-trigger], .context-action-menu) {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+[data-context-menu-trigger] :where(input, textarea, [contenteditable="true"]) {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* Removal actions share the sign-out language across full-width and compact contexts. */
+
+.context-action-menu {
+  position: fixed;
+  z-index: var(--layer-menu);
+  width: max-content;
+  max-width: calc(100dvw - var(--space-content) * 2);
+  max-height: calc(100dvh - var(--space-content) * 2);
+  overflow: auto;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-list);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
+}
+
+.context-action-menu > :where(button) {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--size-icon-default) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-control-block) var(--space-control-inline);
+  width: 100%;
+  min-height: var(--size-control-primary);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-foreground);
+  padding: var(--space-control-block) var(--space-control-inline);
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.context-action-menu > button .context-action-menu-icon[viewBox] {
+  width: var(--size-icon-default);
+  height: var(--size-icon-default);
+  color: currentColor;
+}
+
+.context-action-menu > button:disabled {
+  color: var(--color-foreground-muted);
+  opacity: 0.48;
+}
+
+/* Standard bars fit 20px inline controls within one layer of 10px insets. */
+
+.standard-control-bar {
+  box-sizing: border-box;
+  height: auto;
+  min-height: var(--size-standard-bar);
+  align-items: center;
+  gap: var(--space-related);
+  padding: var(--space-control-block) var(--space-control-inline);
+  border-radius: var(--radius-list);
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+}
+
+.list-selection-heading {
+  display: flex;
+  justify-content: space-between;
+  background: transparent;
+  color: var(--color-foreground);
+}
+
+.list-selection-heading strong {
+  font-weight: var(--weight-strong);
+}
+
+.compact-control-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-related);
+}
+
+/* One macOS-style navigation toolbar carries the active subview title. */
+
+.workspace-detail-titlebar,
+.dialog-titlebar,
+.workspace-navigation-toolbar {
+  position: relative;
+  display: grid;
+  grid-template-columns:
+    minmax(var(--workspace-titlebar-side), 1fr)
+    minmax(0, max-content)
+    minmax(var(--workspace-titlebar-side), 1fr);
+  align-items: center;
+  gap: var(--space-control-block) var(--space-control-inline);
+  width: 100%;
+  height: var(--workspace-titlebar-height);
+  min-height: var(--workspace-titlebar-height);
+  flex: 0 0 var(--workspace-titlebar-height);
+  margin: 0;
+  padding: 0 var(--space-control-inline);
+  border: 0;
+  border-bottom: 0;
+  background: var(--color-surface);
+  box-shadow: inset 0 -1px 0 var(--color-divider);
+}
+
+.workspace-navigation-leading,
+.workspace-navigation-trailing,
+.workspace-navigation-sidebar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.workspace-navigation-leading {
+  grid-column: 1;
+  justify-self: start;
+  gap: var(--space-control-block) var(--space-control-inline);
+}
+
+.workspace-navigation-trailing {
+  grid-column: 3;
+  justify-self: end;
+  justify-content: flex-end;
+}
+
+.workspace-navigation-trailing:empty {
+  display: none;
+}
+
+.workspace-navigation-title {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: center;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  margin: 0;
+  color: var(--color-foreground);
+  font-size: var(--text-page-title);
+  font-weight: var(--weight-strong);
+  line-height: var(--line-page-title);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-back-control {
+  background: transparent;
+  color: var(--color-foreground-muted);
+}
+
+.workspace-back-control:hover {
+  color: var(--color-foreground);
+}
+
+.workspace-back-control:disabled {
+  background: transparent;
+  color: var(--color-foreground-muted);
+  cursor: default;
+  opacity: 0.45;
+}
+
+@media (min-width: 651px) {
+  .workspace-detail-titlebar {
+    display: none;
+  }
+}
+
+.metadata-token-remove-button { margin-left: var(--space-related); }
+
+/* Overlay tracks must shrink inside both viewport insets. */
+.dialog-viewport-backdrop {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  max-height: 100dvh;
+}
+
+.dialog-viewport-surface {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+}
+
+.dialog-title-ellipsis > .dialog-titlebar > :first-child {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
