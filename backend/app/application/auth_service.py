@@ -13,6 +13,7 @@ from backend.app.repositories.auth_repository import (
     AccountConflictError,
     AccountNotFoundError,
     AuthRepository,
+    CredentialsChangedError,
 )
 from backend.app.storage.crypto import sha256_text
 from backend.app.storage.paths import app_paths
@@ -154,12 +155,16 @@ class AuthService:
         account_id = str(row["account_id"])
         self._require_account_tree(account_id)
         token, token_hash, timestamp, expires_at = _new_session_values()
-        self.repository.create_session(
-            session_token_hash=token_hash,
-            account_id=account_id,
-            expires_at=expires_at,
-            timestamp=timestamp,
-        )
+        try:
+            self.repository.create_session(
+                session_token_hash=token_hash,
+                account_id=account_id,
+                verified_password_hash=str(row["password_hash"]),
+                expires_at=expires_at,
+                timestamp=timestamp,
+            )
+        except CredentialsChangedError as exc:
+            raise AuthServiceError('unauthenticated', "SIGN_IN_FAILED", "账号或密码不正确。") from exc
         return CurrentUser(
             account_id=account_id,
             account=str(row["account"]),
@@ -239,8 +244,11 @@ class AuthService:
             self.repository.change_password(
                 account_id=user.account_id,
                 password_hash=hash_secret(new_password),
+                verified_password_hash=str(row["password_hash"]),
                 current_session_token_hash=user.session_token_hash,
                 timestamp=local_now_iso(),
             )
         except AccountNotFoundError as exc:
             raise AuthServiceError('unauthenticated', "UNAUTHORIZED", "账号不存在。") from exc
+        except CredentialsChangedError as exc:
+            raise AuthServiceError('unauthenticated', "SIGN_IN_FAILED", "当前密码已经改变，请重新登录。") from exc

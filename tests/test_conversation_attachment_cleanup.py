@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import pytest
 from backend.app.core.errors import SerenitaError
-from backend.app.application.conversation_service import ConversationService
+from backend.app.application.conversations.service import ConversationService
 from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.storage.paths import app_paths
 from backend.app.storage.sqlite import connect
@@ -134,7 +134,7 @@ def test_attachment_maintenance_recovers_writes_before_expiration():
             calls.append(("cleanup", account_id, limit))
             return []
 
-    ConversationService(repository=TrackingRepository())._maintain_attachments(
+    ConversationService(repository=TrackingRepository()).inputs.maintain_attachments(
         "account-1"
     )
 
@@ -231,7 +231,7 @@ def test_stale_partial_and_missing_writes_are_removed(tmp_path, monkeypatch):
     )
 
     result = repository.recover_writing_resources(account, as_of=as_of.isoformat())
-    service._drain_attachment_cleanup(account)
+    service.inputs.drain_attachment_cleanup(account)
 
     assert result == {"recovered": 0, "discarded": 2}
     assert repository.resource_row(account, partial_session, "partial.jpg") is None
@@ -257,7 +257,7 @@ def test_writing_resource_cannot_be_previewed_or_attached(tmp_path, monkeypatch)
     )
 
     with pytest.raises(SerenitaError) as preview_error:
-        service.context_resource_download(account, session_id, "partial.jpg")
+        service.inputs.context_resource_download(account, session_id, "partial.jpg")
     assert error_http_status(preview_error.value) == 404
 
     with pytest.raises(SerenitaError) as attach_error:
@@ -268,11 +268,11 @@ def test_writing_resource_cannot_be_previewed_or_attached(tmp_path, monkeypatch)
         )
     assert error_http_status(attach_error.value) == 409
     assert attach_error.value.detail["code"] == "RESOURCE_NOT_READY"
-    assert service._trusted_attachment_resource(
+    assert service.inputs.trusted_attachment_resource(
         account, session_id, "partial.jpg"
     ) is None
     with pytest.raises(SerenitaError) as send_error:
-        service._validate_context_resources(
+        service.inputs.validate_context_resources(
             account,
             session_id,
             [{"resource_type": "file", "resource_id": "partial.jpg"}],
@@ -393,7 +393,7 @@ def test_visible_attachments_include_branch_visible_history(tmp_path, monkeypatc
         },
     }
 
-    visible = service._visible_attachments_for_messages(
+    visible = service.inputs.visible_attachments_for_messages(
         account_id_for("alice"),
         session_id,
         messages_by_id,
@@ -433,7 +433,7 @@ def test_visible_attachments_ignore_inactive_or_missing_resources(
         },
     }
 
-    visible = service._visible_attachments_for_messages(
+    visible = service.inputs.visible_attachments_for_messages(
         account_id_for("alice"), session_id, messages_by_id, {"visible"}
     )
 

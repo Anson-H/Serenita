@@ -48,12 +48,14 @@ export function createAccountSettingsActions({
   ) {
     try {
       const result = await serialTasks.current.run("account", () => apiClient.updateAccount(trimmedAccount, trimmedName), isCurrentScope);
-      if (isCurrentScope() && requestId === accountSaveRequestIdRef.current) {
+      if (isCurrentScope()) {
         onAccountProfileChange(result);
-        setAccountDraft(result.account);
-        setNameDraft(result.account_name);
+        setAccountDraft(current => current.trim() === trimmedAccount ? result.account : current);
+        setNameDraft(current => current.trim() === trimmedName ? result.account_name : current);
         setAccountFeedback({ status: "idle", message: "" });
+        return result;
       }
+      return false;
     } catch (error) {
       if (requestId === accountSaveRequestIdRef.current) {
         setAccountFeedback({
@@ -61,6 +63,7 @@ export function createAccountSettingsActions({
           message: error instanceof Error ? error.message : "保存失败。"
         });
       }
+      return false;
     }
   }
 

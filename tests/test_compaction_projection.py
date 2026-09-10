@@ -1,11 +1,11 @@
 from copy import deepcopy
 import pytest
-from backend.app.conversation_timeline import ConversationTimelineProjector, active_records, records_from_events
-from backend.app.model_history import derive_model_messages, visible_loaded_skill_names
-from backend.app.session_event_queries import messages_from_events
-from backend.app.session_events import SessionEvent, SessionEventCorruptionError, SessionHeader, make_event, validate_contiguous_events
+from backend.app.domain.conversations.timeline import ConversationTimelineProjector, active_records, records_from_events
+from backend.app.domain.conversations.model_history import derive_model_messages, visible_loaded_skill_names
+from backend.app.domain.conversations.queries import messages_from_events
+from backend.app.domain.conversations.events import SessionEvent, SessionEventCorruptionError, SessionHeader, make_event, validate_contiguous_events
 from backend.app.storage.session_recovery import interrupted_turn_closers
-from backend.app.application.conversation_presenter import record_response
+from backend.app.application.conversations.presenter import record_response
 
 
 def wrapped(summary):
@@ -22,7 +22,7 @@ class Log:
         return event
 
     def start(self, turn="t", **data):
-        return self.add("turn/start", {"turn_id": turn, **data})
+        return self.add("turn/start", {"turn_id": turn, "user_message_id": f"message-{len(self.events) + 1}", "stream_id": f"stream-{turn}", **data})
 
     def message(self, content, turn="t", role="user", **data):
         return self.add(
@@ -683,7 +683,7 @@ def test_checkpoint_rejects_content_not_completely_wrapping_exact_summary(conten
 
 def test_checkpoint_preserves_multiline_summary_and_appended_exact_evidence():
     record = checkpoint_record()
-    summary = "ALT 45 U/L\n已导入报告，待核对来源。"
+    summary = "ALT 45 U/L\n已导入医疗报告，待核对来源。"
     content = (
         wrapped(summary)
         + '\n<unresolved-context-observations>\n[{"value":45}]\n</unresolved-context-observations>'
@@ -1059,7 +1059,7 @@ def test_crash_recovery_turn_closer_finishes_running_compaction_projection():
 
 def test_fork_prefix_preserves_checkpoint_identity_and_supports_further_compaction():
     from member_support import account_id, member_id
-    from backend.app.application.conversation_service import ConversationService
+    from backend.app.application.conversations.service import ConversationService
     from backend.app.repositories.conversation_repository import ConversationRepository
     from backend.app.storage.session_persistence import JsonlSessionPersistence
 
@@ -1117,7 +1117,7 @@ def test_fork_prefix_preserves_checkpoint_identity_and_supports_further_compacti
         account,
         child,
         [
-            {"type": "turn/start", "data": {"turn_id": "child-turn"}},
+            {"type": "turn/start", "data": {"turn_id": "child-turn", "user_message_id": "user", "stream_id": "stream"}},
             {
                 "type": "compaction/checkpoint",
                 "data": {

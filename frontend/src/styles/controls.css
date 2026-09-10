@@ -114,12 +114,12 @@
   border: 0;
   box-shadow: none;
   background: var(--color-danger-soft);
-  color: var(--color-danger);
+  color: var(--color-foreground);
 }
 
 .control--danger:hover:not(:disabled) {
   background: var(--color-danger-hover);
-  color: var(--color-danger);
+  color: var(--color-foreground);
 }
 
 .control:disabled {
@@ -139,8 +139,9 @@ label,
 
 input,
 textarea,
-select {
-  /* Draw the stroke inside the surface without adding to the 40px control. */
+select,
+.text-input-surface {
+  /* Input surfaces share control spacing without a persistent outline. */
   min-height: var(--size-control-primary);
   min-width: 0;
   border: 0;
@@ -151,7 +152,15 @@ select {
   font-size: var(--text-body);
   font-weight: var(--weight-regular);
   line-height: var(--line-body);
-  box-shadow: inset 0 0 0 1px var(--color-divider);
+  box-shadow: none;
+}
+
+.text-input-surface {
+  display: block;
+  width: 100%;
+  font-family: var(--font-ui);
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 input { width: 100%; }
@@ -370,3 +379,8 @@ select { max-width: 240px; }
 @media (pointer: coarse) {
   .discrete-slider { height: var(--size-touch-target); }
 }
+
+/* Semantic icons accompany theme-neutral labels. */
+.control--danger svg { color: var(--color-danger); }
+
+input::placeholder, textarea::placeholder { color: var(--color-foreground-muted); opacity: 1; }

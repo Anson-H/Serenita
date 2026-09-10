@@ -3,6 +3,7 @@
 from backend.app.storage.paths import AppPaths, app_paths
 from backend.app.storage.schema import (
     CheckConstraint,
+    non_blank_sql,
     Column,
     ColumnGroup,
     Database,
@@ -26,6 +27,7 @@ FAVORITES_DATABASE_SCHEMA = Database(
                     "TEXT",
                     ColumnGroup.REFERENCE,
                     nullable=False,
+                    non_blank=False,
                 ),
                 Column("source_id", "TEXT", ColumnGroup.REFERENCE, nullable=False),
                 Column("title", "TEXT", ColumnGroup.DATA, nullable=False),
@@ -36,6 +38,7 @@ FAVORITES_DATABASE_SCHEMA = Database(
                     ColumnGroup.DATA,
                     nullable=False,
                     default="'[]'",
+                    json_kind="array",
                 ),
                 Column("created_at", "TEXT", ColumnGroup.AUDIT, nullable=False),
                 Column("updated_at", "TEXT", ColumnGroup.AUDIT, nullable=False),
@@ -45,6 +48,7 @@ FAVORITES_DATABASE_SCHEMA = Database(
                 CheckConstraint(
                     "source_type IN ('message', 'report')",
                 ),
+                CheckConstraint("source_type <> 'message' OR (" + non_blank_sql("source_session_id") + ")"),
             ),
             indexes=(
                 Index(

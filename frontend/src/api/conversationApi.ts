@@ -22,9 +22,9 @@ export function fetchAttachmentCapabilities(modelId?: string | null) {
   return request<AttachmentCapabilities>(`/conversations/attachment-capabilities${query}`);
 }
 
-export function fetchConversations() {
+export function fetchConversations(cursor?: string) {
   return request<{ sessions: ConversationSummary[]; has_more: boolean; next_cursor: string | null }>(
-    "/conversations"
+    `/conversations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`
   );
 }
 

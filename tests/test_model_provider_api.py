@@ -33,7 +33,7 @@ class ModelProviderApiTests(unittest.TestCase):
         os.environ["DATA_ROOT"] = self.tempdir.name
 
         from backend.app.application import model_settings_service as model_providers
-        from backend.app.model_capabilities import (
+        from backend.app.domain.model_capabilities import (
             ModelCapabilityProfiles,
             ModelModeCapabilityProfile,
         )
@@ -60,6 +60,16 @@ class ModelProviderApiTests(unittest.TestCase):
                 self.block_probe = False
                 self.probe_started = threading.Event()
                 self.probe_cancelled = threading.Event()
+
+            def complete_chat(self, **kwargs):
+                from backend.app.agent_runtime.model_types import AssistantModelOutput
+                self.operation_order.append("generation_interface")
+                return AssistantModelOutput(content="OK")
+
+            def complete_embedding(self, **kwargs):
+                from backend.app.providers.errors import ProviderChatCompletionError
+                self.operation_order.append("embedding_interface")
+                raise ProviderChatCompletionError("接口不存在", upstream_status=404)
 
             def native_attachment_mime_types(self):
                 return {"image/png", "application/pdf", "audio/mpeg", "video/mp4"}
@@ -223,6 +233,15 @@ class ModelProviderApiTests(unittest.TestCase):
             "Cookie": "serenita_auth_session_token="
             + self.client.cookies.get("serenita_auth_session_token")
         }
+
+    def add_generation(self, path, *, headers, json):
+        response = self.client.post(path, headers=headers, json={key: json[key] for key in ("provider_id", "remote_model_id")})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["model_type"], "unknown")
+        self.assertIsNone(response.json()["capability_profiles"])
+        patch = {key: value for key, value in json.items() if key not in {"provider_id", "remote_model_id"}}
+        return self.client.patch("/api/models/" + response.json()["model_id"], headers=headers, json={"model_type": "generation", **patch})
+
 
     def test_connection_uses_saved_provider_address(self):
         saved = self.client.post("/api/model-providers", headers=self.headers,
@@ -593,7 +612,7 @@ class ModelProviderApiTests(unittest.TestCase):
         self.assertEqual(add_response.status_code, 200, add_response.text)
         added_model = add_response.json()
 
-        for model in (dynamic_model, added_model):
+        for model in (dynamic_model,):
             with self.subTest(model=model):
                 self.assertTrue(model["supports_text"])
                 self.assertEqual(model["file_mime_types"], [])
@@ -602,7 +621,8 @@ class ModelProviderApiTests(unittest.TestCase):
                 self.assertNotIn("supports_json_output", model)
                 self.assertIsNone(model["max_output_tokens"])
         self.assertIsNone(dynamic_model["context_window_tokens"])
-        self.assertEqual(added_model["context_window_tokens"], 131072)
+        self.assertEqual(added_model["model_type"], "unknown")
+        self.assertIsNone(added_model["context_window_tokens"])
 
     def test_model_provider_autosave_accepts_urls_before_api_key(self):
         response = self.client.post(
@@ -653,7 +673,7 @@ class ModelProviderApiTests(unittest.TestCase):
         )
         self.assertEqual(provider_response.status_code, 200, provider_response.text)
 
-        response = self.client.post(
+        response = self.add_generation(
             "/api/models",
             headers=self.headers,
             json={
@@ -674,7 +694,7 @@ class ModelProviderApiTests(unittest.TestCase):
             response.json()["thinking_modes"],
             ["default", "off", "high", "max"],
         )
-        self.assertEqual(response.json()["context_window_tokens"], 131072)
+        self.assertIsNone(response.json()["context_window_tokens"])
         self.assertIsNone(response.json()["max_output_tokens"])
 
         config_db = app_paths().config_db(self.account_id)
@@ -694,13 +714,13 @@ class ModelProviderApiTests(unittest.TestCase):
         self.assertNotIn("supports_text", columns)
         self.assertIn('"supports_text":true', row["capability_profiles"])
         self.assertEqual(row["thinking_modes"], "default\noff\nhigh\nmax")
-        self.assertEqual(row["context_window_tokens"], 131072)
+        self.assertIsNone(row["context_window_tokens"])
         self.assertIsNone(row["max_output_tokens"])
         context_column = next(
             item for item in table_info if item["name"] == "context_window_tokens"
         )
-        self.assertEqual(context_column["notnull"], 1)
-        self.assertEqual(context_column["dflt_value"], "131072")
+        self.assertEqual(context_column["notnull"], 0)
+        self.assertIsNone(context_column["dflt_value"])
 
     def test_capability_probe_updates_the_existing_model_row_only(self):
         provider_response = self.client.post(
@@ -713,7 +733,7 @@ class ModelProviderApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(provider_response.status_code, 200, provider_response.text)
-        add_response = self.client.post(
+        add_response = self.add_generation(
             "/api/models",
             headers=self.headers,
             json={
@@ -780,7 +800,7 @@ class ModelProviderApiTests(unittest.TestCase):
             self.fake_provider.probe_attempt["current_profiles"].thinking.availability,
             "available",
         )
-        self.assertEqual(self.fake_provider.operation_order, ["metadata", "probe"])
+        self.assertEqual(self.fake_provider.operation_order, ["generation_interface", "embedding_interface", "metadata", "probe"])
         with connect(config_db) as connection:
             rows_after = connection.execute("SELECT COUNT(*) AS count FROM models").fetchone()["count"]
         self.assertEqual(rows_after, rows_before)
@@ -796,7 +816,7 @@ class ModelProviderApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(provider_response.status_code, 200, provider_response.text)
-        add_response = self.client.post(
+        add_response = self.add_generation(
             "/api/models",
             headers=self.headers,
             json={
@@ -817,7 +837,7 @@ class ModelProviderApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["metadata"]["status"], "unavailable")
         self.assertIn("元数据服务暂不可用", response.json()["metadata"]["message"])
-        self.assertEqual(self.fake_provider.operation_order, ["metadata", "probe"])
+        self.assertEqual(self.fake_provider.operation_order, ["generation_interface", "embedding_interface", "metadata", "probe"])
         self.assertEqual(
             self.fake_provider.probe_attempt["thinking_modes"],
             ["default", "off", "high", "max"],
@@ -838,7 +858,7 @@ class ModelProviderApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(provider_response.status_code, 200, provider_response.text)
-        add_response = self.client.post(
+        add_response = self.add_generation(
             "/api/models",
             headers=self.headers,
             json={
@@ -885,7 +905,7 @@ class ModelProviderApiTests(unittest.TestCase):
             json={"provider_id": "fake", "api_key": "secret-key"},
         )
         self.assertEqual(provider_response.status_code, 200, provider_response.text)
-        add_response = self.client.post(
+        add_response = self.add_generation(
             "/api/models",
             headers=self.headers,
             json={
@@ -955,7 +975,7 @@ class ModelProviderApiTests(unittest.TestCase):
             json={"context_window_tokens": None},
         )
         self.assertEqual(restored_default.status_code, 200, restored_default.text)
-        self.assertEqual(restored_default.json()["context_window_tokens"], 131072)
+        self.assertIsNone(restored_default.json()["context_window_tokens"])
         self.assertIsNone(restored_default.json()["max_output_tokens"])
 
         immutable_response = self.client.patch(
@@ -1009,7 +1029,7 @@ class ModelProviderApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(provider_response.status_code, 200, provider_response.text)
-        chat_response = self.client.post(
+        chat_response = self.add_generation(
             "/api/models",
             headers=self.headers,
             json={
@@ -1019,7 +1039,7 @@ class ModelProviderApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(chat_response.status_code, 200, chat_response.text)
-        title_response = self.client.post(
+        title_response = self.add_generation(
             "/api/models",
             headers=self.headers,
             json={
@@ -1119,7 +1139,7 @@ class ModelProviderApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(other_provider_response.status_code, 200, other_provider_response.text)
-        other_model_response = self.client.post(
+        other_model_response = self.add_generation(
             "/api/models",
             headers=other_headers,
             json={
@@ -1179,7 +1199,7 @@ class ModelProviderApiTests(unittest.TestCase):
         )
         self.assertEqual(provider_response.status_code, 200, provider_response.text)
 
-        response = self.client.post(
+        response = self.add_generation(
             "/api/models",
             headers=self.headers,
             json={
@@ -1246,7 +1266,7 @@ class ModelProviderApiTests(unittest.TestCase):
         )
         self.assertEqual(provider_response.status_code, 200, provider_response.text)
 
-        response = self.client.post(
+        response = self.add_generation(
             "/api/models",
             headers=self.headers,
             json={
@@ -1272,7 +1292,7 @@ class ModelProviderApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(provider_response.status_code, 200, provider_response.text)
-        first_response = self.client.post(
+        first_response = self.add_generation(
             "/api/models",
             headers=self.headers,
             json={
@@ -1280,7 +1300,7 @@ class ModelProviderApiTests(unittest.TestCase):
                 "remote_model_id": "remote-live-model",
             },
         )
-        second_response = self.client.post(
+        second_response = self.add_generation(
             "/api/models",
             headers=self.headers,
             json={
@@ -1327,7 +1347,7 @@ class ModelProviderApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(provider_response.status_code, 200, provider_response.text)
-        add_response = self.client.post(
+        add_response = self.add_generation(
             "/api/models",
             headers=self.headers,
             json={

@@ -33,18 +33,18 @@ describe("api-boundaries", () => {
     }
   }
 
-  test("network diagnostics describe the actual API and cancellation stays distinguishable", async () => {
+  test("network failures provide recovery while cancellation stays distinguishable", async () => {
     const api = loadModule("api/request.ts", {
       fetch: async () => { throw new DOMException("cancelled", "AbortError"); }
     });
     await assert.rejects(() => api.request("/models"), error => error.name === "AbortError");
-    assert.match(api.networkFailureMessage(new Error("offline")), /http:\/\/test.local\/api/);
+    assert.match(api.networkFailureMessage(new Error("offline")), /重试/);
     assert.doesNotMatch(api.networkFailureMessage(new Error("offline")), /8000|5173/);
   });
 
   test("non-JSON failures keep their HTTP status and member subscription closes", async () => {
     const api = loadModule("api/request.ts", { fetch: async () => new Response("bad gateway", { status: 502 }) });
-    await assert.rejects(() => api.request("/models"), error => error.status === 502 && error.message.includes("502"));
+    await assert.rejects(() => api.request("/models"), error => error.status === 502 && error.message.includes("重试"));
     let closed = false;
     const listeners = new Map();
     class Events {

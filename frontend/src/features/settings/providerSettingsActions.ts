@@ -16,7 +16,7 @@ import {
 type Dependencies = {
   credentialDraftRevisions: RefObject<Record<string, number>>;
   drafts: Record<string, ProviderDraft>;
-  providerConnectionTestRequestIdsRef: RefObject<Map<string, number>>;
+  providerConnectionTestRequestsRef: RefObject<Map<string, AbortController>>;
   setDrafts: Dispatch<SetStateAction<Record<string, ProviderDraft>>>;
   providers: ProviderSummary[];
   revealingProviderIdsRef: RefObject<Set<string>>;
@@ -32,7 +32,7 @@ type Dependencies = {
 export function createProviderSettingsActions({
   credentialDraftRevisions,
   drafts,
-  providerConnectionTestRequestIdsRef,
+  providerConnectionTestRequestsRef,
   setDrafts,
   providers,
   revealingProviderIdsRef,
@@ -55,16 +55,11 @@ export function createProviderSettingsActions({
       )
     );
     if (connectionChanged) {
-      invalidateConnectionTestRequest(providerConnectionTestRequestIdsRef, providerId);
+      invalidateConnectionTestRequest(providerConnectionTestRequestsRef, providerId);
       setProviderConnectionTestState(providerId, { status: "idle", message: "" });
     }
-    setDrafts((current) => ({
-      ...current,
-      [providerId]: {
-        ...current[providerId],
-        ...patch
-      }
-    }));
+    draftsRef.current = {...draftsRef.current, [providerId]: {...draftsRef.current[providerId], ...patch}};
+    setDrafts(draftsRef.current);
   }
 
   async function revealModelCredential(providerId: string): Promise<boolean> {
@@ -108,9 +103,7 @@ export function createProviderSettingsActions({
 
   async function autoSaveProviderDraft(providerId: string, draft: ProviderDraft) {
     const provider = providers.find((item) => item.provider_id === providerId);
-    if (!provider) {
-      return;
-    }
+    if (!provider) return false;
     try {
       setTestStates((current) => ({
         ...current,
@@ -122,7 +115,7 @@ export function createProviderSettingsActions({
       const result = await serialTasks.current.run(`provider:${providerId}`, () => apiClient.saveModelProvider(
         providerId, draft.apiUrl, draft.officialUrl, draft.apiKey
       ), isCurrentScope);
-      if (!isCurrentScope()) return;
+      if (!isCurrentScope()) return false;
       savedDraftsRef.current = {
         ...savedDraftsRef.current,
         [providerId]: {
@@ -156,6 +149,7 @@ export function createProviderSettingsActions({
           message: "已保存。"
         }
       }));
+      return savedDraftsRef.current[providerId];
     } catch (error) {
       setTestStates((current) => ({
         ...current,
@@ -164,6 +158,7 @@ export function createProviderSettingsActions({
           message: error instanceof Error ? error.message : "保存失败。"
         }
       }));
+      return false;
     }
   }
 
@@ -176,6 +171,7 @@ export function createProviderSettingsActions({
 
   function testAllProviderConnections(providerItems: ProviderSummary[], draftSource: Record<string, ProviderDraft>) {
     for (const provider of providerItems) {
+      if (providerConnectionTestRequestsRef.current.has(provider.provider_id)) continue;
       void testProviderConnection(provider.provider_id, {}, draftSource);
     }
   }
@@ -185,14 +181,19 @@ export function createProviderSettingsActions({
     options: { notify?: boolean } = {},
     draftSource: Record<string, ProviderDraft> = drafts
   ) {
+    if (providerConnectionTestRequestsRef.current.has(providerId)) {
+      invalidateConnectionTestRequest(providerConnectionTestRequestsRef, providerId);
+      setProviderConnectionTestState(providerId, { status: "idle", message: "" });
+      return;
+    }
     const draft = draftSource[providerId];
     const provider = providers.find((item) => item.provider_id === providerId);
     if (!draft) {
       return;
     }
 
-    const requestId = beginConnectionTestRequest(
-      providerConnectionTestRequestIdsRef,
+    const request = beginConnectionTestRequest(
+      providerConnectionTestRequestsRef,
       providerId
     );
 
@@ -205,12 +206,13 @@ export function createProviderSettingsActions({
       const result = await apiClient.testModelProvider(
         providerId,
         draft.apiUrl,
-        draft.apiKey
+        draft.apiKey,
+        request.signal
       );
       if (!connectionTestRequestIsCurrent(
-        providerConnectionTestRequestIdsRef,
+        providerConnectionTestRequestsRef,
         providerId,
-        requestId
+        request
       )) return;
       setProviderConnectionTestState(providerId, {
         status: result.reachable ? "success" : "error",
@@ -226,9 +228,9 @@ export function createProviderSettingsActions({
       }
     } catch (error) {
       if (!connectionTestRequestIsCurrent(
-        providerConnectionTestRequestIdsRef,
+        providerConnectionTestRequestsRef,
         providerId,
-        requestId
+        request
       )) return;
       const message = error instanceof Error ? error.message : "连接失败";
       setProviderConnectionTestState(providerId, {
@@ -242,6 +244,10 @@ export function createProviderSettingsActions({
           title: provider?.provider_name ?? "模型提供方连接失败",
           tone: "error"
         });
+      }
+    } finally {
+      if (connectionTestRequestIsCurrent(providerConnectionTestRequestsRef, providerId, request)) {
+        providerConnectionTestRequestsRef.current.delete(providerId);
       }
     }
   }

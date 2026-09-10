@@ -1,33 +1,29 @@
+import { isGenerationModel } from "../modelConfiguration/generationModels";
 import { useState } from "react";
-import { emptyModelCatalog } from "../modelConfiguration/modelCatalog";
+import { useModelCatalog } from "../modelConfiguration/useModelCatalog";
 import { useConversationDataState } from "./useConversationDataState";
 import { useConversationDraftState } from "./useConversationDraftState";
+import type { DraftRecord } from "./conversationDraftStore";
 import { useConversationEditingState } from "./useConversationEditingState";
 import { useConversationElements } from "./useConversationElements";
 
 import {
   type ConversationDetail,
-  type UploadedResource
 } from "../../api/client";
-import { type UploadingResource } from "./contextResources";
 import {
-  type AnnotatedContext,
-  type AnnotationSelection,
   type ScenarioTab
 } from "./workspaceTypes";
 
 export type HomeConversationDraft = {
   currentSessionId: string | null;
   conversationDetail: ConversationDetail | null;
-  composerText: string;
-  annotatedContexts: AnnotatedContext[];
-  annotationSelection: AnnotationSelection | null;
-  uploadedResources: UploadedResource[];
-  uploadingResources: UploadingResource[];
+  draft: DraftRecord;
 };
 
 export function useConversationPageState() {
   const {
+    draftStore,
+    restoringQueuedInput,
     composerText,
     setComposerText,
     uploadingResources,
@@ -56,6 +52,7 @@ export function useConversationPageState() {
     copySuccessTimeoutRef
   } = useConversationEditingState();
   const {
+    conversationPagination,
     refreshConversations,
     currentSessionId,
     setCurrentSessionId,
@@ -85,11 +82,14 @@ export function useConversationPageState() {
   const [composerError, setComposerError] = useState("");
   const [sending, setSending] = useState(false);
 
-  const [modelCatalog, setModelCatalog] = useState(emptyModelCatalog);
-  const models = modelCatalog.models;
+  const { modelCatalog, setModelCatalog, refreshModelCatalog } = useModelCatalog();
+  const models = modelCatalog.models.filter(isGenerationModel);
   const visionParseModel = modelCatalog.defaults.vision_parse;
 
   return {
+    draftStore,
+    restoringQueuedInput,
+    conversationPagination,
     refreshConversations,
     activeStreamRef,
     activeStreamTurnId,
@@ -136,6 +136,7 @@ export function useConversationPageState() {
     setHighlightedMessageRequestId,
     modelCatalog,
     setModelCatalog,
+    refreshModelCatalog,
     setAnnotatedContexts,
     setAnnotationSelection,
     setSending,

@@ -3,11 +3,10 @@
 import json
 from typing import Any, Iterable
 from backend.app.storage.sqlite import UnsupportedSchemaError
-from backend.app.model_capabilities import (
+from backend.app.domain.model_capabilities import (
     ModelCapabilityProfile,
     ModelCapabilityProfiles,
     profiles_from_profile,
-    normalize_saved_context_window_tokens,
     normalize_optional_integer,
     normalize_capability_strings,
     aggregate_capability_profile,
@@ -25,7 +24,7 @@ def capability_column_values(
     return (
         _serialize_list(profile.thinking_modes),
         _serialize_capability_profiles(resolved_profiles),
-        normalize_saved_context_window_tokens(profile.context_window_tokens),
+        profile.context_window_tokens,
         profile.max_output_tokens,
     )
 
@@ -36,9 +35,7 @@ def profile_from_row(row) -> ModelCapabilityProfile:
     aggregate = aggregate_capability_profile(
         profiles,
         thinking_modes=thinking_modes,
-        context_window_tokens=normalize_saved_context_window_tokens(
-            row["context_window_tokens"]
-        ),
+        context_window_tokens=row["context_window_tokens"],
         max_output_tokens=normalize_optional_integer(row["max_output_tokens"]),
     )
     return aggregate
@@ -82,12 +79,16 @@ def _deserialize_capability_profiles(value: Any) -> ModelCapabilityProfiles:
 
 
 def model_response(row) -> dict[str, Any]:
-    profiles = capability_profiles_from_row(row)
-    profile = profile_from_row(row)
+    generation = capability_response(profile_from_row(row), capability_profiles_from_row(row)) if row["model_type"] == "generation" else {
+        "supports_text": False, "file_mime_types": [], "thinking_modes": None,
+        "supports_tool_calling": False, "capability_profiles": None,
+        "context_window_tokens": None, "max_output_tokens": None,
+    }
     return {
-        "model_id": row["model_id"],
-        "provider_id": row["provider_id"],
-        "remote_model_id": row["remote_model_id"],
-        "model_name": row["model_name"],
-        **capability_response(profile, profiles),
+        "model_id": row["model_id"], "provider_id": row["provider_id"],
+        "remote_model_id": row["remote_model_id"], "model_name": row["model_name"],
+        "model_type": row["model_type"], **generation,
+        "capability_detection": json.loads(row["capability_detection"]) if row["capability_detection"] else None,
+        "embedding_capabilities": json.loads(row["embedding_capabilities"]) if row["embedding_capabilities"] else None,
+        **{key: row[key] for key in ("embedding_dimensions", "max_input_tokens", "max_batch_size")},
     }

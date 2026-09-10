@@ -255,13 +255,6 @@
 
 }
 
-@media (max-width: 650px) {
-
-  .settings-workspace .settings-detail-panel-body {
-    padding: var(--space-content);
-  }
-
-}
 
 @media (max-width: 650px) {
 

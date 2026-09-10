@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import json
+import time
+from copy import copy
+from contextlib import ExitStack
+from threading import Event, Timer
 from datetime import timedelta
 from typing import Any
 from urllib.parse import urlsplit
@@ -9,6 +13,7 @@ import httpx
 
 from backend.app.core.time import local_now
 from backend.app.plugins.web.errors import WebAccessError
+from backend.app.core.cancellation import CancellationToken
 
 
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
@@ -65,6 +70,14 @@ class WebProviderAdapter:
         api_url = str(api_url or self.default_api_url).rstrip("/")
         self.search_endpoint = f"{api_url}{self.search_path}"
         self.read_endpoint = f"{api_url}{self.read_path}"
+        self.cancellation_token = None
+        self.deadline = None
+
+    def for_execution(self, cancellation_token: CancellationToken | None, deadline: float | None):
+        adapter = copy(self)
+        adapter.cancellation_token = cancellation_token
+        adapter.deadline = deadline
+        return adapter
 
     def _headers(self, api_key: str) -> dict[str, str]:
         raise NotImplementedError
@@ -77,37 +90,79 @@ class WebProviderAdapter:
         payload: dict[str, Any],
         timeout: float,
     ) -> tuple[dict[str, Any], dict[str, str]]:
+        token = self.cancellation_token
+        deadline = min(
+            time.monotonic() + timeout,
+            self.deadline if self.deadline is not None else float("inf"),
+        )
+        expired = Event()
+
+        def check_active():
+            if token is not None:
+                token.raise_if_cancelled()
+            if expired.is_set() or time.monotonic() >= deadline:
+                raise WebAccessError("WEB_TIMEOUT", "联网服务请求超时。")
+
+        check_active()
         try:
-            with httpx.Client(
-                transport=self._transport,
-                follow_redirects=False,
-                trust_env=False,
-                timeout=timeout,
-            ) as client:
-                with client.stream(
+            with ExitStack() as stack:
+                client = stack.enter_context(httpx.Client(
+                    transport=self._transport,
+                    follow_redirects=False,
+                    trust_env=False,
+                    timeout=max(0.001, deadline - time.monotonic()),
+                ))
+                response_holder = []
+
+                def close_request():
+                    for handle in [*response_holder, client]:
+                        try:
+                            handle.close()
+                        except Exception:
+                            pass
+
+                if token is not None:
+                    stack.callback(token.register(close_request))
+
+                def expire():
+                    expired.set()
+                    close_request()
+
+                timer = Timer(max(0.001, deadline - time.monotonic()), expire)
+                timer.daemon = True
+                timer.start()
+                stack.callback(timer.cancel)
+                check_active()
+                response = stack.enter_context(client.stream(
                     "POST",
                     endpoint,
                     headers=self._headers(api_key),
                     json=payload,
-                ) as response:
-                    body = bytearray()
-                    for chunk in response.iter_bytes():
-                        body.extend(chunk)
-                        if len(body) > MAX_RESPONSE_BYTES:
-                            raise WebAccessError(
-                                "WEB_RESPONSE_TOO_LARGE",
-                                "联网服务响应超过 8 MiB 安全上限。",
-                            )
-                    status_code = response.status_code
-                    response_headers = dict(response.headers)
+                ))
+                response_holder.append(response)
+                check_active()
+                body = bytearray()
+                for chunk in response.iter_bytes():
+                    check_active()
+                    body.extend(chunk)
+                    if len(body) > MAX_RESPONSE_BYTES:
+                        raise WebAccessError("WEB_RESPONSE_TOO_LARGE", "联网服务响应超过 8 MiB 安全上限。")
+                check_active()
+                status_code = response.status_code
+                response_headers = dict(response.headers)
         except WebAccessError:
             raise
         except httpx.TimeoutException as exc:
+            check_active()
             raise WebAccessError("WEB_TIMEOUT", "联网服务请求超时。") from exc
         except httpx.HTTPError as exc:
+            check_active()
             raise WebAccessError(
                 "WEB_PROVIDER_UNAVAILABLE", "无法连接当前联网服务。"
             ) from exc
+        except Exception:
+            check_active()
+            raise
 
         if status_code in {401, 403}:
             raise WebAccessError("WEB_AUTHENTICATION_FAILED", "联网服务 API key 无效。")

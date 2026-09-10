@@ -120,6 +120,6 @@ class CompactCatalog:
 
     def stream_prepared_chat_for_account(self, **_kwargs):
         yield ModelStreamChunk(
-            content_delta="保留的医学事实：2026-01-01 ALT 45 U/L，来源为报告 r1；仍不确定。"
+            content_delta="保留的医学事实：2026-01-01 ALT 45 U/L，来源为医疗报告 r1；仍不确定。"
         )
         yield ModelStreamChunk(stop_reason="stop")

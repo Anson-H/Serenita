@@ -62,7 +62,7 @@ export function ContextWindowUsageIndicator({
           style={{ strokeDashoffset: 100 - usage.percent }}
         />
       </svg>
-      <span className="context-window-usage-tooltip" id={tooltipId} role="tooltip">
+      <span className="context-window-usage-tooltip scroll-balanced" id={tooltipId} role="tooltip">
         <span>背景信息窗口：</span>
         <span>{copy.usageLabel}</span>
         <span>{copy.tokenLabel}</span>

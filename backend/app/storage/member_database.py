@@ -5,6 +5,7 @@ from pathlib import Path
 from backend.app.storage.paths import AppPaths, app_paths
 from backend.app.storage.schema import (
     CheckConstraint,
+    ForeignKey,
     Column,
     ColumnGroup,
     Database,
@@ -16,6 +17,9 @@ from backend.app.storage.sqlite import (
 )
 
 
+from backend.app.schemas.medical_history import MEDICAL_HISTORY_FIELDS
+
+
 MEMBER_DATABASE_SCHEMA = Database(
     name="members.db",
     tables=(
@@ -25,7 +29,7 @@ MEMBER_DATABASE_SCHEMA = Database(
                 Column("member_id", "TEXT", ColumnGroup.PRIMARY_KEY, nullable=False),
                 Column("member_name", "TEXT", ColumnGroup.DATA, nullable=False),
                 Column("sex", "TEXT", ColumnGroup.DATA),
-                Column("birth_date", "TEXT", ColumnGroup.DATA),
+                Column("birth_date", "TEXT", ColumnGroup.DATA, non_blank=True),
                 Column("blood_type", "TEXT", ColumnGroup.DATA),
                 Column("created_at", "TEXT", ColumnGroup.AUDIT, nullable=False),
                 Column("updated_at", "TEXT", ColumnGroup.AUDIT, nullable=False),
@@ -43,6 +47,17 @@ MEMBER_DATABASE_SCHEMA = Database(
                     "OR blood_type IS NULL",
                 ),
             ),
+        ),
+        Table(
+            name="medical_history",
+            columns=(
+                Column("member_id", "TEXT", ColumnGroup.PRIMARY_KEY, nullable=False),
+                *(Column(name, "TEXT", ColumnGroup.DATA) for name in MEDICAL_HISTORY_FIELDS),
+                *(Column(f"{name}_updated_at", "TEXT", ColumnGroup.AUDIT) for name in MEDICAL_HISTORY_FIELDS),
+            ),
+            primary_key=("member_id",),
+            foreign_keys=(ForeignKey(("member_id",), "members", ("member_id",), on_delete="CASCADE"),),
+            checks=tuple(CheckConstraint(f"{name} IS NULL OR {name}_updated_at IS NOT NULL") for name in MEDICAL_HISTORY_FIELDS),
         ),
     ),
 )

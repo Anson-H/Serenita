@@ -9,6 +9,7 @@ type SettingsWorkspacePanelProps = {
   account: string;
   modelCatalog: ModelCatalog;
   onModelsChanged: Dispatch<SetStateAction<ModelCatalog>>;
+  refreshModels: (isRelevant?: () => boolean) => Promise<void>;
   onReportsChanged: () => void;
   onSignOut: () => void;
   onAccountProfileChange: (session: AuthenticatedSession) => void;
@@ -21,6 +22,7 @@ export function SettingsWorkspacePanel({
   account,
   modelCatalog,
   onModelsChanged,
+  refreshModels,
   onReportsChanged,
   onSignOut,
   onAccountProfileChange,
@@ -37,6 +39,7 @@ export function SettingsWorkspacePanel({
           mobileSidebarToggle={settingsSidebarToggle}
           modelCatalog={modelCatalog}
           onModelsChanged={onModelsChanged}
+          refreshModels={refreshModels}
           onReportsChanged={onReportsChanged}
           onSignOut={onSignOut}
           onAccountProfileChange={onAccountProfileChange}

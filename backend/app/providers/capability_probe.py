@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from backend.app.model_capabilities import (
+from backend.app.domain.model_capabilities import (
     ModelCapabilityProfiles,
     ModelModeCapabilityProfile,
     profile_for_thinking_state,
@@ -75,6 +75,7 @@ class _MediaCapabilityProbe:
     part_type: str
     sample_base64: str
     prompt: str
+    expected_answer: Optional[str] = None
     filename: Optional[str] = None
 
 
@@ -85,7 +86,8 @@ _MEDIA_CAPABILITY_PROBES = (
         sample_mime_type="image/png",
         part_type="image",
         sample_base64=_CAPABILITY_PROBE_PNG_BASE64,
-        prompt="用一个词描述这张图片。",
+        prompt="只用一个英文单词回答图片的主要颜色。",
+        expected_answer="purple",
     ),
     _MediaCapabilityProbe(
         capability="pdf_input",
@@ -94,6 +96,7 @@ _MEDIA_CAPABILITY_PROBES = (
         part_type="file",
         sample_base64=_CAPABILITY_PROBE_PDF_BASE64,
         prompt="只回复这个 PDF 中的大写英文。",
+        expected_answer="pdf",
         filename="capability-probe.pdf",
     ),
     _MediaCapabilityProbe(
@@ -150,15 +153,6 @@ def _profiles_for_probed_thinking_modes(
     profiles: ModelCapabilityProfiles,
     thinking_modes: list[str],
 ) -> ModelCapabilityProfiles:
-    source = next(
-        (
-            profile
-            for profile in (profiles.non_thinking, profiles.thinking)
-            if profile.availability != "unavailable"
-        ),
-        ModelModeCapabilityProfile(availability="unverified"),
-    )
-
     explicit_thinking = any(mode not in {"default", "off"} for mode in thinking_modes)
     non_thinking = "off" in thinking_modes
     default_state = profiles.default_state
@@ -184,9 +178,9 @@ def _profiles_for_probed_thinking_modes(
             return profile
         return ModelModeCapabilityProfile(
             availability="unverified",
-            supports_text=source.supports_text,
-            file_mime_types=list(source.file_mime_types),
-            supports_tool_calling=source.supports_tool_calling,
+            supports_text=profile.supports_text,
+            file_mime_types=list(profile.file_mime_types),
+            supports_tool_calling=profile.supports_tool_calling,
         )
 
     return ModelCapabilityProfiles(
@@ -612,12 +606,17 @@ class ProviderCapabilityProbe:
                 )
             else:
                 media_output = media_outcome
-                if media_output.content or media_output.tool_calls:
+                observed = (
+                    media_output.content.strip().strip(' .。!！\"\'`').casefold() == probe.expected_answer
+                    if probe.expected_answer is not None
+                    else bool(media_output.content or media_output.tool_calls)
+                )
+                if observed:
                     checks[probe.capability] = "supported"
-                    file_mime_types = [*without_current, *supported_types]
+                    file_mime_types = [*without_current, *dict.fromkeys([*current_types, probe.sample_mime_type])]
                 else:
                     checks[probe.capability] = "unverified"
-                    errors[probe.capability] = "模型未返回可用理解结果。"
+                    errors[probe.capability] = "模型未正确回答样本内容，读取能力尚未确认。"
                     file_mime_types = [*without_current, *current_types]
 
         availability = current.availability

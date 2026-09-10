@@ -3,7 +3,7 @@ import hashlib
 import os
 import pytest
 from member_support import account_id as account_id_for, member_id
-from backend.app.application.conversation_service import ConversationService
+from backend.app.application.conversations.service import ConversationService
 from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.storage.paths import app_paths
 from backend.app.storage.sqlite import connect
@@ -15,7 +15,7 @@ def _upload(
     session_id: str,
     content: bytes,
     *,
-    name: str = "报告.pdf",
+    name: str = "医疗报告.pdf",
 ):
     return repository.create_uploaded_resource(
         account_id=account_id,
@@ -46,15 +46,15 @@ def test_same_name_uploads_are_flat_sequential_and_never_deduplicated(tmp_path, 
     third = _upload(repository, account_id, session_id, b"different")
 
     assert [first["resource_id"], second["resource_id"], third["resource_id"]] == [
-        "报告.pdf",
-        "报告-002.pdf",
-        "报告-003.pdf",
+        "医疗报告.pdf",
+        "医疗报告-002.pdf",
+        "医疗报告-003.pdf",
     ]
     assert {
         first["original_filename"],
         second["original_filename"],
         third["original_filename"],
-    } == {"报告.pdf"}
+    } == {"医疗报告.pdf"}
     assert first["sha256"] == second["sha256"]
     assert first["sha256"] != third["sha256"]
     assert first["sha256"] == hashlib.sha256(b"same").hexdigest()
@@ -66,9 +66,9 @@ def test_same_name_uploads_are_flat_sequential_and_never_deduplicated(tmp_path, 
         / session_id
     )
     assert {path.name for path in session_directory.iterdir()} == {
-        "报告.pdf",
-        "报告-002.pdf",
-        "报告-003.pdf",
+        "医疗报告.pdf",
+        "医疗报告-002.pdf",
+        "医疗报告-003.pdf",
     }
     for resource in (first, second, third):
         path = app_paths().account_root(account_id) / resource["relative_path"]
@@ -85,19 +85,19 @@ def test_deleted_and_orphaned_names_are_not_reused(tmp_path, monkeypatch):
     first_path = app_paths().account_root(account_id) / first["relative_path"]
 
     assert repository.expire_resource(account_id, session_id, first["resource_id"])
-    service._drain_attachment_cleanup(account_id)
+    service.inputs.drain_attachment_cleanup(account_id)
     assert not first_path.exists()
     assert repository.resource_row(account_id, session_id, first["resource_id"])[
         "lifecycle_status"
     ] == "deleted"
 
     second = _upload(repository, account_id, session_id, b"second")
-    assert second["resource_id"] == "报告-002.pdf"
-    orphan = first_path.parent / "报告-003.pdf"
+    assert second["resource_id"] == "医疗报告-002.pdf"
+    orphan = first_path.parent / "医疗报告-003.pdf"
     orphan.write_bytes(b"orphan")
 
     fourth = _upload(repository, account_id, session_id, b"fourth")
-    assert fourth["resource_id"] == "报告-004.pdf"
+    assert fourth["resource_id"] == "医疗报告-004.pdf"
     assert orphan.read_bytes() == b"orphan"
 
 
@@ -116,12 +116,12 @@ def test_concurrent_same_name_uploads_do_not_overwrite(tmp_path, monkeypatch):
         )
 
     assert {resource["resource_id"] for resource in resources} == {
-        "报告.pdf",
-        "报告-002.pdf",
-        "报告-003.pdf",
-        "报告-004.pdf",
-        "报告-005.pdf",
-        "报告-006.pdf",
+        "医疗报告.pdf",
+        "医疗报告-002.pdf",
+        "医疗报告-003.pdf",
+        "医疗报告-004.pdf",
+        "医疗报告-005.pdf",
+        "医疗报告-006.pdf",
     }
     stored_payloads = {
         (app_paths().account_root(account_id) / resource["relative_path"]).read_bytes()
@@ -155,7 +155,7 @@ def test_intent_insert_failure_does_not_create_a_file(tmp_path, monkeypatch):
         / session_id
     )
     assert list(session_directory.iterdir()) == []
-    assert repository.resource_row(account_id, session_id, "报告.pdf") is None
+    assert repository.resource_row(account_id, session_id, "医疗报告.pdf") is None
 
 
 def test_file_write_failure_removes_intent_and_queues_exact_file(tmp_path, monkeypatch):
@@ -177,18 +177,18 @@ def test_file_write_failure_removes_intent_and_queues_exact_file(tmp_path, monke
         / "attachments"
         / session_id
     )
-    assert repository.resource_row(account_id, session_id, "报告.pdf") is None
+    assert repository.resource_row(account_id, session_id, "医疗报告.pdf") is None
     assert repository.attachment_cleanup_jobs(account_id) == [
         {
             "cleanup_id": hashlib.sha256(
-                f"{account_id}\0conversations/attachments/{session_id}/报告.pdf".encode()
+                f"{account_id}\0conversations/attachments/{session_id}/医疗报告.pdf".encode()
             ).hexdigest(),
-            "relative_path": f"conversations/attachments/{session_id}/报告.pdf",
+            "relative_path": f"conversations/attachments/{session_id}/医疗报告.pdf",
             "attempt_count": 0,
         }
     ]
 
-    ConversationService(repository=repository)._drain_attachment_cleanup(account_id)
+    ConversationService(repository=repository).inputs.drain_attachment_cleanup(account_id)
 
     assert not session_directory.exists() or list(session_directory.iterdir()) == []
     assert repository.attachment_cleanup_jobs(account_id) == []
@@ -207,7 +207,7 @@ def test_ready_update_failure_leaves_recoverable_write_intent(tmp_path, monkeypa
     with pytest.raises(RuntimeError, match="test ready update failure"):
         _upload(repository, account_id, session_id, b"recoverable")
 
-    row = repository.resource_row(account_id, session_id, "报告.pdf")
+    row = repository.resource_row(account_id, session_id, "医疗报告.pdf")
     path = app_paths().account_root(account_id) / row["relative_path"]
     assert row["storage_status"] == "writing"
     assert row["expires_at"] is None
@@ -216,5 +216,5 @@ def test_ready_update_failure_leaves_recoverable_write_intent(tmp_path, monkeypa
     recovered = ConversationRepository().recover_writing_resources(account_id)
     assert recovered == {"recovered": 1, "discarded": 0}
     assert ConversationRepository().resource_row(
-        account_id, session_id, "报告.pdf"
+        account_id, session_id, "医疗报告.pdf"
     )["storage_status"] == "ready"

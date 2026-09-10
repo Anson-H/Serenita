@@ -64,7 +64,7 @@
   font-weight: var(--weight-strong);
   line-height: 1;
   text-decoration: none;
-  vertical-align: 0.32em;
+  vertical-align: middle;
 }
 
 .markdown-content .citation-link:visited {
@@ -133,31 +133,55 @@
 }
 
 .status-message.error {
-  color: var(--color-danger);
+  color: var(--color-foreground);
 }
 
 .status-message.testing,
 .status-message.saving {
-  color: var(--color-accent);
+  color: var(--color-foreground);
 }
 
-.message-meta.empty-list-status,
-.status-message.empty-list-status {
+.empty-state-content {
+  display: grid;
+  gap: var(--space-related);
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-content);
+  justify-items: center;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.workspace-empty-state {
+  place-self: stretch;
+  place-content: center;
+}
+
+.empty-state-title {
+  margin: 0;
   color: var(--color-foreground);
   font-size: var(--text-body);
   font-weight: var(--weight-strong);
   line-height: var(--line-body);
 }
 
-.workspace-empty-state {
-  align-self: stretch;
+.empty-state-description,
+.inline-empty-state > .empty-state-title {
+  max-width: 70ch;
+  margin: 0;
+  color: var(--color-foreground-muted);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-regular);
+  line-height: var(--line-meta);
+}
+
+.empty-state-icon {
   display: grid;
-  justify-self: stretch;
-  min-width: 0;
-  min-height: 0;
-  place-content: center;
-  justify-items: center;
-  text-align: center;
+  place-items: center;
+  width: var(--size-control-primary);
+  height: var(--size-control-primary);
+  color: var(--color-foreground);
 }
 
 .deferred-content-state {
@@ -246,4 +270,10 @@
 .app-crash-details pre {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+
+.status-message.error {
+  border-inline-start: 3px solid var(--color-danger);
+  padding-inline-start: var(--space-related);
 }

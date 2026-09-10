@@ -34,6 +34,7 @@ export function defaultConversationPreferences(): ConversationPreferences {
     is_context_window_usage_visible: false,
     is_related_content_visible: true,
     is_token_usage_visible: false,
+    is_model_identity_visible: false,
     visible_context_types: [],
     tool_display_types: ["model_tool_request", "tool_call"]
   };

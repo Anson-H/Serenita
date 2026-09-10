@@ -62,8 +62,13 @@ export function useModalDialog({
     const shouldInertApp = Boolean(appRoot && !appRoot.contains(dialogRef.current));
     const previouslyInert = appRoot?.inert ?? false;
     if (shouldInertApp && appRoot) appRoot.inert = true;
+    const underlyingDialogs = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'))
+      .filter(element => element !== dialogRef.current && !dialogRef.current?.contains(element))
+      .map(element => ({element, inert: element.inert}));
+    for (const {element} of underlyingDialogs) element.inert = true;
 
     return () => {
+      for (const {element, inert} of underlyingDialogs) if (element.isConnected) element.inert = inert;
       if (shouldInertApp && appRoot) appRoot.inert = previouslyInert;
       window.requestAnimationFrame(() => {
         const explicitReturnTarget = restoreFocusRef?.current;
@@ -81,7 +86,8 @@ export function useModalDialog({
     if (!active) return;
     const focusFrame = window.requestAnimationFrame(() => {
       const dialog = dialogRef.current;
-      if (!dialog) return;
+      if (!dialog || dialog.inert) return;
+      if (dialog.contains(document.activeElement)) return;
       const target = initialFocusRef?.current
         ?? dialog.querySelector<HTMLElement>("[data-modal-initial-focus]")
         ?? focusableElements(dialog)[0]
@@ -96,7 +102,7 @@ export function useModalDialog({
 
     function handleKeyDown(event: globalThis.KeyboardEvent) {
       const dialog = dialogRef.current;
-      if (!dialog) return;
+      if (!dialog || dialog.inert) return;
       if (event.key === "Escape") {
         if (isImeComposing(event) || escapeDisabledRef.current) return;
         const expandedControl = document.activeElement instanceof HTMLElement

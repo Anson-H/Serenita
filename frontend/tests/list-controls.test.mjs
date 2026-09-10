@@ -155,6 +155,7 @@ describe("shared-design-components", () => {
     };
     const component = load("components/" + name + ".tsx", {
       "./useSelectPopover": { useSelectPopover: () => picker },
+      "react": { ...React, useRef: value => ({ current: value }) },
       "./GroupedList": { GroupedList },
       "./icons": { ChevronDownIcon: () => null, CheckIcon: () => null },
       "react-dom": { createPortal: node => node }

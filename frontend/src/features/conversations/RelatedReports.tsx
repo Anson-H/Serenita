@@ -2,8 +2,7 @@ import type {
   ConversationResourceState,
   ReportContextResource
 } from "../../api/client";
-import { GroupedList } from "../../components/GroupedList";
-import { ChevronDownIcon, ChevronRightIcon } from "../../components/icons";
+import { ChevronRightIcon } from "../../components/icons";
 import {
   reportReferenceStatus,
   reportResourceKey
@@ -27,7 +26,7 @@ export type RelatedReportReference = {
 const RELATIONSHIP_LABELS: Record<RelatedReportRelationship, string> = {
   created: "创建",
   read: "查阅",
-  modified: "修改",
+  modified: "更新",
   reclassified: "重新分类",
   analysis_written: "更新解读结果",
   source_linked: "关联来源",
@@ -35,7 +34,6 @@ const RELATIONSHIP_LABELS: Record<RelatedReportRelationship, string> = {
 };
 
 type RelatedReportsProps = {
-  messageId: string;
   onOpenReport: (reportId: string) => void | Promise<void>;
   reports: RelatedReportReference[];
   resourceStateByReportId: ReadonlyMap<string, ConversationResourceState>;
@@ -61,8 +59,7 @@ function RelatedReportCopy({ item }: { item: RelatedReportReference }) {
   );
 }
 
-export function RelatedReports({
-  messageId,
+export function RelatedReportRows({
   onOpenReport,
   reports,
   resourceStateByReportId
@@ -71,18 +68,8 @@ export function RelatedReports({
     return null;
   }
 
-  const titleId = `related-reports-${messageId}`;
   return (
-    <details
-      aria-labelledby={titleId}
-      className="related-reports assistant-turn-disclosure root-disclosure-list"
-    >
-      <summary className="related-reports-summary root-disclosure-toggle">
-        <span className="related-reports-title" id={titleId}>相关内容</span>
-        <span className="related-reports-count">{reports.length} 份报告</span>
-        <ChevronDownIcon className="assistant-turn-disclosure-chevron" />
-      </summary>
-      <GroupedList as="ul" className="related-report-list root-disclosure-content" density="standard">
+    <>
         {reports.map((item) => {
           const report = item.resource;
           const status = reportReferenceStatus(
@@ -93,7 +80,7 @@ export function RelatedReports({
             <span className="related-report-trailing">
               {status === "unknown" ? <span className="compact-control-bar related-report-state">状态待刷新</span> : null}
               {status === "modified" ? (
-                <span className="compact-control-bar related-report-state">已修改</span>
+                <span className="compact-control-bar related-report-state">已更新</span>
               ) : null}
               {(status === "deleted" || status === "forbidden") ? (
                 <span className="compact-control-bar related-report-state">{status === "forbidden" ? "无权访问" : "已删除"}</span>
@@ -109,7 +96,7 @@ export function RelatedReports({
             >
               {(status === "deleted" || status === "forbidden") ? (
                 <button
-                  aria-label={`${RELATIONSHIP_LABELS[item.relationship]}：${report.report_name}，${status === "forbidden" ? "无权访问" : "报告已删除"}`}
+                  aria-label={`${RELATIONSHIP_LABELS[item.relationship]}：${report.report_name}，${status === "forbidden" ? "无权访问" : "医疗报告已删除"}`}
                   className="related-report-row"
                   data-interaction-owner="row"
                   data-disabled="true"
@@ -121,7 +108,7 @@ export function RelatedReports({
                 </button>
               ) : (
                 <button
-                  aria-label={`${RELATIONSHIP_LABELS[item.relationship]}：${report.report_name}${status === "modified" ? "，当前报告已修改" : ""}`}
+                  aria-label={`${RELATIONSHIP_LABELS[item.relationship]}：${report.report_name}${status === "modified" ? "，当前医疗报告已更新" : ""}`}
                   className="related-report-row"
                   data-interaction-owner="row"
                   onClick={() => void onOpenReport(report.resource_id)}
@@ -134,7 +121,6 @@ export function RelatedReports({
             </li>
           );
         })}
-      </GroupedList>
-    </details>
+    </>
   );
 }

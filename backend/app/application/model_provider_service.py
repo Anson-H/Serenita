@@ -1,3 +1,4 @@
+from backend.app.domain.model_capabilities import supported_embedding_modalities
 from backend.app.storage.paths import app_paths
 from backend.app.application.provider_errors import raise_provider_error
 import json
@@ -55,6 +56,37 @@ class ModelProviderService:
         row = self.repository.get_model(account_id, model_id)
         return model_response(row) if row else None
 
+    @staticmethod
+    def _require_model_type(model, model_type):
+        if model["model_type"] != model_type:
+            raise_error("invalid_structure", "INVALID_MODEL_TYPE", "模型类型不符合当前调用用途。")
+
+    def complete_embedding_for_account(self, account_id, model_id, inputs, *, mode="independent", dimensions=None, cancellation_token=None, timeout_seconds=None):
+        model = self.model_for_account(account_id, model_id)
+        if not model:
+            raise_error("missing", "MODEL_NOT_FOUND", "模型不存在或未添加。")
+        self._require_model_type(model, "embedding")
+        caps = model["embedding_capabilities"] or {}
+        protocol = caps.get("protocol")
+        if not protocol:
+            raise_error("invalid_structure", "EMBEDDING_PROTOCOL_UNCONFIRMED", "请先检测向量接口。")
+        if caps.get(mode) != "supported" or any(item["modality"] not in supported_embedding_modalities(caps) for item in inputs):
+            raise_error("invalid_structure", "INVALID_EMBEDDING_INPUT", "输入模态或生成方式尚未确认支持。")
+        input_count = 1 if mode == "fusion" else len(inputs)
+        if model["max_batch_size"] and input_count > model["max_batch_size"]:
+            raise_error("invalid_structure", "INVALID_EMBEDDING_INPUT", "输入数量超过已配置的批量输入上限。")
+        provider = self._provider(model["provider_id"])
+        row = self._provider_row(account_id, model["provider_id"])
+        if not row or not row["is_configured"]:
+            raise_error("invalid_structure", "MODEL_NOT_CONFIGURED", "请先配置该模型服务。")
+        try:
+            return provider.complete_embedding(api_url=row["api_url"] or provider.default_api_url,
+                api_key=self._api_key_from_row(account_id, row), remote_model_id=model["remote_model_id"],
+                inputs=inputs, mode=mode, dimensions=dimensions if dimensions is not None else model["embedding_dimensions"],
+                protocol=protocol, cancellation_token=cancellation_token, timeout_seconds=timeout_seconds)
+        except ProviderChatCompletionError as exc:
+            raise_provider_error(exc)
+
     def complete_chat_for_account(
         self,
         account_id: str,
@@ -64,6 +96,7 @@ class ModelProviderService:
         timeout_seconds: Optional[float] = None,
         cancellation_token: CancellationToken | None = None,
     ):
+        self._require_model_type(model, "generation")
         provider_id = model["provider_id"]
         provider = self._provider(provider_id)
         row = self._provider_row(account_id, provider_id)
@@ -107,6 +140,7 @@ class ModelProviderService:
     ) -> PreparedProviderRequest:
         """Prepare the exact streaming payload without sending it."""
 
+        self._require_model_type(model, "generation")
         provider_id = str(model["provider_id"])
         provider = self._provider(provider_id)
         row = self._provider_row(account_id, provider_id)
@@ -217,6 +251,7 @@ class ModelProviderService:
                             {
                                 "type": "tool_calls",
                                 "calls": calls,
+                                "content": message.get("content"),
                             },
                             ensure_ascii=False,
                             separators=(",", ":"),
@@ -296,7 +331,6 @@ class ModelProviderService:
     @classmethod
     def _stream_text_tool_result(cls, stream):
         raw_parts: list[str] = []
-        usage: dict[str, Any] = {}
         last_stop_reason: str | None = None
         for chunk in stream:
             if chunk.reasoning_delta:
@@ -305,7 +339,7 @@ class ModelProviderService:
                 raw_parts.append(chunk.content_delta)
                 yield ModelStreamChunk(raw_content_delta=chunk.content_delta)
             if chunk.usage:
-                usage.update(chunk.usage)
+                yield ModelStreamChunk(usage=dict(chunk.usage))
             if chunk.stop_reason:
                 last_stop_reason = chunk.stop_reason
         parsed = cls._parse_text_tool_output("".join(raw_parts))
@@ -326,14 +360,12 @@ class ModelProviderService:
                     ),
                 )
             yield ModelStreamChunk(
-                usage=usage,
                 stop_reason="tool_calls",
             )
             return
         if parsed.content:
             yield ModelStreamChunk(content_delta=parsed.content)
         yield ModelStreamChunk(
-            usage=usage,
             stop_reason=last_stop_reason or "stop",
         )
 

@@ -1,5 +1,5 @@
+import {useResourceDraft} from "../../utils/useResourceDraft";
 import {
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -66,24 +66,30 @@ export function InlineEditableValue({
   workspace
 }: InlineEditableValueProps) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(inputValue(value, inputKind));
   const [saveError, setSaveError] = useState("");
   const editorRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const scrollSnapshotRef = useRef<ScrollPositionSnapshot | null>(null);
   const restoreTriggerFocusRef = useRef(false);
 
-  useStatusNotification(saveError, {
+  const draftState = useResourceDraft({
+    resourceKey: `${workspace.reportSaveKey}:${field}:${itemId ?? ''}`,
+    server: inputValue(value, inputKind), editing,
+    validate: next => required && !next.trim() ? '此项不能为空。' : '',
+    save: async next => {
+      if (!workspace.canEdit) throw new Error('当前权限无法保存，草稿已保留。');
+      const result = await workspace.updateSelectedReportField({field, item_id: itemId, value: storedValue(next, inputKind)});
+      if (!result) throw new Error('保存失败，草稿已保留，请重试。');
+      return next;
+    }
+  });
+  const {draft, update: setDraft} = draftState;
+
+  useStatusNotification(saveError || draftState.error, {
     id: `report-field-${field}-${itemId ?? "report"}-error`,
     title: `${label}未保存`,
     tone: "error"
   });
-
-  useEffect(() => {
-    setDraft(inputValue(value, inputKind));
-    setEditing(false);
-    setSaveError("");
-  }, [field, inputKind, itemId, value]);
 
   useLayoutEffect(() => {
     if (!editing) {
@@ -98,33 +104,17 @@ export function InlineEditableValue({
   }, [editing, inputKind]);
 
   async function save(nextDraft = draft) {
-    if (required && !nextDraft.trim()) {
-      setSaveError("此项不能为空。");
-      return;
-    }
-    if (workspace.saving) {
-      return;
-    }
-    if (nextDraft === inputValue(value, inputKind)) {
-      workspace.clearActionFeedback();
-      setSaveError("");
-      setEditing(false);
-      return;
-    }
-    setSaveError("");
-    const response = await workspace.updateSelectedReportField({
-      field,
-      item_id: itemId,
-      value: storedValue(nextDraft, inputKind)
-    });
-    if (response) {
-      setEditing(false);
-    } else {
-      setSaveError("保存失败，请检查后重试。");
+    setDraft(nextDraft);
+    setSaveError('');
+    const revision = draftState.controller.snapshot().revision;
+    if (await draftState.flush()) {
+      if (revision === draftState.controller.snapshot().revision) setEditing(false);
     }
   }
 
   function cancel() {
+    if (draftState.controller.snapshot().pending) return;
+    draftState.controller.cancel();
     restoreTriggerFocusRef.current = true;
     setDraft(inputValue(value, inputKind));
     setSaveError("");
@@ -151,8 +141,9 @@ export function InlineEditableValue({
     return (
       <DateTimePicker
         ariaLabel={label}
-        disabled={!workspace.canEdit || workspace.saving}
+        disabled={!workspace.canEdit}
         mode="date-time"
+        emptyOptionLabel={required ? undefined : "未知"}
         onCancel={cancel}
         onChange={setDraft}
         onCommit={(nextDraft, reason) => {
@@ -172,7 +163,8 @@ export function InlineEditableValue({
           autoComplete="off"
           onBlur={(event) => void save(event.currentTarget.value)}
           onChange={(event) => setDraft(event.target.value)}
-          onCompositionEnd={(event) => syncCommittedText(event, setDraft)}
+          onCompositionStart={() => draftState.controller.composition(true)}
+          onCompositionEnd={(event) => {syncCommittedText(event, setDraft); draftState.controller.composition(false);}}
           onKeyDown={handleKeyDown}
           ref={(node) => { editorRef.current = node; }}
           required={required}
@@ -199,7 +191,8 @@ export function InlineEditableValue({
           aria-label={label}
           onBlur={(event) => void save(event.currentTarget.value)}
           onChange={(event) => setDraft(event.target.value)}
-          onCompositionEnd={(event) => syncCommittedText(event, setDraft)}
+          onCompositionStart={() => draftState.controller.composition(true)}
+          onCompositionEnd={(event) => {syncCommittedText(event, setDraft); draftState.controller.composition(false);}}
           onKeyDown={handleKeyDown}
           ref={(node) => { editorRef.current = node; }}
           required={required}
@@ -213,7 +206,7 @@ export function InlineEditableValue({
   const empty = value === null || value === undefined || value === "";
   return (
     <button
-      aria-label={workspace.canEdit ? `修改${label}` : label}
+      aria-label={workspace.canEdit ? `编辑${label}` : label}
       disabled={!workspace.canEdit}
       className={`report-inline-edit-trigger ${className ?? ""}`}
       data-empty={empty ? "true" : undefined}
@@ -235,4 +228,4 @@ export function InlineEditableValue({
   );
 }
 
-type ReportInlineFieldWorkspace = Pick<ReportWorkspaceState, "canEdit" | "clearActionFeedback" | "saving" | "updateSelectedReportField">;
+type ReportInlineFieldWorkspace = Pick<ReportWorkspaceState, "reportSaveKey" | "canEdit" | "clearActionFeedback" | "saving" | "updateSelectedReportField">;

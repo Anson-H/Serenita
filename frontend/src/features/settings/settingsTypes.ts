@@ -1,4 +1,5 @@
 export type SettingsSection =
+  | "theme"
   | "members"
   | "account"
   | "providers"
@@ -6,9 +7,10 @@ export type SettingsSection =
   | "conversation"
   | "web"
   | "lab-categories"
-  | "lab-items";
-export type AccountPanel = "profile" | "password" | "grants";
-export type DefaultModelUsage = "chat" | "title" | "vision_parse" | "compact";
+  | "lab-items"
+  | "medication-catalog";
+export type AccountPanel = "profile" | "password" | "grants" | "notifications";
+export type DefaultModelUsage = "chat" | "title" | "vision_parse" | "compact" | "text_embedding" | "multimodal_embedding";
 export type ConversationSettingsSection =
   | "composer"
   | "response";

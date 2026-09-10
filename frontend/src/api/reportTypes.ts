@@ -3,7 +3,9 @@ export const REPORT_TYPES = [
   "检查报告",
   "病理报告",
   "手术报告",
-  "其它报告"
+  "门诊病历",
+  "急诊病历",
+  "其它医疗报告"
 ] as const;
 
 export type ReportType = (typeof REPORT_TYPES)[number];
@@ -85,6 +87,30 @@ export type SurgeryReport = {
   postoperative_vital_signs?: string | null;
 };
 
+export type OutpatientReport = {
+  chief_complaint?: string | null;
+  present_illness?: string | null;
+  physical_examination?: string | null;
+  auxiliary_examinations?: string | null;
+  diagnosis?: string | null;
+  treatment_plan?: string | null;
+  additional_content?: string | null;
+};
+
+export type EmergencyReport = {
+  chief_complaint?: string | null;
+  present_illness?: string | null;
+  physical_examination?: string | null;
+  auxiliary_examinations?: string | null;
+  diagnosis?: string | null;
+  treatment_plan?: string | null;
+  rescue_course?: string | null;
+  observation_details?: string | null;
+  discharge_diagnosis?: string | null;
+  discharge_instructions?: string | null;
+  additional_content?: string | null;
+};
+
 type OtherReport = {
   report_body?: string | null;
 };
@@ -99,6 +125,8 @@ export type ReportDetail = ReportFacts & {
   examination_report?: ExaminationReport | null;
   pathology_report?: PathologyReport | null;
   surgery_report?: SurgeryReport | null;
+  outpatient_report?: OutpatientReport | null;
+  emergency_report?: EmergencyReport | null;
   other_report?: OtherReport | null;
   analysis_content?: string | null;
 };
@@ -120,6 +148,8 @@ export type CreateReportInput = {
   examination_report?: ExaminationReport | null;
   pathology_report?: PathologyReport | null;
   surgery_report?: SurgeryReport | null;
+  outpatient_report?: OutpatientReport | null;
+  emergency_report?: EmergencyReport | null;
   other_report?: OtherReport | null;
 };
 
@@ -158,6 +188,16 @@ export type ReportEditableField =
   | "intraoperative_other_drugs"
   | "procedure_description"
   | "postoperative_vital_signs"
+  | "chief_complaint"
+  | "present_illness"
+  | "physical_examination"
+  | "auxiliary_examinations"
+  | "treatment_plan"
+  | "rescue_course"
+  | "observation_details"
+  | "discharge_diagnosis"
+  | "discharge_instructions"
+  | "additional_content"
   | "report_body";
 
 export type ReportListResponse = {

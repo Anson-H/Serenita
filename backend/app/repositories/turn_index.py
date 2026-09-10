@@ -1,10 +1,11 @@
+from backend.app.storage.conversation_database import CONVERSATION_DATABASE_SCHEMA
 from typing import Any, Optional
 
 from backend.app.core.errors import raise_error
 from backend.app.core.time import (
     local_now_iso,
 )
-from backend.app.session_events import (
+from backend.app.domain.conversations.events import (
     SessionEventCorruptionError,
 )
 from backend.app.storage.sqlite import (
@@ -52,6 +53,12 @@ class TurnIndex:
         created_at: str,
         updated_at: str,
     ) -> None:
+        CONVERSATION_DATABASE_SCHEMA.table_by_name['conversation_turns'].validate_values({
+            'session_id': session_id, 'turn_id': turn_id, 'user_message_id': user_message_id,
+            'final_assistant_message_id': final_assistant_message_id, 'stream_id': stream_id,
+            'status': status, 'error_code': error_code, 'error_message': error_message,
+            'created_at': created_at, 'updated_at': updated_at,
+        })
         with connect(self.paths.conversations_db(account_id)) as connection:
             cursor = connection.execute(
                 """
@@ -122,28 +129,30 @@ class TurnIndex:
                 (now_iso(), session_id, turn_id),
             )
 
-    def expire_turn_jobs(self, account_id: str, cutoff: str) -> list[dict[str, Any]]:
+    def expired_turn_job_sessions(self, account_id: str, cutoff: str) -> list[str]:
+        """Locate sessions to lock before conditionally ending expired workers."""
+        with connect(self.paths.conversations_db(account_id)) as connection:
+            return [row[0] for row in connection.execute(
+                "SELECT DISTINCT session_id FROM conversation_turns "
+                "WHERE status = 'streaming' AND updated_at < ?",
+                (cutoff,),
+            )]
+
+    def expire_turn_jobs(self, account_id: str, session_id: str, cutoff: str) -> list[dict[str, Any]]:
         """Truthfully terminate workers whose persisted lease heartbeat expired."""
         timestamp = now_iso()
         with connect(self.paths.conversations_db(account_id)) as connection:
             rows = connection.execute(
                 """
-                SELECT * FROM conversation_turns
-                WHERE status = 'streaming' AND updated_at < ?
+                UPDATE conversation_turns
+                SET status = 'failed', error_code = 'TURN_INTERRUPTED',
+                    error_message = '当前轮次运行租约已过期，任务已中断。',
+                    updated_at = ?
+                WHERE session_id = ? AND status = 'streaming' AND updated_at < ?
+                RETURNING *
                 """,
-                (cutoff,),
+                (timestamp, session_id, cutoff),
             ).fetchall()
-            if rows:
-                connection.executemany(
-                    """
-                    UPDATE conversation_turns
-                    SET status = 'failed', error_code = 'TURN_INTERRUPTED',
-                        error_message = 'Agent Turn 运行租约已过期，任务已中断。',
-                        updated_at = ?
-                    WHERE session_id = ? AND turn_id = ? AND status = 'streaming'
-                    """,
-                    [(timestamp, row["session_id"], row["turn_id"]) for row in rows],
-                )
         return [dict(row) for row in rows]
 
     def update_turn_completed(
@@ -153,9 +162,23 @@ class TurnIndex:
         turn_id: str,
         final_assistant_message_id: Optional[str],
         timestamp: Optional[str] = None,
+        *,
+        notification_event=None,
     ) -> None:
+        from backend.app.repositories.notification_repository import NotificationRepository
+
+        notifications = NotificationRepository(self.paths)
+        if notification_event:
+            notifications.initialize(account_id)
         with connect(self.paths.conversations_db(account_id)) as connection:
-            connection.execute(
+            if notification_event:
+                connection.execute("ATTACH DATABASE ? AS notification_data", (str(self.paths.notifications_db(account_id)),))
+                for schema in ("main", "notification_data"):
+                    if connection.execute(f"PRAGMA {schema}.journal_mode").fetchone()[0] != "delete":
+                        raise ValueError("回答通知事务要求 DELETE 日志模式。")
+                    connection.execute(f"PRAGMA {schema}.synchronous=FULL")
+            connection.execute("BEGIN IMMEDIATE")
+            updated = connection.execute(
                 """
                 UPDATE conversation_turns
                 SET final_assistant_message_id = ?, status = 'completed',
@@ -169,6 +192,8 @@ class TurnIndex:
                     turn_id,
                 ),
             )
+            if notification_event and updated.rowcount == 1:
+                notifications.enqueue(connection, **notification_event)
 
     def update_turn_failed(
         self,
@@ -179,6 +204,8 @@ class TurnIndex:
         error_message: str,
         timestamp: Optional[str] = None,
     ) -> None:
+        if not isinstance(error_code, str) or not error_code.strip() or not isinstance(error_message, str) or not error_message.strip():
+            raise ValueError("失败轮次必须提供错误代码和错误说明。")
         with connect(self.paths.conversations_db(account_id)) as connection:
             connection.execute(
                 """

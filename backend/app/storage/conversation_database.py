@@ -64,13 +64,13 @@ CONVERSATION_DATABASE_SCHEMA = Database(
             columns=(
                 Column("session_id", "TEXT", ColumnGroup.PRIMARY_KEY, nullable=False),
                 Column("turn_id", "TEXT", ColumnGroup.PRIMARY_KEY, nullable=False),
-                Column("user_message_id", "TEXT", ColumnGroup.REFERENCE),
+                Column("user_message_id", "TEXT", ColumnGroup.REFERENCE, nullable=False),
                 Column(
                     "final_assistant_message_id",
                     "TEXT",
                     ColumnGroup.REFERENCE,
                 ),
-                Column("stream_id", "TEXT", ColumnGroup.REFERENCE),
+                Column("stream_id", "TEXT", ColumnGroup.REFERENCE, nullable=False),
                 Column("status", "TEXT", ColumnGroup.STATE, nullable=False),
                 Column("error_code", "TEXT", ColumnGroup.STATE),
                 Column("error_message", "TEXT", ColumnGroup.STATE),
@@ -90,6 +90,7 @@ CONVERSATION_DATABASE_SCHEMA = Database(
                     "status IN ('queued', 'streaming', 'completed', 'failed', "
                     "'cancelled')",
                 ),
+                CheckConstraint("status <> 'failed' OR (error_code IS NOT NULL AND error_message IS NOT NULL)"),
             ),
             indexes=(
                 Index(

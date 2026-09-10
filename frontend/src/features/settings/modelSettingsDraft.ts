@@ -1,5 +1,5 @@
 import type {
-  AddedModel,
+  GenerationModel,
   ModelCapabilityProfiles,
   ModelUpdatePayload
 } from "../../api/client";
@@ -17,7 +17,7 @@ export type ModelAutoSaveJob = {
   target: ModelUpdatePayload;
 };
 
-export function modelSettingsDraft(model: AddedModel): ModelSettingsDraft {
+export function modelSettingsDraft(model: GenerationModel): ModelSettingsDraft {
   return {
     modelName: model.model_name,
     thinkingModes: model.thinking_modes,
@@ -38,7 +38,7 @@ function optionalPositiveInteger(value: string, label: string) {
 
 export function modelSettingsPayload(draft: ModelSettingsDraft): ModelUpdatePayload {
   const normalizedName = draft.modelName.trim();
-  if (!normalizedName) throw new Error("模型名称不能为空。");
+  if (!normalizedName) throw new Error("模型昵称不能为空。");
   if (!draft.thinkingModes.length) throw new Error("至少保留一个思考档位。");
   return {
     model_name: normalizedName,
@@ -46,9 +46,9 @@ export function modelSettingsPayload(draft: ModelSettingsDraft): ModelUpdatePayl
     capability_profiles: draft.capabilityProfiles,
     context_window_tokens: optionalPositiveInteger(
       draft.contextWindowTokens,
-      "输入词元最大量"
+      "单条输入词元上限"
     ),
-    max_output_tokens: optionalPositiveInteger(draft.maxOutputTokens, "输出词元最大量")
+    max_output_tokens: optionalPositiveInteger(draft.maxOutputTokens, "单条输出词元上限")
   };
 }
 

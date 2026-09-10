@@ -1,7 +1,7 @@
 import pytest
-from backend.app.application.conversation_service import _annotation_source_values, _annotation_text_belongs_to_record
+from backend.app.application.conversations.inputs import _annotation_source_values, _annotation_text_belongs_to_record
 from types import SimpleNamespace
-from backend.app.plugins.report.tools.write_report_analysis import WriteReportAnalysisTool
+from backend.app.plugins.medical_report.tools.write_report_analysis import WriteReportAnalysisTool
 
 
 @pytest.mark.parametrize(
@@ -76,7 +76,7 @@ def test_non_answer_execution_records_cannot_be_annotation_sources():
     reasoning_record = {
         "kind": "model",
         "channel": "reasoning",
-        "value": "需要先读取报告目录",
+        "value": "需要先读取医疗报告目录",
     }
     context_record = {
         "kind": "context",
@@ -106,7 +106,7 @@ def test_non_answer_execution_records_cannot_be_annotation_sources():
 def bind(content, observations):
     tool = WriteReportAnalysisTool(account_id='account', member_id='member', service=SimpleNamespace())
     return tool.bind_runtime_arguments({'report_id': 'report', 'analysis_content': content},
-        context=SimpleNamespace(account_id='account', member_id='member', session_id='session', memory={}, model_id='model'),
+        context=SimpleNamespace(account_id='account', member_id='member', session_id='session', turn_id='turn', memory={}, model_id='model'),
         observations=observations)['analysis_content']
 
 

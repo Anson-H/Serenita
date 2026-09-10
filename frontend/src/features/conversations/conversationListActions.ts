@@ -1,4 +1,5 @@
 import type * as React from "react";
+import { captureAuthContext, isAuthContextCurrent, type AuthContext } from "../../api/authLifecycle";
 import {
   type Dispatch,
   type SetStateAction
@@ -23,6 +24,7 @@ import type {
 } from "./workspaceTypes";
 
 type Dependencies = {
+  onDeletedSessions: (sessionIds: string[]) => void;
   refreshConversations: () => Promise<void>;
   setConversations: Dispatch<SetStateAction<ConversationSummary[]>>;
   setComposerError: Dispatch<SetStateAction<string>>;
@@ -40,6 +42,7 @@ type Dependencies = {
 };
 
 export function createConversationListActions({
+  onDeletedSessions,
   refreshConversations,
   setConversations,
   setComposerError,
@@ -56,9 +59,10 @@ export function createConversationListActions({
   navigateTo
 }: Dependencies) {
   async function deleteConversationFromSidebar(sessionId: string) {
+    const auth = captureAuthContext();
     try {
       await apiClient.deleteConversation(sessionId);
-      clearDeletedCurrentConversation([sessionId]);
+      clearDeletedCurrentConversation([sessionId], auth);
       await refreshConversations();
       setComposerError("");
       showStatusNotification({
@@ -73,7 +77,9 @@ export function createConversationListActions({
     }
   }
 
-  function clearDeletedCurrentConversation(deletedIds: string[]) {
+  function clearDeletedCurrentConversation(deletedIds: string[], auth: AuthContext) {
+    if (!isAuthContextCurrent(auth)) return;
+    onDeletedSessions(deletedIds);
     const visibleSessionId = visibleConversationRef.current.currentSessionId;
     if (!isCurrentScope() || !visibleSessionId || !deletedIds.includes(visibleSessionId)) {
       return;
@@ -140,9 +146,10 @@ export function createConversationListActions({
   }
 
   async function batchDeleteConversationsFromSidebar(sessionIds: string[]) {
+    const auth = captureAuthContext();
     try {
       const response = await apiClient.batchDeleteConversations(sessionIds);
-      clearDeletedCurrentConversation(response.deleted_ids);
+      clearDeletedCurrentConversation(response.deleted_ids, auth);
       await refreshConversations();
       const failedIds = response.failed.map((failure) => failure.session_id);
       if (response.failed.length) {

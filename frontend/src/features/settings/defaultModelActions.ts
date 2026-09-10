@@ -1,3 +1,4 @@
+import { eligibleForDefault } from "../modelConfiguration/modelEligibility";
 import type { RefObject, SetStateAction } from "react";
 import {
   AddedModel,
@@ -24,6 +25,7 @@ export function createDefaultModelActions({ defaultSaveSequences, addedModels, s
     defaultSaveSequences.current[usage] = sequence;
     try {
       const nextModel = addedModels.find((model) => model.model_id === nextModelId) ?? null;
+      if (nextModelId && (!nextModel || !eligibleForDefault(nextModel, usage))) throw new Error("模型类型或输入能力不符合此默认用途。");
       setModelDefaults((current) => ({
         ...current,
         [usage]: nextModel
@@ -41,6 +43,10 @@ export function createDefaultModelActions({ defaultSaveSequences, addedModels, s
       });
     } catch (error) {
       if (!isCurrentScope() || defaultSaveSequences.current[usage] !== sequence) return;
+      try {
+        const response = await apiClient.fetchModelDefaults();
+        if (isCurrentScope() && defaultSaveSequences.current[usage] === sequence) setModelDefaults(current => ({ ...current, [usage]: response.defaults[usage] }));
+      } catch { /* Keep the original save error visible. */ }
       showStatusNotification({
         id: `default-model-${usage}`,
         message: error instanceof Error ? error.message : "默认模型更新失败。",

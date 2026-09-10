@@ -10,8 +10,30 @@ export type EntryField = {
 };
 
 export const ENTRY_FIELDS: Partial<Record<ReportType, EntryField[]>> = {
-  "其它报告": [
-    { key: "report_body", label: "报告正文", textarea: true, required: true, placeholder: "录入报告正文" }
+  "门诊病历": [
+    { key: "chief_complaint", label: "主诉", textarea: true },
+    { key: "present_illness", label: "现病史", textarea: true },
+    { key: "physical_examination", label: "体格检查", textarea: true },
+    { key: "auxiliary_examinations", label: "辅助检查", textarea: true },
+    { key: "diagnosis", label: "诊断", textarea: true },
+    { key: "treatment_plan", label: "处理意见", textarea: true },
+    { key: "additional_content", label: "补充内容", textarea: true }
+  ],
+  "急诊病历": [
+    { key: "chief_complaint", label: "主诉", textarea: true },
+    { key: "present_illness", label: "现病史", textarea: true },
+    { key: "physical_examination", label: "体格检查", textarea: true },
+    { key: "auxiliary_examinations", label: "辅助检查", textarea: true },
+    { key: "diagnosis", label: "诊断", textarea: true },
+    { key: "treatment_plan", label: "处理意见", textarea: true },
+    { key: "rescue_course", label: "抢救经过", textarea: true },
+    { key: "observation_details", label: "留观情况", textarea: true },
+    { key: "discharge_diagnosis", label: "出院诊断", textarea: true },
+    { key: "discharge_instructions", label: "出院医嘱", textarea: true },
+    { key: "additional_content", label: "补充内容", textarea: true }
+  ],
+  "其它医疗报告": [
+    { key: "report_body", label: "医疗报告正文", textarea: true, required: true, placeholder: "录入医疗报告正文" }
   ],
   "检查报告": [
     { key: "exam_name", label: "名称", required: true, placeholder: "例如：腹部超声" },
@@ -45,5 +67,6 @@ export const ENTRY_FIELDS: Partial<Record<ReportType, EntryField[]>> = {
 
 export const REPORT_DETAIL_KEYS = {
   "检查报告": "examination_report", "病理报告": "pathology_report",
-  "手术报告": "surgery_report", "其它报告": "other_report"
+  "门诊病历": "outpatient_report", "急诊病历": "emergency_report",
+  "手术报告": "surgery_report", "其它医疗报告": "other_report"
 } as const;

@@ -1,3 +1,4 @@
+import {NotificationProvider} from "./features/notifications/NotificationProvider";
 import { useEffect } from "react";
 
 import { PatientShell } from "./app/PatientShell";
@@ -84,6 +85,7 @@ export function App() {
         && memberId ? healthPathForMember(memberId)
         : destination.type === "reports" && memberId ? destination.reportId ? reportPathForReport(destination.reportId, memberId) : REPORTS_PATH
         : APP_PATH)}>
+      <NotificationProvider>
       <WorkspacePage
         route={route}
         onNavigate={navigateTo}
@@ -92,6 +94,7 @@ export function App() {
         onAccountProfileChange={updateAccountProfile}
         ShellComponent={PatientShell}
       />
+      </NotificationProvider>
       </MemberProvider>
     );
   }

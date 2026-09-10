@@ -35,7 +35,7 @@ function Fixture() {
       <button onClick={() => setState("completed")}>模拟提交</button>
       <button onClick={() => setState("failed")}>模拟失败</button>
     </div>
-    <ConversationTurnExecution
+    <ConversationTurnExecution showModelIdentity={true}
       active activeTurnId="turn-1" highlightedMessageId={null} onRegisterMessageElement={() => {}}
       records={records} turnRecords={records} visibleBaseContextRecordIds={new Set()}
       visibleContextTypes={new Set()} visibleToolTypes={new Set()}

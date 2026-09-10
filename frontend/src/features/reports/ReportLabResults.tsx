@@ -1,3 +1,6 @@
+import { NavigationTitle } from "../../components/NavigationTitle";
+import { navigationLabels } from "../../components/navigationLabels";
+import { EmptyState } from "../../components/EmptyState";
 import {
   useEffect,
   useRef,
@@ -16,6 +19,7 @@ import {
 import type { LabDictionaryResponse } from "../../api/labDictionaryApi";
 import { GroupedList } from "../../components/GroupedList";
 import {
+  CheckIcon,
   PlusIcon,
   TrashIcon,
   XIcon
@@ -255,33 +259,32 @@ export function LabResults({
         aria-describedby="report-lab-add-description"
         aria-labelledby="report-lab-add-title"
         aria-modal="true"
-        className="report-lab-add-dialog dialog-viewport-surface dialog-title-ellipsis"
+        className="report-lab-add-dialog creation-dialog dialog-viewport-surface dialog-title-ellipsis"
         onSubmit={submitAdd}
         ref={addDialogRef}
         role="dialog"
         tabIndex={-1}
       >
         <header className="dialog-titlebar report-lab-add-heading">
-          <strong data-modal-initial-focus id="report-lab-add-title" tabIndex={-1}>添加检验指标</strong>
+          <strong data-modal-initial-focus id="report-lab-add-title" tabIndex={-1}>{navigationLabels.addLabResult}</strong>
           <button aria-label="关闭添加检验指标弹窗" className="control control--titlebar control--icon control--ghost report-lab-add-close titlebar-icon-control" disabled={workspace.labItemMutation === "adding"} onClick={cancelAdd} type="button"><XIcon /></button>
         </header>
         <div className="dialog-body report-lab-add-body scroll-content">
           <p className="content-description" id="report-lab-add-description">仅显示“{reportCategory}”分类中尚未录入的指标</p>
           {!dictionaryLoading && dictionary && !availableItems.length ? (
-            <p className="report-lab-add-state">当前分类的指标均已在这份报告中。</p>
+            <p className="report-lab-add-state">当前分类的指标均已在这份医疗报告中。</p>
           ) : null}
           {!dictionaryLoading && availableItems.length ? (
             <GroupedList layout="fields" className="report-lab-add-fields" density="standard">
               <label className="field-row report-lab-add-item"><span>指标</span><SelectPopover ariaLabel="选择检验指标" disabled={mutationBusy} menuWidth="content" menuAlign="end" interactionOwner="row" onChange={setDraftItemId} options={availableItems.map((item) => ({ label: item.item_name_zh, value: item.item_id }))} value={draftItemId} /></label>
               <label className="field-row"><span>结果</span><input autoComplete="off" disabled={mutationBusy} onChange={(event) => setDraftResult(event.target.value)} onCompositionEnd={(event) => syncCommittedText(event, setDraftResult)} placeholder="数值、阴性或阳性" required value={draftResult} /></label>
               <label className="field-row"><span>参考值</span><input autoComplete="off" disabled={mutationBusy} onChange={(event) => setDraftReference(event.target.value)} onCompositionEnd={(event) => syncCommittedText(event, setDraftReference)} placeholder="可不填" value={draftReference} /></label>
-              <label className="field-row"><span>标记</span><SelectPopover ariaLabel="设置新增指标结果标记" className="report-lab-add-flag" disabled={mutationBusy} menuWidth="content" menuAlign="end" interactionOwner="row" onChange={setDraftFlag} options={LAB_FLAG_TEXTS.map((flag) => ({ label: flag, value: flag }))} value={draftFlag} /></label>
+              <label className="field-row"><span>标记</span><SelectPopover ariaLabel="设置添加指标结果标记" className="report-lab-add-flag" disabled={mutationBusy} menuWidth="content" menuAlign="end" interactionOwner="row" onChange={setDraftFlag} options={LAB_FLAG_TEXTS.map((flag) => ({ label: flag, value: flag }))} value={draftFlag} /></label>
             </GroupedList>
           ) : null}
         </div>
         <footer className="report-lab-add-actions dialog-action-bar">
-          <button className="control control--secondary secondary-button control-primary dialog-secondary-action" disabled={mutationBusy} onClick={cancelAdd} type="button"><XIcon /><span>取消</span></button>
-          <button className="control control--primary command-button creation-action-button dialog-primary-action" disabled={mutationBusy || dictionaryLoading || !availableItems.length} type="submit"><PlusIcon /><span>{dictionaryLoading ? "加载中..." : workspace.labItemMutation === "adding" ? "添加中..." : "添加检验指标"}</span></button>
+          <button className="control control--primary command-button creation-action-button dialog-primary-action" disabled={mutationBusy || dictionaryLoading || !availableItems.length} type="submit"><CheckIcon /><span>{dictionaryLoading ? "加载中..." : workspace.labItemMutation === "adding" ? "保存中..." : "完成"}</span></button>
         </footer>
       </form>
     </div>,
@@ -304,7 +307,7 @@ export function LabResults({
         tabIndex={-1}
       >
         <header className="dialog-titlebar report-lab-edit-heading">
-          <strong id="report-lab-edit-title">{labItemDisplayName(editingResult)}</strong>
+          <NavigationTitle as="strong" id="report-lab-edit-title" title={labItemDisplayName(editingResult)} />
           <button aria-label="关闭检验指标记录弹窗" className="control control--titlebar control--icon control--ghost report-lab-edit-close titlebar-icon-control" disabled={mutationBusy} onClick={closeEdit} type="button"><XIcon /></button>
         </header>
         <div className="dialog-body report-lab-edit-body scroll-content">
@@ -373,7 +376,7 @@ export function LabResults({
             disabled={results.length <= 1 || mutationBusy}
             onClick={() => void deleteEditingResult()}
             onMouseDown={(event) => event.preventDefault()}
-            title={results.length <= 1 ? "检验报告至少保留一条记录；如需移除，请删除整份报告" : `删除${labItemDisplayName(editingResult)}记录`}
+            title={results.length <= 1 ? "检验报告至少保留一条记录；如需移除，请删除整份医疗报告" : `删除${labItemDisplayName(editingResult)}记录`}
             type="button"
           >
             <TrashIcon className="message-action-icon" />
@@ -386,11 +389,11 @@ export function LabResults({
   ) : null;
 
   if (!results.length) {
-    return <><div className="report-subtle-empty"><strong>暂无检验结果</strong><p>当前报告缺少可展示的结构化检验结果。</p></div>{addEditor}{editEditor}</>;
+    return <><EmptyState layout="inline" title="暂无检验结果" description="当前医疗报告缺少可展示的结构化检验结果。" />{addEditor}{editEditor}</>;
   }
   const row = (result: LabTestResult) => (
     <tr
-      aria-label={`修改检验指标记录：${labItemDisplayName(result)}`}
+      aria-label={`编辑检验指标记录：${labItemDisplayName(result)}`}
       data-active={editingItemId === result.item_id ? "true" : undefined}
       data-flag={result.flag_text}
       key={result.item_id}
@@ -427,7 +430,7 @@ export function LabResults({
           type="button"
         >
           <PlusIcon className="settings-action-icon" />
-          <span>添加检验指标</span>
+          <span>{navigationLabels.addLabResult}</span>
         </button>
       </div>
     </>

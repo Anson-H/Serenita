@@ -31,6 +31,7 @@ def main():
             ModelDefaultsPatchRequest,
         )
         from backend.app.plugins.web import service as web_service
+        from backend.app.plugins.web.adapters import WebProviderAdapter
         from backend.app.main import create_app
         import uvicorn
 
@@ -95,7 +96,7 @@ def main():
         model_provider_service.create_default_provider_registry = lambda: registry
         model_settings_service.create_default_provider_registry = lambda: registry
 
-        class IntegrationWeb:
+        class IntegrationWeb(WebProviderAdapter):
             def test(self, api_key):
                 return None
 
@@ -132,11 +133,12 @@ def main():
             "supports_tool_calling": True,
             "file_mime_types": ["image/jpeg", "image/png"],
         }
-        settings.add_model(
-            user.account_id,
-            AddModelRequest(
-                provider_id="integration",
-                remote_model_id="chat",
+        from backend.app.schemas.model_provider import ModelPatchRequest
+        settings.add_model(user.account_id, AddModelRequest(provider_id="integration", remote_model_id="chat"))
+        settings.update_model(
+            user.account_id, "integration:chat",
+            ModelPatchRequest(
+                model_type="generation",
                 thinking_modes=["default"],
                 context_window_tokens=32000,
                 capability_profiles={
@@ -155,7 +157,10 @@ def main():
                 vision_parse="integration:chat",
             ),
         )
-        uvicorn.run(create_app(), host="127.0.0.1", port=8186, log_level="warning")
+        app = create_app()
+        from notification_fixture import install
+        install(app)
+        uvicorn.run(app, host="127.0.0.1", port=8186, log_level="warning")
 
 
 if __name__ == "__main__":

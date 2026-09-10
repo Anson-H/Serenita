@@ -136,8 +136,8 @@ test("favorite tag saves serialize per favorite without rewinding a newer draft"
   await expect.poll(() => state.patchBodies).toEqual([[]]);
 
   await edit.click();
-  await page.getByRole("button", { name: "新增标签：收藏 A", exact: true }).click();
-  const input = page.getByRole("textbox", { name: "新增标签：收藏 A", exact: true });
+  await page.getByRole("button", { name: "添加标签：收藏 A", exact: true }).click();
+  const input = page.getByRole("textbox", { name: "添加标签：收藏 A", exact: true });
   await input.fill("最新");
   await input.press("Enter");
   await expect(page.locator(".favorite-card").getByText("最新", { exact: true })).toBeVisible();
@@ -149,27 +149,52 @@ test("favorite tag saves serialize per favorite without rewinding a newer draft"
   await expect(page.locator(".favorite-card").getByText("未设置标签", { exact: true })).toHaveCount(0);
 });
 
+test("leaving list selection preserves detail tag editing and pending changes", async ({ page }) => {
+  const state: FavoriteApiState = {
+    favorites: [favorite("a", "收藏 A", ["待移除", "保留"]), favorite("b", "收藏 B", [])],
+    patchBodies: []
+  };
+  await mockFavoriteWorkspace(page, state);
+  await page.goto("/favorites");
+  await page.getByRole("button", { name: "查看收藏：收藏 A", exact: true }).click();
+  await page.getByRole("button", { name: "多选收藏", exact: true }).click();
+  const detail = page.getByRole("complementary", { name: "收藏详情", exact: true });
+  const edit = detail.getByRole("button", { name: "编辑标签：收藏 A", exact: true });
+  await edit.click();
+  await detail.getByRole("button", { name: "删除标签：待移除", exact: true }).click();
+  // Keyboard activation isolates leaving selection from the normal outside-click save.
+  await page.getByRole("button", { name: "退出收藏多选", exact: true }).press("Enter");
+  await expect(page.getByRole("button", { name: "多选收藏", exact: true })).toBeVisible();
+  await expect(detail.getByRole("button", { name: "删除标签：保留", exact: true })).toBeVisible();
+  await expect(detail.getByRole("button", { name: "返回原聊天", exact: true })).toBeVisible();
+  expect(state.patchBodies).toEqual([]);
+  await edit.click();
+  await expect.poll(() => state.patchBodies).toEqual([["保留"]]);
+});
+
 test("report favorites separate saved metadata from readable content on desktop and mobile", async ({ page }) => {
   const report = {
-    ...favorite("report", "其它报告 - dv", []),
+    ...favorite("report", "其它医疗报告 - dv", []),
     source_type: "report" as const,
     member_id: "member-a",
     member_name: "小安",
-    content_summary: "# 其它报告 - dv\n\n- **报告类型**：其它报告\n- **报告时间**：2026-09-06T05:57:00+08:00",
-    content_snapshot: "# 其它报告 - dv\n\n- **报告类型**：其它报告\n- **报告时间**：2026-09-06T05:57:00+08:00\n- **就诊机构**：示例医院\n\n## 报告内容\n\n保存的报告正文。"
+    content_summary: "# 其它医疗报告 - dv\n\n- **医疗报告类型**：其它医疗报告\n- **医疗报告时间**：2026-09-06T05:57:00+08:00",
+    content_snapshot: "# 其它医疗报告 - dv\n\n- **医疗报告类型**：其它医疗报告\n- **医疗报告时间**：2026-09-06T05:57:00+08:00\n- **就诊机构**：示例医院\n\n## 医疗报告内容\n\n保存的报告正文。"
   };
   await mockFavoriteWorkspace(page, { favorites: [report], patchBodies: [] });
   await page.goto("/favorites");
-  const card = page.getByRole("button", { name: "查看收藏：其它报告 - dv", exact: true });
+  const card = page.getByRole("button", { name: "查看收藏：其它医疗报告 - dv", exact: true });
   await expect(card).not.toContainText("**");
   await expect(card).not.toContainText("2026-09-06T");
   await card.click();
   const detail = page.getByRole("complementary", { name: "收藏详情", exact: true });
-  await expect(detail).toContainText("2026-09-06 05:57（UTC+08:00）");
+  const expectedTime=await page.evaluate(()=>{const d=new Date('2026-09-06T05:57:00+08:00');return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;});
+  await expect(detail).toContainText(expectedTime);
+  await expect(detail).not.toContainText('UTC+08:00');
   await expect(detail).toContainText("保存的报告正文。");
-  await expect(detail).not.toContainText("其它报告 - dv");
-  await expect(detail.getByRole("button", { name: "查看原报告" })).toBeVisible();
-  await expect(detail.getByRole("heading", { name: "报告内容", exact: true })).toBeVisible();
+  await expect(detail).not.toContainText("其它医疗报告 - dv");
+  await expect(detail.getByRole("button", { name: "查看原医疗报告" })).toBeVisible();
+  await expect(detail.getByRole("heading", { name: "医疗报告内容", exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(detail).toBeVisible();
   await expect(card).not.toBeVisible();

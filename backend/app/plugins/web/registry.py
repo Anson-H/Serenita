@@ -17,6 +17,8 @@ def build_skills() -> list[Skill]:
 def build_tools(*, runtime_context: PluginRuntimeContext) -> list[Tool]:
     configured_service = runtime_context.service(PLUGIN_ID, WebAccessService)
     service = configured_service.for_runtime(
-        runtime_context.observation_resolver
+        runtime_context.observation_resolver,
+        cancellation_token=runtime_context.cancellation_token,
+        deadline=runtime_context.deadline,
     )
     return [WebSearchTool(service=service), WebReadTool(service=service)]

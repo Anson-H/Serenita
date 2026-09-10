@@ -1,4 +1,4 @@
-from backend.app.application.conversation_compaction import ConversationCompaction
+from backend.app.application.conversations.compaction import ConversationCompaction
 """Compaction boundaries and checkpoints through the real conversation Service."""
 
 from tests.agent_support import assert_native_pairs
@@ -14,11 +14,11 @@ from backend.app.agent_runtime.model_types import AssistantModelOutput, ModelReq
 from backend.app.agent_runtime.tools.base import Tool, ToolResult
 from backend.app.agent_runtime.skills.base import Skill, SkillDocument
 from backend.app.agent_runtime.runtime import AgentHarnessRuntime
-from backend.app.application.conversation_service import ConversationService
-from backend.app.model_history import derive_model_messages, visible_loaded_skill_names
+from backend.app.application.conversations.service import ConversationService
+from backend.app.domain.conversations.model_history import derive_model_messages, visible_loaded_skill_names
 from backend.app.core.cancellation import CancellationToken, OperationCancelledError
 from backend.app.repositories.conversation_repository import ConversationRepository
-from backend.app.session_events import make_event
+from backend.app.domain.conversations.events import make_event
 from backend.app.storage.session_persistence import JsonlSessionPersistence
 from tests.model_support import CompactCatalog
 
@@ -72,7 +72,7 @@ def group_specifications(name, *, size=0, completed=True):
 
 def initial_specifications():
     return [
-        {"type": "turn/start", "data": {"turn_id": CURRENT_TURN}},
+        {"type": "turn/start", "data": {"turn_id": CURRENT_TURN, "user_message_id": "user", "stream_id": "stream"}},
         {"type": "user/message", "data": {
             "turn_id": CURRENT_TURN, "message_id": CURRENT_USER,
             "parent_message_id": None, "content": CURRENT_CONTENT,
@@ -304,6 +304,7 @@ def session():
         specs.extend(group_specifications(f"history-{index}", size=3600))
     specs.extend(group_specifications("last"))
     value.append(specs)
+    repository.insert_turn(account, session_id, CURRENT_TURN, CURRENT_USER, "final", "stream", "streaming", None, None, "2026-09-09", "2026-09-09")
     return value
 
 
@@ -400,8 +401,8 @@ def test_service_second_layer_failure_keeps_previous_checkpoint(session, output)
 
 
 def test_service_layer_labels_survive_projection_and_response(session):
-    from backend.app.conversation_timeline import records_from_events
-    from backend.app.application.conversation_presenter import record_response
+    from backend.app.domain.conversations.timeline import records_from_events
+    from backend.app.application.conversations.presenter import record_response
 
     session.compact(force=True)
     session.add_group("next-early", size=3600)
@@ -556,7 +557,7 @@ def test_service_invalid_source_tool_history_is_not_hidden_by_compaction(session
 
 def test_failed_compaction_is_not_repeated_when_only_request_clock_advances(session):
     def request_at(clock):
-        content = 'RUNTIME_CONTEXT\n' + json.dumps({"current_time": clock, "current_date": "2026-09-06"})
+        content = 'RUNTIME_CONTEXT\n' + json.dumps({"current_time": clock})
         return replace(
             session.request(), system=content,
             context_sections=(PromptContextSection(
@@ -654,11 +655,12 @@ def test_service_harness_returns_tool_result_too_large_when_full_candidate_canno
     tool = OversizedTool()
     catalog = HarnessCatalog(session.catalog.model)
     session.service.model_catalog = catalog
+    session.service.inputs.model_catalog = catalog
     session.service.model_calls.model_catalog = catalog
     session.service.compaction.model_catalog = catalog
     session.service.titles.model_catalog = catalog
     monkeypatch.setattr("backend.app.plugins.build_available_tools", lambda **_kwargs: [tool])
-    result = session.service._execute_agent_harness(
+    result = session.service.execution.run(
         session.account_id, {"session_id": session.session_id, "turn_id": CURRENT_TURN},
         {"message_id": CURRENT_USER, "parent_message_id": None, "content": CURRENT_CONTENT,
          "context_resources": [], "thinking_mode": "default"},
@@ -682,7 +684,9 @@ def test_service_harness_returns_tool_result_too_large_when_full_candidate_canno
 
 
 def test_service_harness_rebuilds_visible_skills_during_repeated_automatic_and_tool_candidate_compaction(session, monkeypatch):
-    """Exercise Service's actual prepare/rebuild closures, with only I/O faked."""
+    """Exercise real prepare/rebuild closures with deterministic test capabilities."""
+    # Product wording must not change the irreducible token floor of this budget test.
+    monkeypatch.setattr("backend.app.agent_runtime.prompts.SYSTEM_PROMPT", "# 系统提示词\n" + "p" * 12000)
     session.model["context_window_tokens"] = 12000
     budget = ContextBudget(12000, session.model["max_output_tokens"])
     assemblies = []
@@ -794,6 +798,7 @@ def test_service_harness_rebuilds_visible_skills_during_repeated_automatic_and_t
     evidence, grow = EvidenceTool(), GrowHistoryTool()
     catalog = HarnessCatalog(session.catalog.model)
     session.service.model_catalog = catalog
+    session.service.inputs.model_catalog = catalog
     session.service.model_calls.model_catalog = catalog
     session.service.compaction.model_catalog = catalog
     session.service.titles.model_catalog = catalog
@@ -802,7 +807,7 @@ def test_service_harness_rebuilds_visible_skills_during_repeated_automatic_and_t
     monkeypatch.setattr(AgentHarnessRuntime, "assemble_request_context", record_assembly)
     monkeypatch.setattr(session.service.compaction, "compact_model_request_if_needed", record_compact)
     try:
-        result = session.service._execute_agent_harness(
+        result = session.service.execution.run(
             session.account_id, {"session_id": session.session_id, "turn_id": CURRENT_TURN},
             {"message_id": CURRENT_USER, "parent_message_id": None, "content": CURRENT_CONTENT,
              "context_resources": [], "thinking_mode": "default"},
@@ -853,3 +858,79 @@ def test_service_harness_rebuilds_visible_skills_during_repeated_automatic_and_t
         after_burst = catalog.actions[(index + 1) * 4]
         assert after_burst.messages[-1]["tool_call_id"] == f"action-{index * 4 + 3}"
         assert len(json.loads(after_burst.messages[-1]["content"])["output"]["evidence"]) == 11200
+
+
+def test_service_harness_compacts_and_finishes_automatic_read_pages(session, monkeypatch):
+    from backend.app.agent_runtime.tools.pagination import automatic_pages
+    from tests.agent_support import FakeSkill
+
+    class PagedTool(Tool):
+        name = "read_pages"
+        model_exposure = "skill"
+        description = "Read all matching test records."
+        input_schema = {"type": "object", "properties": {"query": {"type": "string"}}, "additionalProperties": False}
+        loaded = []
+
+        def run(self, arguments):
+            query = arguments["query"]
+            def load(cursor):
+                page = cursor or 0
+                self.loaded.append((page, query))
+                return ToolResult(self.name, {
+                    "items": [{"id": page, "content": f"PAGE_{page}:" + "证据" * 4000}],
+                    "total": 12, "next_cursor": page + 1 if page < 11 else None,
+                })
+            return automatic_pages(load)
+
+    class HarnessCatalog(RecordingCompactCatalog):
+        def default_model_for_account(self, account, purpose="chat"):
+            return session.model if purpose == "chat" else super().default_model_for_account(account, purpose)
+
+        def stream_prepared_chat_for_account(self, **kwargs):
+            request = self.requests[-1]
+            if request.model_config.get("purpose") == "context_compaction":
+                yield from super().stream_prepared_chat_for_account(**kwargs)
+                return
+            actions = [item for item in self.requests if item.model_config.get("purpose") == "agent_action"]
+            if len(actions) == 1:
+                yield ModelStreamChunk(tool_call_deltas=(ToolCallDelta(index=0, id="load-pages", name_delta="load_skill", arguments_delta='{"name":"pages"}'),))
+                yield ModelStreamChunk(stop_reason="tool_calls")
+            elif len(actions) == 2:
+                yield ModelStreamChunk(tool_call_deltas=(ToolCallDelta(index=0, id="read-all", name_delta="read_pages", arguments_delta='{"query":"sleep"}'),))
+                yield ModelStreamChunk(stop_reason="tool_calls")
+            else:
+                assert len(actions) == 3
+                yield ModelStreamChunk(content_delta="查询完成。")
+                yield ModelStreamChunk(stop_reason="stop")
+
+    session.model["context_window_tokens"] = 40000
+    tool = PagedTool()
+    catalog = HarnessCatalog(session.catalog.model)
+    for component in (session.service, session.service.inputs, session.service.model_calls, session.service.compaction, session.service.titles):
+        component.model_catalog = catalog
+    monkeypatch.setattr("backend.app.plugins.build_available_tools", lambda **_kwargs: [tool])
+    monkeypatch.setattr("backend.app.agent_runtime.runtime.build_builtin_skills", lambda: [FakeSkill("pages", {"read_pages"})])
+    result = session.service.execution.run(
+        session.account_id, {"session_id": session.session_id, "turn_id": CURRENT_TURN},
+        {"message_id": CURRENT_USER, "parent_message_id": None, "content": CURRENT_CONTENT,
+         "context_resources": [], "thinking_mode": "default"},
+        on_workflow_event=lambda _event: None,
+    )
+    assert tool.loaded == [(page, "sleep") for page in range(12)]
+    assert session.checkpoints()
+    assert len(result["tool_results"]) == 12
+    for page, item in enumerate(result["tool_results"]):
+        assert item["output"]["items"][0]["content"] == f"PAGE_{page}:" + "证据" * 4000
+    assert result["tool_results"][-1]["output"]["pagination"] == {"page": 12, "complete": True}
+    calls = [event for event in session.events() if event.type == "tool/call" and event.data["name"] == "read_pages"]
+    assert len(calls) == 12
+    assert all(event.data["origin"] == "harness_pagination" for event in calls[1:])
+    assert all(event.data["pagination"]["root_call_id"] == "read-all" for event in calls[1:])
+    assert not any(event.type == "tool/result" and event.data["status"] == "failed" for event in session.events())
+    actions = [request for request in catalog.requests if request.model_config.get("purpose") == "agent_action"]
+    assert len(actions) == 3
+    for request in actions:
+        assert_native_pairs(request.messages)
+        assert ESTIMATE(request) <= ContextBudget(session.model["context_window_tokens"], session.model["max_output_tokens"]).available
+    assert visible_loaded_skill_names(session.events(), current_turn_ids=[CURRENT_TURN]) == []
+    assert "read_pages" not in {tool.name for tool in actions[-1].tools}

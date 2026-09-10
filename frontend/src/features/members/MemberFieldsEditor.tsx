@@ -3,25 +3,12 @@ import type { MemberFields } from "../../api/memberApi";
 import { DateTimePicker } from "../../components/DateTimePicker";
 import { SelectPopover } from "../../components/SelectPopover";
 import { focusWithoutScroll } from "../../utils/inputMethod";
+import { formatDateOnly } from "../../utils/localTime";
 
 export const emptyMemberFields: MemberFields = { member_name: "", sex: null, birth_date: null, blood_type: null };
 
-const BIRTH_DATE_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric"
-});
-
-function localDateValue(date: Date) {
-  const pad = (part: number) => String(part).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
 function displayBirthDate(value: string | null) {
-  if (!value) return "未设置";
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return value;
-  return BIRTH_DATE_FORMATTER.format(new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
+  return value ? formatDateOnly(value) : "未知";
 }
 
 function BirthDateField({ disabled, onChange, value }: {
@@ -56,6 +43,7 @@ function BirthDateField({ disabled, onChange, value }: {
       ariaLabel="出生日期"
       disabled={disabled}
       mode="date"
+      emptyOptionLabel="未知"
       onCancel={() => { setDraft(value ?? ""); close(true); }}
       onChange={setDraft}
       onCommit={(nextValue, reason) => { onChange(nextValue || null); close(reason === "done"); }}
@@ -67,7 +55,7 @@ function BirthDateField({ disabled, onChange, value }: {
       className="member-birth-date-trigger"
       data-interaction-owner="row"
       disabled={disabled}
-      onClick={() => { setDraft(value ?? localDateValue(new Date())); setOpen(true); }}
+      onClick={() => { setDraft(value ?? ""); setOpen(true); }}
       ref={triggerRef}
       type="button"
     >{displayBirthDate(value)}</button>}

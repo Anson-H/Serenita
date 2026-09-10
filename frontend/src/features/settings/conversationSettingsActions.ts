@@ -67,6 +67,13 @@ export function createConversationSettingsActions({ accountId, contextDisplaySet
     });
   }
 
+  function updateShowModelIdentity(visible: boolean) {
+    writeContextAssemblyDisplaySettings(accountId, {
+      ...contextDisplaySettings,
+      showModelIdentity: visible
+    });
+  }
+
   function updateToolDisplayType(type: ToolExecutionDisplayType, visible: boolean) {
     writeToolExecutionDisplayTypes(
       accountId,
@@ -82,6 +89,7 @@ export function createConversationSettingsActions({ accountId, contextDisplaySet
     updateShowContextWindowUsage,
     updateShowRelatedContent,
     updateShowTokenUsage,
+    updateShowModelIdentity,
     updateToolDisplayType
   };
 }

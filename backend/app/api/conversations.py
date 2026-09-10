@@ -6,7 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.api.dependencies import get_conversation_service, require_current_user
 from backend.app.application.auth_service import CurrentUser
-from backend.app.application.conversation_service import ConversationService, MAX_FILE_BYTES
+from backend.app.application.conversations.service import ConversationService
+from backend.app.application.conversations.inputs import MAX_FILE_BYTES
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
@@ -96,7 +97,7 @@ def attachment_capabilities(
     user: CurrentUser = Depends(require_current_user),
     service: ConversationService = Depends(get_conversation_service),
 ):
-    return service.attachment_capabilities(user.account_id, model_id)
+    return service.inputs.attachment_capabilities(user.account_id, model_id)
 
 
 @router.post("/context-resources")
@@ -109,7 +110,8 @@ async def upload_context_resource(
     service: ConversationService = Depends(get_conversation_service),
 ):
     content = await file.read(MAX_FILE_BYTES + 1)
-    return service.upload_context_resource(
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(service.inputs.upload_context_resource,
         user.account_id, session_id, model_id,
         {"content": content, "mime_type": file.content_type or "application/octet-stream",
          "original_filename": file.filename or "upload"},
@@ -124,7 +126,7 @@ def open_context_resource(
     user: CurrentUser = Depends(require_current_user),
     service: ConversationService = Depends(get_conversation_service),
 ):
-    path, filename, mime_type = service.context_resource_download(
+    path, filename, mime_type = service.inputs.context_resource_download(
         user.account_id,
         session_id,
         resource_id,
@@ -300,10 +302,11 @@ def get_turn(
 
 @router.get("")
 def list_conversations(
+    cursor: str | None = None, limit: int = 24,
     user: CurrentUser = Depends(require_current_user),
     service: ConversationService = Depends(get_conversation_service),
 ):
-    return service.list_conversations(user.account_id)
+    return service.list_conversations(user.account_id, cursor=cursor, limit=limit)
 
 
 @router.post("/batch-pin")

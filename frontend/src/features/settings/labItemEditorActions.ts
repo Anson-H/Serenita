@@ -255,7 +255,7 @@ export function createLabItemEditorActions({
           dictionaryRef.current = latestDictionary;
           setDictionary(latestDictionary);
           if (!itemJobCanRebase(job, latestDictionary)) {
-            throw new Error("该指标已在其他页面发生修改。当前编辑内容已保留，请核对后再修改一次。");
+            throw new Error("该指标已在其他页面发生更新。当前编辑内容已保留，请核对后重新编辑。");
           }
           response = await writeItemAutoSaveJob(job, latestDictionary);
         }

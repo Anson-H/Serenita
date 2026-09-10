@@ -57,7 +57,7 @@ def test_conversation_attachment_preview_is_inline_and_account_scoped(
     repository = ConversationRepository()
     account_id = account_id_for("alice")
     session_id = repository.ensure_session(account_id, member_id=member_id("alice"))
-    resource_id = "检查 报告-002#1%?.txt"
+    resource_id = "检查 医疗报告-002#1%?.txt"
     original_filename = "原始检查报告.txt"
     relative_path = f"conversations/attachments/{session_id}/{resource_id}"
     attachment_path = app_paths().account_root(account_id) / relative_path

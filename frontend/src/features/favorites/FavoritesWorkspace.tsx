@@ -1,3 +1,7 @@
+import { navigationLabels } from "../../components/navigationLabels";
+import { EmptyState } from "../../components/EmptyState";
+import { ListSelectionBar } from "../../components/ListSelectionBar";
+import { ListBulkActions } from "../../components/ListBulkActions";
 import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import { type Favorite, type FavoriteSourceType } from "../../api/client";
 import {
@@ -15,6 +19,7 @@ import {
 } from "../../utils/inputMethod";
 import { favoritePreview, favoriteReportContent } from "./favoritePresentation";
 import { FavoriteTagCapsules } from "./FavoriteTagCapsules";
+import { formatLocalDate } from "../../utils/localTime";
 
 type FavoritesWorkspaceProps = {
   addingFavoriteTagId: string | null;
@@ -48,23 +53,11 @@ function renderMarkdownContent(content: string) {
 }
 
 function formatDateTime(value: string) {
-  if (!value) {
-    return "";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(date);
+  return formatLocalDate(value, true);
 }
 
 function formatFavoriteSourceType(sourceType: FavoriteSourceType) {
-  return sourceType === "report" ? "报告" : "AI 回答";
+  return sourceType === "report" ? "医疗报告" : "AI 回答";
 }
 
 export function FavoritesWorkspace({
@@ -135,11 +128,13 @@ export function FavoritesWorkspace({
     return () => window.cancelAnimationFrame(frame);
   }, [favoriteDetail?.favorite_id]);
 
-  const favoriteBulkActions = favoriteSelectionMode ? (
-    <div className="favorite-bulk-actions" aria-label="批量操作">
+  const favoriteSelectionHeading = favoriteSelectionMode ? (
+    <ListSelectionBar summary={`已选择 ${selectedCount} 项收藏`} label="收藏多选" cancelLabel="退出收藏多选" onCancel={toggleFavoriteSelectionMode}>
       <button
         aria-label={allFavoritesSelected ? "取消全选收藏" : "全选收藏"}
-        className="control control--secondary"
+        title={allFavoritesSelected ? "取消全选" : "全选"}
+        className="control control--icon control--ghost"
+        aria-pressed={allFavoritesSelected}
         onClick={() =>
           setSelectedFavoriteIds(
             allFavoritesSelected ? [] : favorites.map((favorite) => favorite.favorite_id)
@@ -148,11 +143,14 @@ export function FavoritesWorkspace({
         type="button"
       >
         <ListChecksIcon />
-        <span>{allFavoritesSelected ? "取消全选" : "全选"}</span>
       </button>
+    </ListSelectionBar>
+  ) : null;
+  const favoriteBulkActions = favoriteSelectionMode ? (
+    <ListBulkActions label="批量操作" inset>
       <button
         aria-label="批量设置标签"
-        className="control control--secondary"
+        className="control control--compact control--secondary"
         disabled={!selectedCount}
         onClick={beginBatchTagEditing}
         type="button"
@@ -162,7 +160,7 @@ export function FavoritesWorkspace({
       </button>
       <button
         aria-label="删除选中的收藏"
-        className="control control--secondary control--danger removal-action-control"
+        className="control control--compact control--secondary control--danger removal-action-control"
         disabled={!selectedCount}
         onClick={() => void batchDeleteFavorites()}
         type="button"
@@ -170,17 +168,9 @@ export function FavoritesWorkspace({
         <TrashIcon />
         <span>删除</span>
       </button>
-    </div>
+    </ListBulkActions>
   ) : null;
-  const favoriteListToolbarAction = !favorites.length ? null : favoriteSelectionMode ? (
-    <button
-      className="control control--titlebar control--ghost favorite-selection-cancel-button"
-      onClick={toggleFavoriteSelectionMode}
-      type="button"
-    >
-      取消
-    </button>
-  ) : (
+  const favoriteListToolbarAction = !favorites.length || favoriteSelectionMode ? null : (
     <button
       aria-label="多选收藏"
       className="control control--titlebar control--icon control--ghost favorite-multi-select-button titlebar-icon-control"
@@ -202,10 +192,11 @@ export function FavoritesWorkspace({
             className="favorites-list-toolbar"
             leading={sidebarToggle}
             showBack={false}
-            title="全部收藏"
+            title={navigationLabels.favorites}
             trailing={favoriteListToolbarAction}
           />
           <section className="favorite-list-panel" aria-label="收藏列表">
+            {favoriteSelectionHeading}
             <div className={`favorite-list scroll-content${favorites.length ? "" : " empty"}`}>
               {favorites.length ? favorites.map((favorite) => {
                 const selectedForDetail = !favoriteSelectionMode && favoriteDetail?.favorite_id === favorite.favorite_id;
@@ -310,10 +301,7 @@ export function FavoritesWorkspace({
                   </div>
                 );
               }) : (
-                <div className="favorite-list-empty workspace-empty-state">
-                  <strong>还没有收藏</strong>
-                  <p>收藏报告或回答后，会显示在这里。</p>
-                </div>
+                <EmptyState className="favorite-list-empty" title="还没有收藏" description="收藏医疗报告或回答后，会显示在这里。" />
               )}
             </div>
             {favoriteBulkActions}
@@ -332,7 +320,7 @@ export function FavoritesWorkspace({
               ref={favoriteDetailPanelRef}
               tabIndex={-1}
             >
-              <div className="favorite-detail-scroll scroll-content">
+              <div className="favorite-detail-scroll scroll-content content-column">
                 <div className="favorite-detail-meta-row">
                   <span>{favoriteDetail.member_name ?? "未关联成员"} · {formatFavoriteSourceType(favoriteDetail.source_type)}</span>
                   <time dateTime={favoriteDetail.created_at}>收藏于 {formatDateTime(favoriteDetail.created_at)}</time>
@@ -351,7 +339,7 @@ export function FavoritesWorkspace({
                       type="button"
                     >
                       {favoriteDetail.source_type === "report" ? <ChevronRightIcon /> : <ChevronLeftIcon />}
-                      <span>{favoriteDetail.source_type === "report" ? "查看原报告" : "返回原聊天"}</span>
+                      <span>{favoriteDetail.source_type === "report" ? "查看原医疗报告" : "返回原聊天"}</span>
                     </button>
                   ) : null}
                 </div>
@@ -389,7 +377,7 @@ export function FavoritesWorkspace({
                 {favoriteDetail.source_available ? null : (
                   <p className="favorite-source-note">
                     {favoriteDetail.source_type === "report"
-                      ? "原报告已不可用，当前仍保留收藏时的完整报告快照。"
+                      ? "原医疗报告已不可用，当前仍保留收藏时的完整医疗报告快照。"
                       : "原聊天已不可用，当前仍保留收藏时的完整快照。"}
                   </p>
                 )}
@@ -398,10 +386,7 @@ export function FavoritesWorkspace({
             </aside>
           ) : (
             <aside className="favorite-detail favorite-detail-empty" aria-label="收藏详情预览">
-              <div className="favorite-detail-empty-content workspace-empty-state">
-                <h3>选择一条收藏</h3>
-                <p>完整快照和标签会显示在这里。</p>
-              </div>
+              <EmptyState className="favorite-detail-empty-content" title="选择一条收藏" description="完整快照和标签会显示在这里。" />
             </aside>
           )}
         </div>

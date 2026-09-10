@@ -6,10 +6,12 @@ import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Iterable, Iterator
 
 from backend.app.core.member_errors import member_error
 from backend.app.repositories.member_references import member_reference_stores
+from backend.app.repositories.member_lifecycle_repository import MemberLifecycleRepository
 
 from backend.app.core.time import local_now_iso
 from backend.app.core.member_lifecycle import member_lifecycle_change
@@ -44,6 +46,7 @@ class MemberAccess:
     owner_account: str
     member_id: str
     permission: str
+    grant_updated_at: datetime | None
     is_default: bool
     access_repository: MemberRepository = field(repr=False, compare=False)
 
@@ -69,6 +72,7 @@ class MemberRepository:
         data_stores: Iterable[MemberDataStoreParticipant] | None = None,
     ) -> None:
         self.paths = paths or app_paths()
+        self.lifecycle_tasks = MemberLifecycleRepository(self.paths)
         self.private_references = member_reference_stores(self.paths)
         self._data_stores = (
             validate_member_data_store_participants(data_stores)
@@ -248,7 +252,7 @@ class MemberRepository:
     ) -> MemberAccess:
         row = connection.execute(
             """SELECT p.*, owner.account AS owner_account, actor.account AS actor_account,
-                g.permission FROM member_ownerships p
+                g.permission, g.updated_at AS grant_updated_at FROM member_ownerships p
                 JOIN accounts owner ON owner.account_id = p.account_id
                 JOIN accounts actor ON actor.account_id = ?
                 LEFT JOIN member_grants g ON g.member_id = p.member_id AND g.account_id = actor.account_id
@@ -271,6 +275,8 @@ class MemberRepository:
             row["owner_account"],
             member_id,
             permission,
+            datetime.fromisoformat(row["grant_updated_at"])
+            if permission != "owner" else None,
             False,
             self,
         )
@@ -536,7 +542,7 @@ class MemberRepository:
     ) -> None:
         if set(values) - {"member_name", "sex", "birth_date", "blood_type"}:
             member_error(
-                "MEMBER_FIELDS_INVALID", "包含不可修改的成员字段。", "invalid_input"
+                "MEMBER_FIELDS_INVALID", "包含不可更新的成员字段。", "invalid_input"
             )
         with connect(self.paths.auth_db) as connection:
             # Wait for existing short authorization guards before locking member
@@ -724,6 +730,7 @@ class MemberRepository:
     def delete(
         self, actor_account_id: str, member_id: str
     ) -> tuple[str, list[tuple[str, str]]]:
+        self.lifecycle_tasks.initialize()
         actor_id = actor_account_id
         with connect(self.paths.auth_db) as connection:
             connection.execute("BEGIN EXCLUSIVE")
@@ -808,6 +815,7 @@ class MemberRepository:
             connection.execute(
                 "DELETE FROM member_ownerships WHERE member_id = ?", (member_id,)
             )
+            self.lifecycle_tasks.enqueue(connection, access.account_id, member_id, sessions, delete_files=True)
         return access.account_id, sessions
 
     def grants(self, actor_account_id: str) -> list[dict[str, Any]]:
@@ -878,6 +886,7 @@ class MemberRepository:
     def revoke(
         self, actor_account_id: str, member_id: str, account_id: str
     ) -> list[tuple[str, str]]:
+        self.lifecycle_tasks.initialize()
         actor_id = actor_account_id
         with connect(self.paths.auth_db) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -886,14 +895,18 @@ class MemberRepository:
                 member_error(
                     "MEMBER_OWNER_REQUIRED", "只有健康档案所有者账号可以管理授权。"
                 )
+            if account_id == access.account_id:
+                member_error("INVALID_MEMBER_GRANT", "不能撤销所有者自身的访问权限。", "invalid_input")
+            removed = connection.execute(
+                "DELETE FROM member_grants WHERE member_id = ? AND account_id = ?",
+                (member_id, account_id),
+            )
+            if not removed.rowcount:
+                return []
             config_schema = self._attach_config_database(
                 connection,
                 account_id,
                 schema_alias="grantee_config",
-            )
-            connection.execute(
-                "DELETE FROM member_grants WHERE member_id = ? AND account_id = ?",
-                (member_id, account_id),
             )
             self._replace_unavailable_selection(
                 connection,
@@ -905,12 +918,14 @@ class MemberRepository:
                 "UPDATE accounts SET access_revision = access_revision + 1 WHERE account_id IN (?, ?)",
                 (actor_id, account_id),
             )
-        return [
-            (account_id, reference)
-            for store in self.private_references
-            if store.interrupts_sessions
-            for reference in store.references(account_id, member_id)
-        ]
+            sessions = [
+                (account_id, reference)
+                for store in self.private_references
+                if store.interrupts_sessions
+                for reference in store.references(account_id, member_id)
+            ]
+            self.lifecycle_tasks.enqueue(connection, access.account_id, member_id, sessions)
+        return sessions
 
     @staticmethod
     def revision(actor_account_id: str, paths: AppPaths | None = None) -> int:

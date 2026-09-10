@@ -15,13 +15,15 @@ import {
 } from "./settingsTypes";
 
 type Dependencies = {
+  beginRemoteRead: () => () => boolean;
+  isRemoteModelCurrent: (model: RemoteModel) => boolean;
   selectedProvider: ProviderSummary | undefined;
   selectedDraft: ProviderDraft | undefined;
   setModelPickerOpen: Dispatch<SetStateAction<boolean>>;
   setModelPickerLoading: Dispatch<SetStateAction<boolean>>;
   setModelPickerError: Dispatch<SetStateAction<string>>;
   setRemoteModels: Dispatch<SetStateAction<RemoteModel[]>>;
-  autoSaveProviderDraft: (providerId: string, draft: ProviderDraft) => Promise<void>;
+  autoSaveProviderDraft: (providerId: string, draft: ProviderDraft) => Promise<ProviderDraft | false>;
   setTestStates: Dispatch<SetStateAction<Record<string, TestState>>>;
   setAddingRemoteModelIds: Dispatch<SetStateAction<string[]>>;
   setAddedModels: (next: SetStateAction<AddedModel[]>) => void;
@@ -29,11 +31,13 @@ type Dependencies = {
   setModelDefaults: (next: SetStateAction<ModelDefaults>) => void;
   modelProbeAbortControllersRef: RefObject<Map<string, AbortController>>;
   setProbingModelIds: Dispatch<SetStateAction<string[]>>;
-  publishModelCatalog: (models: AddedModel[], defaults: ModelDefaults) => void;
+  refreshModels: () => Promise<void>;
   setSavingModelIds: Dispatch<SetStateAction<string[]>>;
 };
 
 export function createModelSettingsActions({
+  beginRemoteRead,
+  isRemoteModelCurrent,
   selectedProvider,
   selectedDraft,
   setModelPickerOpen,
@@ -44,11 +48,9 @@ export function createModelSettingsActions({
   setTestStates,
   setAddingRemoteModelIds,
   setAddedModels,
-  chatDefaultModelId,
-  setModelDefaults,
   modelProbeAbortControllersRef,
   setProbingModelIds,
-  publishModelCatalog,
+  refreshModels,
   setSavingModelIds
 }: Dependencies) {
   async function openAddModelModal() {
@@ -64,12 +66,15 @@ export function createModelSettingsActions({
       return;
     }
     const providerId = selectedProvider.provider_id;
+    const isCurrent = beginRemoteRead();
     setModelPickerLoading(true);
     setModelPickerError("");
     setRemoteModels([]);
     try {
-      await autoSaveProviderDraft(providerId, selectedDraft);
+      if (!await autoSaveProviderDraft(providerId, selectedDraft)) throw new Error("提供方设置尚未保存，请重试。");
+      if (!isCurrent()) return;
       const result = await apiClient.fetchProviderModels(providerId);
+      if (!isCurrent()) return;
       setRemoteModels(result.models);
       setTestStates((current) => ({
         ...current,
@@ -79,6 +84,7 @@ export function createModelSettingsActions({
         }
       }));
     } catch (error) {
+      if (!isCurrent()) return;
       const message = error instanceof Error ? error.message : "模型列表加载失败。";
       setModelPickerError(message);
       setTestStates((current) => ({
@@ -89,7 +95,7 @@ export function createModelSettingsActions({
         }
       }));
     } finally {
-      setModelPickerLoading(false);
+      if (isCurrent()) setModelPickerLoading(false);
     }
   }
 
@@ -98,7 +104,7 @@ export function createModelSettingsActions({
   }
 
   async function addRemoteModel(model: RemoteModel) {
-    if (!selectedProvider) {
+    if (!selectedProvider || !isRemoteModelCurrent(model)) {
       return;
     }
     const providerId = selectedProvider.provider_id;
@@ -131,37 +137,25 @@ export function createModelSettingsActions({
       ...current,
       [providerId]: {
         status: "success",
-        message: "模型已添加，正在识别能力。"
+        message: "模型已添加，正在检测模型。"
       }
     }));
     showStatusNotification({
       id: `model-add-${addedModel.model_id}`,
-      message: "已加入模型列表，能力识别将在提供方详情中继续进行。",
+      message: "已加入模型列表，模型检测将在提供方详情中继续进行。",
       title: "模型已添加",
       tone: "success"
     });
     void probeAddedModel(addedModel.model_id);
 
-    try {
-      if (!chatDefaultModelId) {
-        const defaultsResponse = await apiClient.updateModelDefaults({
-          chat: addedModel.model_id
-        });
-        setModelDefaults(defaultsResponse.defaults);
-      }
-
-    } catch (error) {
-      showStatusNotification({
-        id: `model-add-refresh-${addedModel.model_id}`,
-        message: error instanceof Error ? error.message : "模型列表刷新失败。",
-        title: "模型已添加，配置刷新未完成",
-        tone: "warning"
-      });
-    }
   }
 
   async function probeAddedModel(modelId: string) {
-    modelProbeAbortControllersRef.current.get(modelId)?.abort();
+    const activeProbe = modelProbeAbortControllersRef.current.get(modelId);
+    if (activeProbe) {
+      activeProbe.abort();
+      return;
+    }
     const abortController = new AbortController();
     modelProbeAbortControllersRef.current.set(modelId, abortController);
     setProbingModelIds((current) => [...new Set([...current, modelId])]);
@@ -171,18 +165,12 @@ export function createModelSettingsActions({
         abortController.signal
       );
       if (abortController.signal.aborted) return;
-      const [modelsResponse, defaultsResponse] = await Promise.all([
-        apiClient.fetchModels(),
-        apiClient.fetchModelDefaults()
-      ]);
+      await refreshModels();
       if (abortController.signal.aborted) return;
-      publishModelCatalog(modelsResponse.models, defaultsResponse.defaults);
 
       if (abortController.signal.aborted) return;
       const unverifiedCount = [
-        ...Object.values(result.checks.thinking_modes),
-        ...Object.values(result.checks.non_thinking),
-        ...Object.values(result.checks.thinking)
+        ...Object.values(result.checks).flatMap(Object.values)
       ].filter(
         (status) => status === "unverified"
       ).length;
@@ -192,17 +180,19 @@ export function createModelSettingsActions({
         id: `model-probe-${modelId}`,
         message: [
           result.metadata.message,
-          capabilityProbeSummary(result.checks)
+          capabilityProbeSummary(result.checks),
+          ...Object.values(result.errors).flatMap(Object.values),
+          result.cleared_defaults?.length ? "已清空不再适用的默认模型。" : ""
         ].filter(Boolean).join("；"),
-        title: partiallyCompleted ? "能力识别部分完成" : "能力识别完成",
+        title: partiallyCompleted ? "模型检测部分完成" : "模型检测完成",
         tone: partiallyCompleted ? "warning" : "success"
       });
     } catch (error) {
       if (abortController.signal.aborted) return;
       showStatusNotification({
         id: `model-probe-${modelId}`,
-        message: error instanceof Error ? error.message : "能力识别失败。",
-        title: "能力识别未完成",
+        message: error instanceof Error ? error.message : "模型检测失败。",
+        title: "模型检测未完成",
         tone: "error"
       });
     } finally {
@@ -218,19 +208,17 @@ export function createModelSettingsActions({
     patch: ModelUpdatePayload,
     { notify = true }: { notify?: boolean } = {}
   ) {
+    modelProbeAbortControllersRef.current.get(modelId)?.abort();
     setSavingModelIds((current) => [...new Set([...current, modelId])]);
     try {
-      await apiClient.updateModel(modelId, patch);
-      const [modelsResponse, defaultsResponse] = await Promise.all([
-        apiClient.fetchModels(),
-        apiClient.fetchModelDefaults()
-      ]);
-      publishModelCatalog(modelsResponse.models, defaultsResponse.defaults);
+      const updated = await apiClient.updateModel(modelId, patch);
+      if (updated.cleared_defaults?.length) showStatusNotification({ message: "已清空不再适用的默认模型，请重新选择。", tone: "warning" });
+      await refreshModels();
 
       if (notify) {
         showStatusNotification({
           id: `model-update-${modelId}`,
-          message: "修改已生效。",
+          message: "更新已生效。",
           title: "模型设置已保存",
           tone: "success"
         });
@@ -262,11 +250,7 @@ export function createModelSettingsActions({
     }
     try {
       await apiClient.deleteModel(modelId);
-      const [modelResponse, defaultsResponse] = await Promise.all([
-        apiClient.fetchModels(),
-        apiClient.fetchModelDefaults()
-      ]);
-      publishModelCatalog(modelResponse.models, defaultsResponse.defaults);
+      await refreshModels();
 
       setTestStates((current) => ({
         ...current,

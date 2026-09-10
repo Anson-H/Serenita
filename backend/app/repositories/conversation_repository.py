@@ -1,4 +1,4 @@
-from backend.app.session_title import UNTITLED_CONVERSATION
+from backend.app.domain.conversations.titles import UNTITLED_CONVERSATION
 from backend.app.repositories.conversation_index import ConversationIndex
 from backend.app.repositories.turn_index import TurnIndex
 from backend.app.repositories.conversation_attachments import ConversationAttachments
@@ -11,13 +11,13 @@ from backend.app.core.errors import raise_error
 from backend.app.core.member_lifecycle import member_lifecycle_operation
 from backend.app.repositories.member_repository import MemberRepository
 from backend.app.core.member_errors import member_error
-from backend.app.conversation_timeline import active_records, records_from_events
-from backend.app.session_event_queries import messages_from_events
+from backend.app.domain.conversations.timeline import active_records, records_from_events
+from backend.app.domain.conversations.queries import messages_from_events
 from backend.app.core.time import (
     local_datetime_from_epoch_ms,
     local_now_iso,
 )
-from backend.app.session_events import (
+from backend.app.domain.conversations.events import (
     SessionEvent,
     SessionEventCorruptionError,
     SessionHeader,
@@ -139,8 +139,8 @@ class ConversationRepository:
     def generate_session_title(self, title_seed: str) -> str:
         return self.index.generate_session_title(title_seed)
 
-    def list_sessions(self, account_id: str):
-        return self.index.list_sessions(account_id)
+    def list_sessions(self, account_id: str, *, cursor=None, limit=24):
+        return self.index.list_sessions(account_id, cursor=cursor, limit=limit)
 
     def conversation_exists(self, account_id: str, session_id: str) -> bool:
         return self.index.conversation_exists(account_id, session_id)
@@ -182,8 +182,11 @@ class ConversationRepository:
     def touch_turn_job(self, account_id: str, session_id: str, turn_id: str) -> None:
         return self.turns.touch_turn_job(account_id, session_id, turn_id)
 
-    def expire_turn_jobs(self, account_id: str, cutoff: str) -> list[dict[str, Any]]:
-        return self.turns.expire_turn_jobs(account_id, cutoff)
+    def expired_turn_job_sessions(self, account_id: str, cutoff: str) -> list[str]:
+        return self.turns.expired_turn_job_sessions(account_id, cutoff)
+
+    def expire_turn_jobs(self, account_id: str, session_id: str, cutoff: str) -> list[dict[str, Any]]:
+        return self.turns.expire_turn_jobs(account_id, session_id, cutoff)
 
     def update_turn_completed(
         self,
@@ -192,9 +195,12 @@ class ConversationRepository:
         turn_id: str,
         final_assistant_message_id: Optional[str],
         timestamp: Optional[str] = None,
+        *,
+        notification_event=None,
     ) -> None:
         return self.turns.update_turn_completed(
-            account_id, session_id, turn_id, final_assistant_message_id, timestamp
+            account_id, session_id, turn_id, final_assistant_message_id, timestamp,
+            notification_event=notification_event,
         )
 
     def update_turn_failed(
@@ -646,11 +652,11 @@ class ConversationRepository:
                     continue
                 turns[turn_id] = {
                     "turn_id": turn_id,
-                    "user_message_id": data.get("user_message_id"),
+                    "user_message_id": data["user_message_id"],
                     "final_assistant_message_id": data.get(
                         "final_assistant_message_id"
                     ),
-                    "stream_id": data.get("stream_id") or f"stream_{turn_id}",
+                    "stream_id": data["stream_id"],
                     # A turn reconstructed from its durable start event has not
                     # been claimed by a worker in this process yet.
                     "status": "queued",

@@ -1,3 +1,4 @@
+import { navigationLabels } from "../../components/navigationLabels";
 import {
   useEffect,
   useMemo,
@@ -82,7 +83,7 @@ export function LabDictionaryEditor({
   const categorySaveQueueRef = useRef<CategoryAutoSaveJob[]>([]);
   const categorySaveRunningRef = useRef(false);
   const savedCategoryTargetsRef = useRef(new Map<string, string>());
-  const catalogTitle = tab === "items" ? "检验指标目录" : "检验分类目录";
+  const catalogTitle = tab === "items" ? navigationLabels.labItems : navigationLabels.labCategories;
 
   useStatusNotification(error, {
     id: "lab-dictionary-error",
@@ -206,7 +207,7 @@ export function LabDictionaryEditor({
     if (tab === "items") flushScheduledItemSave();
     else flushScheduledCategorySave();
     if (tab === "items" && !dictionary?.categories.length) {
-      setError("请先创建一个分类，再新增指标。");
+      setError("请先创建一个分类，再添加指标。");
       return;
     }
     setError("");
@@ -358,7 +359,7 @@ export function LabDictionaryEditor({
       }
       showStatusNotification({
         id: `lab-catalog-delete-${operationCatalog}`,
-        title: `${operationCatalog === "items" ? "检验指标目录" : "检验分类目录"}删除结果`,
+        title: `${operationCatalog === "items" ? navigationLabels.labItems : navigationLabels.labCategories}删除结果`,
         message: catalogDeletionMessage(operationCatalog, result.deletedIds.length, result.failures),
         tone: result.failures.some((failure) => !failure.skipped) ? "error"
           : result.failures.length ? "warning" : "success"
@@ -470,9 +471,9 @@ export function LabDictionaryEditor({
       .sort((left, right) => left.item_name_zh.localeCompare(right.item_name_zh, "zh-CN"))
     : [];
   const detailTitle = detailPage === "primary-category"
-    ? "主分类"
+    ? navigationLabels.primaryCategory
     : detailPage === "related-categories"
-      ? "关联分类"
+      ? navigationLabels.relatedCategories
       : activeItem?.item_name_zh ?? activeCategory?.category_name ?? catalogTitle;
   const primaryCategorySummary = itemForm.primary_category_name || "未设置";
   const relatedCategorySummary = itemForm.related_category_names.length
@@ -559,7 +560,7 @@ export function LabDictionaryEditor({
       {listMenu.contextMenu && contextEntry ? createPortal(
         <GroupedList
           aria-label={`${contextEntryName} 的目录操作`}
-          className="context-action-menu"
+          className="context-action-menu scroll-balanced"
           onKeyDown={listMenu.onMenuKeyDown}
           ref={listMenu.menuRef}
           role="menu"

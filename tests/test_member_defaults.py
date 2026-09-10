@@ -309,7 +309,6 @@ def test_registered_peer_store_joins_member_hard_delete(accounts):
             ((target, "remove"), (retained, "keep")),
         )
 
-    after_commit: list[tuple[str, str]] = []
 
     def validate_existing(owner_id: str) -> None:
         assert owner_id == owner_account_id
@@ -334,12 +333,11 @@ def test_registered_peer_store_joins_member_hard_delete(accounts):
         data_stores=(report_member_data_store_participant(), participant)
     )
 
-    result = MemberService(repository=repository, after_delete=(lambda owner_id, member_id: after_commit.append((owner_id, member_id)),)).delete_member(
+    result = MemberService(repository=repository).delete_member(
         owner_account_id, target
     )
 
     assert result["deleted"] is True
-    assert after_commit == [(owner_account_id, target)]
     with sqlite3.connect(peer_path) as connection:
         assert connection.execute(
             "SELECT member_id FROM entries ORDER BY member_id"

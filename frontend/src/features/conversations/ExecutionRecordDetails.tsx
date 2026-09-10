@@ -1,3 +1,4 @@
+import { ModelIdentity } from "./ModelIdentity";
 import {
   memo,
   useMemo
@@ -144,11 +145,13 @@ export const CompactionStatusRecord = memo(function CompactionStatusRecord({
 export const ModelRecordDetails = memo(function ModelRecordDetails({
   highlighted,
   onRegister,
+  showModelIdentity,
   record
 }: {
   highlighted: boolean;
   onRegister: (recordId: string, node: HTMLElement | null) => void;
   record: ConversationModelRecord;
+  showModelIdentity: boolean;
 }) {
   const { bodyMounted, onToggle } = useDeferredDisclosureBody();
   if (
@@ -194,9 +197,10 @@ export const ModelRecordDetails = memo(function ModelRecordDetails({
         </span>
       </summary>
       {bodyMounted ? <div className="operation-record-body">
+        {showModelIdentity ? <ModelIdentity modelId={record.model_id} /> : null}
         {record.channel === "reasoning"
-          ? (textValue ? <MarkdownContent content={textValue} /> : null)
-          : <pre>{typeof record.value === "string"
+          ? (textValue ? <MarkdownContent className="scroll-balanced" content={textValue} /> : null)
+          : <pre className="scroll-balanced">{typeof record.value === "string"
             ? record.value
             : JSON.stringify(record.value) ?? ""}</pre>}
         {record.error ? (
@@ -213,11 +217,13 @@ export const ModelRecordDetails = memo(function ModelRecordDetails({
 export const ModelContentRecord = memo(function ModelContentRecord({
   highlighted,
   onRegister,
+  showModelIdentity,
   record
 }: {
   highlighted: boolean;
   onRegister: (recordId: string, node: HTMLElement | null) => void;
   record: ConversationModelRecord;
+  showModelIdentity: boolean;
 }) {
   const textValue = typeof record.value === "string" ? record.value : "";
   if (!textValue && !record.error) {
@@ -229,6 +235,7 @@ export const ModelContentRecord = memo(function ModelContentRecord({
       data-highlighted={highlighted ? "true" : undefined}
       ref={(node) => onRegister(record.record_id, node)}
     >
+      {showModelIdentity ? <ModelIdentity modelId={record.model_id} /> : null}
       {textValue ? (
         <div className="message-bubble assistant">
           <MarkdownContent
@@ -279,7 +286,7 @@ export const TurnErrorRecord = memo(function TurnErrorRecord({
         </span>
       </summary>
       {bodyMounted ? <div className="operation-record-body">
-        <pre>{failureMessage}</pre>
+        <pre className="scroll-balanced">{failureMessage}</pre>
       </div> : null}
     </details>
   );

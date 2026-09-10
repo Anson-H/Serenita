@@ -1,6 +1,6 @@
 import sqlite3
 from backend.app.core.favorite_errors import FavoriteSourceConflictError
-from backend.app.storage.favorite_database import initialize_favorites_database
+from backend.app.storage.favorite_database import initialize_favorites_database, FAVORITES_DATABASE_SCHEMA
 from backend.app.storage.paths import app_paths
 from backend.app.storage.sqlite import connect
 
@@ -27,6 +27,7 @@ class FavoriteRepository:
             ).fetchall()
 
     def create(self, account_id, values):
+        FAVORITES_DATABASE_SCHEMA.table_by_name['favorites'].validate_values(values)
         try:
             with self._connection(account_id) as connection:
                 connection.execute(
@@ -47,6 +48,7 @@ class FavoriteRepository:
             raise
 
     def update(self, account_id, favorite_id, title, tags, updated_at):
+        FAVORITES_DATABASE_SCHEMA.table_by_name['favorites'].validate_values(dict(favorite_id=favorite_id, title=title, tags=tags, updated_at=updated_at), partial=True)
         with self._connection(account_id) as connection:
             connection.execute(
                 "UPDATE favorites SET title = ?, tags = ?, updated_at = ? WHERE favorite_id = ?",

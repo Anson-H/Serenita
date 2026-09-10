@@ -1,0 +1,21 @@
+/* Medical log layout only; lists, fields, controls and states use the shared design language. */
+.medical-logs-workspace { grid-template-rows: minmax(0, 1fr); }
+.medical-log-filters { display: grid; grid-template-columns: minmax(0, 1fr) var(--size-control-primary); align-items: center; gap: var(--space-related); }
+.medical-log-filters[data-mode="date"] { grid-template-columns: var(--size-control-primary) minmax(0, 1fr); }
+.medical-log-detail { grid-row: 1 / -1; display: grid; grid-template-rows: var(--workspace-titlebar-height) minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; }
+.medical-log-form { display: grid; grid-auto-rows: max-content; align-content: start; gap: var(--space-content); min-width: 0; min-height: 0; overflow-x: hidden; padding-block: var(--space-content); }
+.medical-log-form > * { width: 100%; min-width: 0; margin: 0; }
+.medical-log-list-item { grid-template-columns: minmax(0, 1fr) auto; }
+.medical-log-list-item .report-timeline-copy { display: grid; gap: var(--space-related); }
+.medical-log-summary { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.medical-log-content { width: 100%; max-width: 75ch; min-width: 0; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+textarea.medical-log-content { display: block; overflow: hidden; resize: none; }
+.medical-log-actions { display: grid; }
+.medical-log-read-error, .medical-log-save-error { display: grid; justify-items: start; gap: var(--space-related); }
+.medical-log-read-error > p, .medical-log-save-error > p { margin: 0; }
+
+.medical-log-list-item[role="checkbox"] { grid-template-columns: auto minmax(0, 1fr); }
+
+.content-dialog > .medical-log-detail { grid-row:2; min-height:0; display:flex; flex-direction:column; }
+
+.content-dialog > .medical-log-detail + .dialog-action-bar { padding-top:0; }

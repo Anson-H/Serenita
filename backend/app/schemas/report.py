@@ -5,7 +5,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-ReportType = Literal["检验报告", "检查报告", "病理报告", "手术报告", "其它报告"]
+ReportType = Literal["检验报告", "检查报告", "病理报告", "手术报告", "门诊病历", "急诊病历", "其它医疗报告"]
 FlagText = Literal["未标记", "正常", "异常", "偏高", "偏低"]
 
 DETAILED_REPORT_CORE_FIELDS = frozenset(
@@ -23,6 +23,8 @@ DETAILED_REPORT_OPTIONAL_FIELDS = frozenset(
         "examination_report",
         "pathology_report",
         "surgery_report",
+        "outpatient_report",
+        "emergency_report",
         "other_report",
     }
 )
@@ -33,7 +35,7 @@ DETAILED_REPORT_SELECTABLE_FIELDS = frozenset(
 
 
 class ParsedLabResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     item_id: str = Field(
         min_length=1,
@@ -92,7 +94,7 @@ class ParsedLabResult(BaseModel):
 
 
 class ParsedExaminationReport(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     exam_name: str = Field(
         title="检查名称",
@@ -103,7 +105,7 @@ class ParsedExaminationReport(BaseModel):
     clinical_diagnosis: Optional[str] = Field(
         title="临床诊断",
         default=None,
-        description="报告记载的临床诊断。",
+        description="医疗报告记载的临床诊断。",
     )
     exam_method: Optional[str] = Field(
         title="检查方法",
@@ -123,7 +125,7 @@ class ParsedExaminationReport(BaseModel):
 
 
 class ParsedPathology(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     submitted_specimen: Optional[str] = Field(
         title="送检标本",
@@ -148,7 +150,7 @@ class ParsedPathology(BaseModel):
 
 
 class ParsedSurgery(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     preoperative_diagnosis: Optional[str] = Field(
         title="术前诊断",
@@ -217,27 +219,55 @@ class ParsedSurgery(BaseModel):
     )
 
 
+class ParsedOutpatientReport(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    chief_complaint: Optional[str] = Field(default=None, title="主诉", description="原件记载的主诉，未记载时留空，保留不确定性。")
+    present_illness: Optional[str] = Field(default=None, title="现病史", description="原件记载的现病史，未记载时留空，保留不确定性。")
+    physical_examination: Optional[str] = Field(default=None, title="体格检查", description="原件记载的体格检查，未记载时留空，保留不确定性。")
+    auxiliary_examinations: Optional[str] = Field(default=None, title="辅助检查", description="原件记载的辅助检查，未记载时留空，保留不确定性。")
+    diagnosis: Optional[str] = Field(default=None, title="诊断", description="原件记载的诊断，未记载时留空，保留不确定性。")
+    treatment_plan: Optional[str] = Field(default=None, title="处理意见", description="原件记载的处理意见，未记载时留空，保留不确定性。")
+    additional_content: Optional[str] = Field(default=None, title="补充内容", description="原件记载的补充内容，未记载时留空，保留不确定性。")
+
+
+class ParsedEmergencyReport(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    chief_complaint: Optional[str] = Field(default=None, title="主诉", description="原件记载的主诉，未记载时留空，保留不确定性。")
+    present_illness: Optional[str] = Field(default=None, title="现病史", description="原件记载的现病史，未记载时留空，保留不确定性。")
+    physical_examination: Optional[str] = Field(default=None, title="体格检查", description="原件记载的体格检查，未记载时留空，保留不确定性。")
+    auxiliary_examinations: Optional[str] = Field(default=None, title="辅助检查", description="原件记载的辅助检查，未记载时留空，保留不确定性。")
+    diagnosis: Optional[str] = Field(default=None, title="诊断", description="原件记载的诊断，未记载时留空，保留不确定性。")
+    treatment_plan: Optional[str] = Field(default=None, title="处理意见", description="原件记载的处理意见，未记载时留空，保留不确定性。")
+    rescue_course: Optional[str] = Field(default=None, title="抢救经过", description="原件记载的抢救经过，未记载时留空，保留不确定性。")
+    observation_details: Optional[str] = Field(default=None, title="留观情况", description="原件记载的留观情况，未记载时留空，保留不确定性。")
+    discharge_diagnosis: Optional[str] = Field(default=None, title="出院诊断", description="原件记载的出院诊断，未记载时留空，保留不确定性。")
+    discharge_instructions: Optional[str] = Field(default=None, title="出院医嘱", description="原件记载的出院医嘱，未记载时留空，保留不确定性。")
+    additional_content: Optional[str] = Field(default=None, title="补充内容", description="原件记载的补充内容，未记载时留空，保留不确定性。")
+
+
 class ParsedOtherReport(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     report_body: str = Field(
         min_length=1,
-        description="无法归入其它类型的报告正文。",
+        description="无法归入其它类型的医疗报告正文。",
     )
 
 
 class ParsedReport(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    report_type: ReportType = Field(description="报告类型。")
+    report_type: ReportType = Field(description="医疗报告类型。")
     report_name: str = Field(
         min_length=1,
         max_length=255,
-        description="报告名称。",
+        description="医疗报告名称。",
     )
     report_time: str = Field(
         min_length=4,
-        description="报告的本地日期或日期时间。",
+        description="医疗报告的本地日期或日期时间。",
     )
     source_kind: Literal["screenshot", "scan", "pdf", "photo", "unknown"] = Field(
         default="unknown",
@@ -245,7 +275,7 @@ class ParsedReport(BaseModel):
     )
     institution_name: Optional[str] = Field(
         default=None,
-        description="出具报告的机构名称。",
+        description="出具医疗报告的机构名称。",
     )
     lab_test_results: list[ParsedLabResult] = Field(
         default_factory=list,
@@ -263,9 +293,11 @@ class ParsedReport(BaseModel):
         default=None,
         description="手术报告的结构化内容。",
     )
+    outpatient_report: Optional[ParsedOutpatientReport] = Field(default=None, description="门诊病历的结构化内容。")
+    emergency_report: Optional[ParsedEmergencyReport] = Field(default=None, description="急诊病历的结构化内容。")
     other_report: Optional[ParsedOtherReport] = Field(
         default=None,
-        description="其它报告的结构化内容。",
+        description="其它医疗报告的结构化内容。",
     )
 
     @field_validator("report_name")
@@ -273,7 +305,7 @@ class ParsedReport(BaseModel):
     def require_non_blank_report_name(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
-            raise ValueError("报告名称不能为空白")
+            raise ValueError("医疗报告名称不能为空白")
         return normalized
 
     @model_validator(mode="after")
@@ -283,7 +315,9 @@ class ParsedReport(BaseModel):
             "检查报告": self.examination_report is not None,
             "病理报告": self.pathology_report is not None,
             "手术报告": self.surgery_report is not None,
-            "其它报告": self.other_report is not None,
+            "门诊病历": self.outpatient_report is not None,
+            "急诊病历": self.emergency_report is not None,
+            "其它医疗报告": self.other_report is not None,
         }
         if not payload_by_type[self.report_type]:
             raise ValueError(f"{self.report_type}缺少对应结构化字段")
@@ -294,7 +328,7 @@ class ParsedReport(BaseModel):
         ]
         if unexpected:
             raise ValueError(
-                f"{self.report_type}不能同时包含其它报告类型的结构化字段"
+                f"{self.report_type}不能同时包含其它医疗报告类型的结构化字段"
             )
         return self
 
@@ -302,7 +336,7 @@ class ParsedReport(BaseModel):
 class CreateReportRequest(BaseModel):
     """Explicit report-page creation payload for manually entered evidence."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     report_type: ReportType
     report_name: str = Field(min_length=1, max_length=255)
@@ -312,6 +346,8 @@ class CreateReportRequest(BaseModel):
     examination_report: Optional[ParsedExaminationReport] = None
     pathology_report: Optional[ParsedPathology] = None
     surgery_report: Optional[ParsedSurgery] = None
+    outpatient_report: Optional[ParsedOutpatientReport] = Field(default=None, description="门诊病历的结构化内容。")
+    emergency_report: Optional[ParsedEmergencyReport] = Field(default=None, description="急诊病历的结构化内容。")
     other_report: Optional[ParsedOtherReport] = None
 
     @field_validator("report_name")
@@ -319,7 +355,7 @@ class CreateReportRequest(BaseModel):
     def require_non_blank_report_name(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
-            raise ValueError("报告名称不能为空白")
+            raise ValueError("医疗报告名称不能为空白")
         return normalized
 
     @model_validator(mode="after")
@@ -330,21 +366,14 @@ class CreateReportRequest(BaseModel):
         return self
 
 
-class ExtractedReports(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    reports: list[ParsedReport] = Field(
-        min_length=1,
-        max_length=100,
-        description="最终报告列表。",
-    )
-
 
 REPORT_STRUCTURES = {
     "检查报告": ("examination_report", ParsedExaminationReport),
     "病理报告": ("pathology_report", ParsedPathology),
     "手术报告": ("surgery_report", ParsedSurgery),
-    "其它报告": ("other_report", ParsedOtherReport),
+    "门诊病历": ("outpatient_report", ParsedOutpatientReport),
+    "急诊病历": ("emergency_report", ParsedEmergencyReport),
+    "其它医疗报告": ("other_report", ParsedOtherReport),
 }
 REPORT_TYPED_FIELDS = {table: tuple(model.model_fields) for table, model in REPORT_STRUCTURES.values()}
 REPORT_TYPED_STORAGE_FIELDS = {
@@ -364,7 +393,7 @@ EditableReportField = Literal[*sorted(REPORT_EDITABLE_FIELDS)]
 
 
 class UpdateReportFieldRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     field: EditableReportField
     value: Optional[str] = None
@@ -374,7 +403,7 @@ class UpdateReportFieldRequest(BaseModel):
 class AddLabReportItemRequest(BaseModel):
     """Explicit report-page request to append one dictionary-backed lab result."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     item_id: str = Field(min_length=1, max_length=128)
     result_text: str = Field(min_length=1)

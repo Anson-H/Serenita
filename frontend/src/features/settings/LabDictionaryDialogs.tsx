@@ -1,3 +1,5 @@
+import { navigationLabels } from "../../components/navigationLabels";
+import { DialogTitlebar } from "../../components/DialogTitlebar";
 import {
   useEffect,
   useRef,
@@ -9,7 +11,7 @@ import {
   type LabDictionaryCategory
 } from "../../api/client";
 import { GroupedList } from "../../components/GroupedList";
-import { MergeIcon, PlusIcon, XIcon } from "../../components/icons";
+import { CheckIcon, MergeIcon, XIcon } from "../../components/icons";
 import { SelectPopover } from "../../components/SelectPopover";
 import { useModalDialog } from "../../components/useModalDialog";
 import {
@@ -53,7 +55,7 @@ export function DictionaryMergeConfirmation({
         tabIndex={-1}
       >
         <header className="dialog-titlebar">
-          <h2 data-modal-initial-focus id="dictionary-confirmation-title" tabIndex={-1}>合并指标，还是放弃修改？</h2>
+          <h2 data-modal-initial-focus id="dictionary-confirmation-title" tabIndex={-1}>合并指标，还是放弃编辑？</h2>
           <button
             aria-label="关闭确认窗口"
             className="control control--titlebar control--icon control--ghost icon-action-control settings-icon-button titlebar-icon-control"
@@ -72,14 +74,14 @@ export function DictionaryMergeConfirmation({
           </p>
           <p>
             将检查并迁移 {confirmation.sourceResultCount} 条来源结果；目标指标当前有
-            {confirmation.targetResultCount} 条结果。未保存的其他表单修改不会写入。
+            {confirmation.targetResultCount} 条结果。其他尚未保存的表单内容不会写入。
           </p>
-          <p>如果同一原件和就诊时间中存在不同结果，系统会阻止合并，不会覆盖报告。</p>
+          <p>如果同一原件和就诊时间中存在不同结果，系统会阻止合并，不会覆盖医疗报告。</p>
         </div>
         <footer className="dialog-action-bar">
           <button className="control control--secondary secondary-button control-primary dialog-secondary-action" disabled={saving} onClick={onCancel} type="button">
             <XIcon />
-            <span>放弃修改</span>
+            <span>放弃编辑</span>
           </button>
           <button
             className="control control--secondary dictionary-merge-button dialog-warning-action"
@@ -132,7 +134,7 @@ export function DictionaryCreateDialog({
       <form
         aria-labelledby="dictionary-create-title"
         aria-modal="true"
-        className="dictionary-confirmation dictionary-create-dialog dialog-viewport-surface dialog-title-ellipsis"
+        className="dictionary-confirmation dictionary-create-dialog creation-dialog dialog-viewport-surface dialog-title-ellipsis"
         data-kind="create"
         onSubmit={(event) => {
           event.preventDefault();
@@ -145,18 +147,7 @@ export function DictionaryCreateDialog({
         role="dialog"
         tabIndex={-1}
       >
-        <header className="dialog-titlebar">
-          <h2 data-modal-initial-focus id="dictionary-create-title" tabIndex={-1}>新增{isItem ? "指标" : "分类"}</h2>
-          <button
-            aria-label="关闭新建窗口"
-            className="control control--titlebar control--icon control--ghost icon-action-control settings-icon-button titlebar-icon-control"
-            disabled={saving}
-            onClick={onCancel}
-            type="button"
-          >
-            <XIcon />
-          </button>
-        </header>
+        <DialogTitlebar id="dictionary-create-title" title={isItem ? navigationLabels.createItem : navigationLabels.createCategory} busy={saving} onClose={onCancel} closeLabel="关闭创建窗口" />
         <div className="dialog-body scroll-content">
           <GroupedList layout="fields" density="standard">
             <label className="field-row">
@@ -174,9 +165,9 @@ export function DictionaryCreateDialog({
             </label>
             {isItem ? (
               <div className="dictionary-create-field field-row">
-                <span>主分类</span>
+                <span>{navigationLabels.primaryCategory}</span>
                 <SelectPopover
-                  ariaLabel="选择新增指标的主分类"
+                  ariaLabel="选择添加指标的主分类"
                   className="dictionary-form-picker"
                   menuWidth="content" menuAlign="end" interactionOwner="row"
                   onChange={(primaryCategoryName) => onChange({ ...dialog, primaryCategoryName })}
@@ -192,18 +183,14 @@ export function DictionaryCreateDialog({
           </GroupedList>
         </div>
         <footer className="dialog-action-bar">
-          <button className="control control--secondary secondary-button control-primary dialog-secondary-action" disabled={saving} onClick={onCancel} type="button">
-            <XIcon />
-            <span>取消</span>
-          </button>
           <button
             className="control control--primary command-button creation-action-button dialog-primary-action"
             disabled={!canSubmit || saving}
             onMouseDown={keepTextControlFocused}
             type="submit"
           >
-            <PlusIcon />
-            <span>{saving ? "正在添加..." : "添加"}</span>
+            <CheckIcon />
+            <span>{saving ? "保存中..." : "完成"}</span>
           </button>
         </footer>
       </form>

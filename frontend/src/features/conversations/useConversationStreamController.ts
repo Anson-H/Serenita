@@ -20,6 +20,11 @@ import {
 } from "./streamingMessages";
 import { isAbortError, thinkingModeLabel } from "./thinking";
 import { type ActiveStream } from "./workspaceTypes";
+import { ApiRequestError } from "../../api/request";
+
+export function canReconnectConversationStream(error: unknown) {
+  return !(error instanceof ApiRequestError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status));
+}
 
 type ConversationStreamControllerOptions = {
   activeStreamRef: MutableRefObject<ActiveStream | null>;
@@ -246,6 +251,10 @@ export function useConversationStreamController({
             isAbortError(error)
           ) {
             return "detached";
+          }
+          if (!canReconnectConversationStream(error)) {
+            setComposerError(error instanceof Error ? error.message : "聊天订阅已不可用，请重新打开聊天。");
+            throw error;
           }
           await waitForReconnect(retryDelay, abortController.signal);
           retryDelay = Math.min(5000, retryDelay * 2);

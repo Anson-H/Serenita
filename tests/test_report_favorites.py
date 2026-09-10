@@ -100,7 +100,7 @@ def test_report_favorite_targets_report_without_requiring_analysis():
         created = client.post(
             f"/api/members/{member_id('alice')}/reports",
             json={
-                "report_type": "其它报告",
+                "report_type": "其它医疗报告",
                 "report_name": "肺功能检查",
                 "report_time": "2026-08-20T09:30:00+08:00",
                 "institution_name": "示例医院",
@@ -119,7 +119,7 @@ def test_report_favorite_targets_report_without_requiring_analysis():
         body = favorite.json()
         assert body["source_type"] == "report"
         assert body["source_id"] == report["report_id"]
-        assert body["title"] == "其它报告 - 肺功能检查"
+        assert body["title"] == "其它医疗报告 - 肺功能检查"
         assert "FEV1 为 2.31 L。" in body["content_snapshot"]
         assert "示例医院" in body["content_snapshot"]
         assert "解读结果" not in body["content_snapshot"]
@@ -130,7 +130,7 @@ def test_report_favorite_targets_report_without_requiring_analysis():
             json={"source_type": "report", "member_id": member_id("alice"), "source_id": report["report_id"]},
         )
         assert duplicate.status_code == 409
-        assert duplicate.json()["detail"]["message"] == "该报告已收藏。"
+        assert duplicate.json()["detail"]["message"] == "该医疗报告已收藏。"
 
         for unsupported_source_type in (
             "report_analysis",

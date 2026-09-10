@@ -1,34 +1,20 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  type Dispatch,
-  type SetStateAction
-} from "react";
-import {
-  REPORT_TYPES,
-  apiClient,
-  type ConversationDetail,
-  type Favorite,
-  type ReportContextResource,
-  type ReportDetail,
-  type ReportSummary,
-  type ReportType
-} from "../../api/client";
+import { saveBeforeNavigation } from "../../utils/pendingNavigation";
+import { captureAuthContext } from "../../api/authLifecycle";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
+import { REPORT_TYPES, apiClient, type ConversationDetail, type Favorite, type ReportContextResource, type ReportSummary, type ReportType } from "../../api/client";
 import type { Member } from "../../api/memberApi";
-import { ApiRequestError } from "../../api/request";
 import { useActiveScope } from "../../utils/useActiveScope";
 import { useScopedState } from "../../utils/useScopedState";
-import { createReportAnalysisActions } from './reportAnalysisActions';
-import type { ReportAnalysisMode } from "./reportAnalysisPrompt";
-import { createReportCollectionActions } from './reportCollectionActions';
+import { ReportAnalysisActions } from "./model/analysis";
+import { ReportCollectionActions } from "./model/collection";
 import { reportContextResourceFromReport } from "./reportContext";
-import { createReportFavoriteActions } from './reportFavoriteActions';
-import { createReportMutationActions } from './reportMutationActions';
-import { createReportSourceActions } from './reportSourceActions';
-import type { ReportSourcePreview } from "./reportSourcePreview";
-import { ReportStateRefresher } from "./reportStateRefresh";
+import { ReportDetailState } from "./model/detail";
+import { createReportFavoriteActions } from "./model/favorites";
+import { ReportMutationActions } from "./model/mutations";
+import { ReportSourceActions } from "./model/sources";
+import type { ReportStore } from "./model/store";
+import { ReportStateRefresher } from "./model/conversationRefresh";
+import { reportDateTimeInputValue } from "./reportPresentation";
 
 type UseReportWorkspaceOptions = {
   attachmentCapabilities: {
@@ -46,434 +32,202 @@ type UseReportWorkspaceOptions = {
   onReportSelected?: (reportId: string) => void;
   requestedReportId?: string | null;
   setConversationDetail?: Dispatch<SetStateAction<ConversationDetail | null>>;
-  setCurrentSessionId?: Dispatch<SetStateAction<string | null>>;
   setFavorites: Dispatch<SetStateAction<Favorite[]>>;
   selectedModelId: string | null;
   thinkingMode: string;
 };
 
+function useReportState<T extends object>(store: ReportStore<T>) {
+  return useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
+}
+
 export function useReportWorkspace({
-  conversationDetail,
-  attachmentCapabilities,
-  member: activeMember,
-  active,
-  favorites,
-  onConversationStarted,
-  onReportCleared,
-  onReportSelected,
-  requestedReportId,
-  setConversationDetail,
-  setCurrentSessionId,
-  setFavorites,
-  selectedModelId,
-  thinkingMode
+  conversationDetail, attachmentCapabilities, member: activeMember, active, favorites,
+  onConversationStarted, onReportCleared, onReportSelected, requestedReportId,
+  setConversationDetail, setFavorites, selectedModelId, thinkingMode,
 }: UseReportWorkspaceOptions) {
   const memberId = activeMember?.member_id ?? "";
+  const authContext = captureAuthContext();
   const isCurrentScope = useActiveScope(`${memberId || "unbound-report-workspace"}:${active}`);
   const canEdit = Boolean(activeMember?.can_edit);
   const reportImportMimeTypes = attachmentCapabilities.selectedModelFileMimeTypes.filter(type =>
     ["application/pdf", "image/jpeg", "image/png", "image/heic"].includes(type));
-  const reportUploadUnavailableReason = attachmentCapabilities.attachmentCapabilitiesError
-    || (!attachmentCapabilities.attachmentCapabilitiesReady ? "正在读取附件能力。"
-      : !reportImportMimeTypes.length ? "当前模型配置不支持报告附件。" : "");
-  const [selectedReportTypes, setSelectedReportTypes] = useScopedState<ReportType[]>(
-    () => [...REPORT_TYPES]
-    , isCurrentScope);
+  const reportUploadUnavailableReason = attachmentCapabilities.attachmentCapabilitiesError ||
+    (!attachmentCapabilities.attachmentCapabilitiesReady ? "正在读取附件能力。" : !reportImportMimeTypes.length ? "当前模型配置不支持医疗报告附件。" : "");
+  const [selectedReportTypes, setSelectedReportTypes] = useScopedState<ReportType[]>(() => [...REPORT_TYPES], isCurrentScope);
   const [allReports, setAllReports] = useScopedState<ReportSummary[]>([], isCurrentScope);
+  const [reportQuery, setReportQuery] = useScopedState("", isCurrentScope);
+  const [reportAfterDate, setReportAfterDate] = useScopedState<string | null>(null, isCurrentScope);
+  const [reportBeforeDate, setReportBeforeDate] = useScopedState<string | null>(null, isCurrentScope);
   const [listLoading, setListLoading] = useScopedState(false, isCurrentScope);
   const [listError, setListError] = useScopedState("", isCurrentScope);
-  const [selectedReportId, setSelectedReportId] = useScopedState<string | null>(null, isCurrentScope);
-  const [selectedReport, setSelectedReport] = useScopedState<ReportDetail | null>(null, isCurrentScope);
-  const [detailLoading, setDetailLoading] = useScopedState(false, isCurrentScope);
-  const [detailVisible, setDetailVisible] = useScopedState(false, isCurrentScope);
   const [actionError, setActionError] = useScopedState("", isCurrentScope);
   const [actionMessage, setActionMessage] = useScopedState("", isCurrentScope);
-  const [analysisError, setAnalysisError] = useScopedState("", isCurrentScope);
-
-  const [latestAnalysisReportId, setLatestAnalysisReportId] = useScopedState<string | null>(null, isCurrentScope);
-  const [latestAnalysisMode, setLatestAnalysisMode] = useScopedState<ReportAnalysisMode>("initial", isCurrentScope);
-  const [analyzing, setAnalyzing] = useScopedState(false, isCurrentScope);
-  const [analyzingReportId, setAnalyzingReportId] = useScopedState<string | null>(null, isCurrentScope);
-  const [saving, setSaving] = useScopedState(false, isCurrentScope);
-  const [labItemMutation, setLabItemMutation] = useScopedState<"adding" | string | null>(null, isCurrentScope);
-  const [deletingAnalysis, setDeletingAnalysis] = useScopedState(false, isCurrentScope);
-  const [deleting, setDeleting] = useScopedState(false, isCurrentScope);
   const [favoritingReport, setFavoritingReport] = useScopedState(false, isCurrentScope);
-
-  const [addingSources, setAddingSources] = useScopedState(false, isCurrentScope);
-  const [creating, setCreating] = useScopedState(false, isCurrentScope);
   const [uploadErrors, setUploadErrors] = useScopedState<string[]>([], isCurrentScope);
-  const [sourcePreview, setSourcePreview] = useScopedState<ReportSourcePreview | null>(null, isCurrentScope);
-  const [sourcePreviewLoading, setSourcePreviewLoading] = useScopedState(false, isCurrentScope);
   const [reportDataRevision, setReportDataRevision] = useScopedState(0, isCurrentScope);
+  const listRequestSequence = useRef(0);
   const conversationRef = useRef(conversationDetail);
   conversationRef.current = conversationDetail;
   const resourceRefresher = useRef<ReportStateRefresher | null>(null);
   if (!resourceRefresher.current) resourceRefresher.current = new ReportStateRefresher(apiClient.getConversation);
   useEffect(() => () => resourceRefresher.current?.invalidate(), [memberId, conversationDetail?.session_id]);
-  const selectedReportIdRef = useRef<string | null>(null);
-  const detailRequestSequenceRef = useRef(0);
-  const listRequestSequenceRef = useRef(0);
-  const sourceRequestSequence = useRef(0);
-  const sourceObjectUrlRef = useRef<string | null>(null);
 
   const loadReports = useCallback(async () => {
     if (!memberId || !isCurrentScope()) return;
-    const requestSequence = ++listRequestSequenceRef.current;
+    const sequence = ++listRequestSequence.current;
     setListLoading(true);
     setListError("");
     try {
       const response = await apiClient.fetchReports(memberId);
-      if (!isCurrentScope() || requestSequence !== listRequestSequenceRef.current) return;
-      setAllReports(response.reports);
+      if (isCurrentScope() && sequence === listRequestSequence.current) setAllReports(response.reports);
     } catch (error) {
-      if (!isCurrentScope() || requestSequence !== listRequestSequenceRef.current) return;
-      setListError(error instanceof Error ? error.message : "报告列表加载失败。");
+      if (isCurrentScope() && sequence === listRequestSequence.current)
+        setListError(error instanceof Error ? error.message : "医疗报告列表加载失败。");
     } finally {
-      if (requestSequence === listRequestSequenceRef.current) setListLoading(false);
+      if (isCurrentScope() && sequence === listRequestSequence.current) setListLoading(false);
     }
-  }, [memberId, active]);
-
-  useEffect(() => {
-    invalidateReportData();
-    setAllReports([]);
-    setLatestAnalysisReportId(null);
-    setActionError("");
-    setAnalysisError("");
-    setUploadErrors([]);
-    return () => { listRequestSequenceRef.current += 1; detailRequestSequenceRef.current += 1; };
-  }, [memberId, active]);
-
-  const selectedReportTypeSet = useMemo(
-    () => new Set(selectedReportTypes),
-    [selectedReportTypes]
-  );
-  const reports = useMemo(
-    () => allReports.filter((report) => selectedReportTypeSet.has(report.report_type)),
-    [allReports, selectedReportTypeSet]
-  );
-  const allReportIds = useMemo(
-    () => allReports.map((report) => report.report_id),
-    [allReports]
-  );
-  const total = reports.length;
-
-  useEffect(() => {
-    if (active) void loadReports();
-  }, [active, loadReports, reportDataRevision]);
-
-  useEffect(() => {
-    if (!active) return;
-    if (!requestedReportId) {
-      detailRequestSequenceRef.current += 1;
-      clearSourcePreview();
-      setDetailVisible(false);
-      return;
-    }
-    if (
-      selectedReportIdRef.current === requestedReportId &&
-      selectedReport
-    ) {
-      setDetailVisible(true);
-      return;
-    }
-    void openReport(requestedReportId, true, false);
-  }, [active, requestedReportId]);
-
-  useEffect(() => {
-    if (!active) return;
-    const reportId = selectedReportIdRef.current;
-    if (!reportId) return;
-
-    let cancelled = false;
-    setDetailLoading(true);
-    setSelectedReport(null);
-    void apiClient.getReport(memberId, reportId)
-      .then((detail) => {
-        if (!cancelled && selectedReportIdRef.current === reportId) {
-          setSelectedReport(detail);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled && selectedReportIdRef.current === reportId) {
-          setActionError(error instanceof Error ? error.message : "报告详情刷新失败。");
-        }
-      })
-      .finally(() => {
-        if (!cancelled && selectedReportIdRef.current === reportId) {
-          setDetailLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [active, reportDataRevision]);
-
-  useEffect(() => () => {
-    if (sourceObjectUrlRef.current) URL.revokeObjectURL(sourceObjectUrlRef.current);
-  }, []);
-
-  function toggleReportType(type: ReportType) {
-    setSelectedReportTypes((current) => {
-      const next = new Set(current);
-      if (next.has(type)) next.delete(type);
-      else next.add(type);
-      return REPORT_TYPES.filter((reportType) => next.has(reportType));
-    });
-  }
-
-  function selectReportTypes(types: ReportType[]) {
-    const selectedTypes = new Set(types);
-    setSelectedReportTypes(REPORT_TYPES.filter((type) => selectedTypes.has(type)));
-  }
-
-  const invalidateReportData = useCallback(() => {
-    listRequestSequenceRef.current += 1;
-    detailRequestSequenceRef.current += 1;
-    if (sourceObjectUrlRef.current) URL.revokeObjectURL(sourceObjectUrlRef.current);
-    sourceObjectUrlRef.current = null;
-    selectedReportIdRef.current = null;
-    setSelectedReportId(null);
-    setSelectedReport(null);
-    setDetailVisible(false);
-    setDetailLoading(false);
-    setSourcePreview(null);
-    setSourcePreviewLoading(false);
-    setReportDataRevision((current) => current + 1);
-  }, [memberId, active]);
-
-  async function openReport(
-    reportId: string,
-    showDetail = true,
-    updateLocation = true
-  ) {
-    if (!memberId) return null;
-    const requestSequence = ++detailRequestSequenceRef.current;
-    clearSourcePreview();
-    setSaving(false);
-    setLabItemMutation(null);
-    setDeletingAnalysis(false);
-    setAddingSources(false);
-    setAnalyzing(false);
-    setAnalyzingReportId(null);
-    setDetailLoading(true);
-    setActionError("");
-    try {
-      const detail = await apiClient.getReport(memberId, reportId);
-      if (!isCurrentScope() || detailRequestSequenceRef.current !== requestSequence) return null;
-      selectedReportIdRef.current = reportId;
-      setSelectedReportId(reportId);
-      setSelectedReport(detail);
-      setDetailVisible(showDetail);
-      void refreshConversationReportStates([reportId]);
-      if (showDetail && updateLocation) onReportSelected?.(reportId);
-      return detail;
-    } catch (error) {
-      if (isCurrentScope() && detailRequestSequenceRef.current === requestSequence) {
-        setActionError(
-          error instanceof ApiRequestError && error.status === 404
-            ? "报告已删除，无法打开。"
-            : error instanceof Error
-              ? error.message
-              : "报告详情加载失败。"
-        );
-      }
-      return null;
-    } finally {
-      if (isCurrentScope() && detailRequestSequenceRef.current === requestSequence) setDetailLoading(false);
-    }
-  }
+  }, [memberId, active, authContext]);
 
   async function refreshConversationReportStates(reportIds: string[]) {
     const session = conversationRef.current;
     if (!setConversationDetail || !session || !isCurrentScope()) return;
     await resourceRefresher.current?.refresh({
       sessionId: session.session_id, memberId, reportIds,
-      isCurrent: () => isCurrentScope() && conversationRef.current?.session_id === session.session_id
-        && conversationRef.current?.member_id === session.member_id,
+      isCurrent: () => isCurrentScope() && conversationRef.current?.session_id === session.session_id && conversationRef.current?.member_id === session.member_id,
       update: setConversationDetail,
-      onError: () => setActionError("报告操作已完成，会话资源状态刷新失败，请重新打开报告重试。")
+      onError: () => setActionError("医疗报告操作已完成，会话资源状态刷新失败，请重新打开医疗报告重试。"),
     });
   }
 
-  const reportFavorite = useMemo(
-    () => favorites.find(
-      (favorite) => favorite.source_type === "report" && favorite.member_id === memberId && favorite.source_id === selectedReportId
-    ) ?? null,
-    [favorites, selectedReportId, memberId]
-  );
+  // Callbacks follow current props; controller identity follows the resource scope.
+  const behavior = useRef({ canEdit, selectedModelId, thinkingMode, onConversationStarted, onReportSelected, onReportCleared, loadReports, refreshConversationReportStates });
+  behavior.current = { canEdit, selectedModelId, thinkingMode, onConversationStarted, onReportSelected, onReportCleared, loadReports, refreshConversationReportStates };
+  const controllers = useMemo(() => {
+    const detail = new ReportDetailState(memberId, {
+      read: apiClient.getReport, isCurrent: isCurrentScope, beforeNavigate: saveBeforeNavigation,
+      onError: setActionError,
+      onOpened: (reportId, updateLocation) => {
+        void behavior.current.refreshConversationReportStates([reportId]);
+        if (updateLocation) behavior.current.onReportSelected?.(reportId);
+      },
+    });
+    const source = new ReportSourceActions(detail, { read: apiClient.fetchReportSourceBlob, onError: setActionError });
+    async function changed(reportIds: string[]) {
+      if (!isCurrentScope()) return;
+      void behavior.current.refreshConversationReportStates(reportIds);
+      await behavior.current.loadReports();
+    }
+    const analysis: ReportAnalysisActions = new ReportAnalysisActions(detail, {
+      canEdit: () => behavior.current.canEdit,
+      deletingAnalysis: () => mutation.snapshot().deletingAnalysis,
+      model: () => behavior.current,
+      onConversationStarted: sessionId => behavior.current.onConversationStarted(sessionId),
+      onError: setActionError, onMessage: setActionMessage,
+    });
+    const collection: ReportCollectionActions = new ReportCollectionActions(detail, {
+      canEdit: () => behavior.current.canEdit, isCurrent: isCurrentScope,
+      onChanged: changed, onDeleted: analysis.forget,
+      onReportCleared: () => behavior.current.onReportCleared?.(),
+      onError: setActionError, onMessage: setActionMessage,
+    });
+    const mutation: ReportMutationActions = new ReportMutationActions(detail, {
+      canEdit: () => behavior.current.canEdit,
+      deleting: () => collection.snapshot().deleting,
+      analyzing: () => analysis.snapshot().analyzing,
+      onChanged: changed, onAnalysisDeleted: reportId => analysis.forget([reportId]),
+      onError: setActionError, onMessage: setActionMessage,
+    });
+    return { detail, source, analysis, collection, mutation };
+  }, [memberId, active, authContext]);
+  const detailState = useReportState(controllers.detail);
+  const sourceState = useReportState(controllers.source);
+  const mutationState = useReportState(controllers.mutation);
+  const analysisState = useReportState(controllers.analysis);
+  const collectionState = useReportState(controllers.collection);
+  const { selectedReport, selectedReportId } = detailState;
+  const reportSaveKey = `${authContext.accountId}:${memberId}:${selectedReportId}`;
 
-  const favoritedReportIds = useMemo(
-    () => new Set(
-      favorites
-        .filter((favorite) => favorite.source_type === "report" && favorite.member_id === memberId)
-        .map((favorite) => favorite.source_id)
-    ),
-    [favorites, memberId]
-  );
+  const invalidateReportData = useCallback(() => {
+    listRequestSequence.current++;
+    controllers.detail.clear();
+    setReportDataRevision(value => value + 1);
+  }, [controllers]);
 
+  useEffect(() => {
+    setReportQuery(""); setReportAfterDate(null); setReportBeforeDate(null);
+  }, [memberId]);
+  useEffect(() => {
+    invalidateReportData();
+    setAllReports([]); setActionError(""); setUploadErrors([]);
+    return () => { listRequestSequence.current++; controllers.detail.clear(); };
+  }, [controllers]);
+  useEffect(() => { if (active) void loadReports(); }, [active, loadReports, reportDataRevision]);
+  useEffect(() => {
+    if (!active) return;
+    if (!requestedReportId) { controllers.detail.hide(); return; }
+    const current = controllers.detail.snapshot();
+    if (current.selectedReportId === requestedReportId && current.selectedReport) controllers.detail.show();
+    else void controllers.detail.open(requestedReportId, true, false);
+  }, [controllers, active, requestedReportId]);
+  useEffect(() => { if (active) void controllers.detail.refresh(); }, [controllers, active, reportDataRevision]);
+
+  const selectedReportTypeSet = useMemo(() => new Set(selectedReportTypes), [selectedReportTypes]);
+  const reports = useMemo(() => {
+    const query = reportQuery.trim().toLocaleLowerCase();
+    return allReports.filter(report => {
+      const date = reportDateTimeInputValue(report.report_time).slice(0, 10);
+      return selectedReportTypeSet.has(report.report_type)
+        && (!query || [report.report_name, report.report_type, report.institution_name ?? ""].some(text => text.toLocaleLowerCase().includes(query)))
+        && (!reportAfterDate || date >= reportAfterDate) && (!reportBeforeDate || date <= reportBeforeDate);
+    });
+  }, [allReports, selectedReportTypeSet, reportQuery, reportAfterDate, reportBeforeDate]);
+  const allReportIds = useMemo(() => allReports.map(report => report.report_id), [allReports]);
+  const reportFavorite = useMemo(() => favorites.find(favorite => favorite.source_type === "report" && favorite.member_id === memberId && favorite.source_id === selectedReportId) ?? null,
+    [favorites, selectedReportId, memberId]);
+  const favoritedReportIds = useMemo(() => new Set(favorites.filter(favorite => favorite.source_type === "report" && favorite.member_id === memberId).map(favorite => favorite.source_id)), [favorites, memberId]);
   const activeReportResource = useMemo<ReportContextResource | null>(() => {
-    if (selectedReport) return reportContextResourceFromReport(selectedReport);
-    const summary = reports.find((report) => report.report_id === selectedReportId);
-    return summary ? reportContextResourceFromReport(summary) : null;
+    const report = selectedReport ?? reports.find(report => report.report_id === selectedReportId);
+    return report ? reportContextResourceFromReport(report) : null;
   }, [reports, selectedReport, selectedReportId]);
-  const { updateSelectedReportField, addSelectedReportLabItem, deleteSelectedReportLabItem, deleteSelectedReportAnalysis, addSelectedReportSources } = createReportMutationActions({
-    detailRequestSequenceRef,
-    isCurrentScope,
-    canEdit,
-    selectedReport,
-    saving,
-    labItemMutation,
-    deletingAnalysis,
-    setSaving,
-    setActionError,
-    memberId,
-    selectedReportIdRef,
-    setSelectedReport,
-    refreshConversationReportStates,
-    loadReports,
-    setActionMessage,
-    deleting,
-    setLabItemMutation,
-    analyzing,
-    setDeletingAnalysis,
-    setLatestAnalysisReportId,
-    setAnalysisError,
-    addingSources,
-    setAddingSources
-  });
-  const { analyzeSelectedReport, retryLatestAnalysis } = createReportAnalysisActions({
-    thinkingMode,
-    memberId,
-    isCurrentScope,
-    selectedModelId,
-    setCurrentSessionId,
-    setDetailVisible,
-    onConversationStarted,
-    detailRequestSequenceRef,
-    canEdit,
-    analyzing,
-    deletingAnalysis,
-    setAnalyzing,
-    setAnalyzingReportId,
-    setLatestAnalysisReportId,
-    setLatestAnalysisMode,
-    setAnalysisError,
-    setActionError,
-    selectedReport,
-    setActionMessage,
-    selectedReportId,
-    latestAnalysisReportId,
-    latestAnalysisMode
-  });
   const { favoriteReports, toggleReportFavorite } = createReportFavoriteActions({
-    memberId,
-    favoritingReport,
-    favoritedReportIds,
-    setActionError,
-    setActionMessage,
-    setFavoritingReport,
-    isCurrentScope,
-    setFavorites,
-    detailRequestSequenceRef,
-    selectedReportId,
-    selectedReport,
-    reportFavorite
-  });
-  const { clearSourcePreview, openSourceFile } = createReportSourceActions({
-    sourceRequestSequence,
-    sourceObjectUrlRef,
-    setSourcePreview,
-    setSourcePreviewLoading,
-    selectedReportIdRef,
-    memberId,
-    setActionError,
-    isCurrentScope
-  });
-  const { deleteReports, deleteSelectedReport, createManualReport } = createReportCollectionActions({
-    canEdit,
-    deleting,
-    setDeleting,
-    setActionError,
-    setActionMessage,
-    memberId,
-    isCurrentScope,
-    refreshConversationReportStates,
-    setLatestAnalysisReportId,
-    selectedReportIdRef,
-    clearSourcePreview,
-    setSelectedReportId,
-    setSelectedReport,
-    setDetailVisible,
-    onReportCleared,
-    loadReports,
-    selectedReport,
-    creating,
-    setCreating,
-    openReport
+    memberId, favoritingReport, favoritedReportIds, setActionError, setActionMessage,
+    setFavoritingReport, isCurrentScope, setFavorites, selectedReportId, selectedReport, reportFavorite,
   });
 
   return {
-    memberId,
-    canEdit,
-    reportImportMimeTypes,
-    reportUploadUnavailableReason,
+    reportSaveKey, memberId, canEdit, reportImportMimeTypes, reportUploadUnavailableReason,
     retryAttachmentCapabilities: attachmentCapabilities.retryAttachmentCapabilities,
     attachmentCapabilitiesError: attachmentCapabilities.attachmentCapabilitiesError,
-    REPORT_TYPES,
-    actionError,
-    actionMessage,
-    addSelectedReportSources,
-    addSelectedReportLabItem,
-    addingSources,
-    allReportIds,
-    analysisError,
-    reportFavorited: Boolean(reportFavorite),
-    activeReportResource,
-    analyzeSelectedReport,
-    analyzing,
-    analyzingReportId,
+    REPORT_TYPES, actionError, actionMessage,
+    ...detailState, ...sourceState, ...mutationState, ...analysisState, ...collectionState,
+    addSelectedReportSources: controllers.mutation.addSelectedReportSources,
+    addSelectedReportLabItem: controllers.mutation.addSelectedReportLabItem,
+    allReportIds, reportFavorited: Boolean(reportFavorite), activeReportResource,
+    analyzeSelectedReport: controllers.analysis.analyzeSelectedReport,
     clearActionFeedback: () => { setActionError(""); setActionMessage(""); },
-    clearSourcePreview,
-    createManualReport,
-    creating,
-    deleteSelectedReportAnalysis,
-    deleteSelectedReportLabItem,
-    deleteReports,
-    deleteSelectedReport,
-    deletingAnalysis,
-    deleting,
-    detailLoading,
-    detailVisible,
-    favoritingReport,
-    favoriteReports,
-    favoritedReportIds,
-    invalidateReportData,
-    latestAnalysisReportId,
-    labItemMutation,
-    listError,
-    listLoading,
-    loadReports,
-    openReport,
-    openSourceFile,
-    reports,
-    retryLatestAnalysis,
-    saving,
-    selectedReport,
-    selectedReportId,
+    clearSourcePreview: controllers.source.clearSourcePreview,
+    createManualReport: controllers.collection.createManualReport,
+    deleteSelectedReportAnalysis: controllers.mutation.deleteSelectedReportAnalysis,
+    deleteSelectedReportLabItem: controllers.mutation.deleteSelectedReportLabItem,
+    deleteReports: controllers.collection.deleteReports,
+    deleteSelectedReport: controllers.collection.deleteSelectedReport,
+    favoritingReport, favoriteReports, favoritedReportIds, invalidateReportData,
+    listError, listLoading, loadReports,
+    openReport: controllers.detail.open, openSourceFile: controllers.source.openSourceFile,
+    reports, reportQuery, setReportQuery, reportAfterDate, setReportAfterDate, reportBeforeDate, setReportBeforeDate,
+    retryLatestAnalysis: controllers.analysis.retryLatestAnalysis,
     selectedReportTypes,
-    setDetailVisible,
-    sourcePreview,
-    sourcePreviewLoading,
-    total,
-    toggleReportType,
-    selectReportTypes,
-    toggleReportFavorite,
-    updateSelectedReportField,
-    uploadBlocked: !canEdit || Boolean(reportUploadUnavailableReason),
-    uploadErrors,
-    setUploadErrors,
+    setDetailVisible: (visible: boolean) => visible ? controllers.detail.show() : controllers.detail.hide(),
+    total: reports.length,
+    toggleReportType: (type: ReportType) => setSelectedReportTypes(current => {
+      const next = new Set(current);
+      if (next.has(type)) next.delete(type); else next.add(type);
+      return REPORT_TYPES.filter(type => next.has(type));
+    }),
+    selectReportTypes: (types: ReportType[]) => setSelectedReportTypes(REPORT_TYPES.filter(type => types.includes(type))),
+    toggleReportFavorite, updateSelectedReportField: controllers.mutation.updateSelectedReportField,
+    uploadBlocked: !canEdit || Boolean(reportUploadUnavailableReason), uploadErrors, setUploadErrors,
   };
 }
 

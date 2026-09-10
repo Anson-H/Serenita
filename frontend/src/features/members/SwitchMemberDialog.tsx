@@ -1,3 +1,5 @@
+import { NavigationTitle } from "../../components/NavigationTitle";
+import { navigationLabels } from "../../components/navigationLabels";
 import { useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { type Member } from "../../api/memberApi";
@@ -39,11 +41,12 @@ export function SwitchMemberDialog({ currentMemberId, members, onClose, onCreate
   }}>
     <div className="content-dialog dialog-viewport-surface dialog-title-ellipsis" role="dialog" aria-modal="true" aria-labelledby="switch-member-title" ref={dialogRef}>
       <header className="dialog-titlebar">
-        <h2 id="switch-member-title" data-modal-initial-focus tabIndex={-1}>切换成员</h2>
+        <NavigationTitle id="switch-member-title" data-modal-initial-focus tabIndex={-1} title={navigationLabels.switchMember} />
         <button aria-label="关闭切换成员" className="control control--titlebar control--icon control--ghost titlebar-icon-control" disabled={busy} onClick={onClose} type="button"><XIcon /></button>
       </header>
       <div className="dialog-body member-dialog-body scroll-content">
         <GroupedList density="standard" selectionMode="single" aria-label="可切换的成员">
+          <button className="control control--row grouped-list-create-button member-add-action" type="button" disabled={busy} onClick={onCreate}><PlusIcon /><span>{navigationLabels.createMember}</span></button>
           {members.map(member => <button key={member.member_id} type="button"
             className="control control--row member-switch-entry" aria-label={memberLabel(member)}
             aria-current={member.member_id === currentMemberId ? "page" : undefined}
@@ -60,9 +63,6 @@ export function SwitchMemberDialog({ currentMemberId, members, onClose, onCreate
         </GroupedList>
         {error ? <p role="alert">{error}</p> : null}
       </div>
-      <footer className="dialog-action-bar">
-        <button className="control control--secondary member-add-action" type="button" disabled={busy} onClick={onCreate}><PlusIcon /><span>添加成员</span></button>
-      </footer>
     </div>
   </div>, document.body);
 }

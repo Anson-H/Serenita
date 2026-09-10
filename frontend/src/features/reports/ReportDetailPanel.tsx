@@ -1,3 +1,4 @@
+import { EmptyState } from "../../components/EmptyState";
 import {
   useEffect,
   useRef,
@@ -73,16 +74,13 @@ export function ReportDetailPanel({ conversationComposer, panelRef, workspace }:
     return () => window.cancelAnimationFrame(frame);
   }, [workspace.sourcePreview]);
   return (
-    <article aria-busy={workspace.detailLoading ? "true" : "false"} aria-label={workspace.selectedReport?.report_name ?? "报告详情"} className="report-detail-pane" data-composer-stage data-empty={!workspace.detailLoading && !workspace.selectedReport ? "true" : undefined} ref={(node) => { detailPanelElementRef.current = node; if (panelRef) panelRef.current = node; }} tabIndex={-1}>
-      <div className="report-detail-scroll scroll-content">
-        {workspace.detailLoading && !workspace.selectedReport ? <div className="report-detail-skeleton" aria-label="正在加载报告详情"><span /><span /><span /></div> : workspace.selectedReport ? (
+    <article aria-busy={workspace.detailLoading ? "true" : "false"} aria-label={workspace.selectedReport?.report_name ?? "医疗报告详情"} className="report-detail-pane" data-composer-stage data-empty={!workspace.detailLoading && !workspace.selectedReport ? "true" : undefined} ref={(node) => { detailPanelElementRef.current = node; if (panelRef) panelRef.current = node; }} tabIndex={-1}>
+      <div className={`report-detail-scroll scroll-content content-column${!workspace.detailLoading && !workspace.selectedReport ? " empty" : ""}`}>
+        {workspace.detailLoading && !workspace.selectedReport ? <div className="report-detail-skeleton" aria-label="正在加载医疗报告详情"><span /><span /><span /></div> : workspace.selectedReport ? (
           <ReportDetailContent onOpenSource={(file) => { sourceResourceIdRef.current = file.resource_id; void workspace.openSourceFile(file); }} report={workspace.selectedReport} workspace={workspace} />
-        ) : <div className="report-detail-empty workspace-empty-state">
-          <div aria-hidden="true" className="report-detail-empty-icon"><HealthRecordIcon /></div>
-          <div className="report-detail-empty-copy"><strong>查看报告详情</strong><p>从左侧选择一份报告，查看报告内容和解读结果。</p></div>
-        </div>}
+        ) : <EmptyState className="report-detail-empty" icon={<HealthRecordIcon />} title="查看医疗报告详情" description="从左侧选择一份医疗报告，查看医疗报告内容和解读结果。" />}
       </div>
-      {conversationComposer && workspace.selectedReport ? <section aria-label="询问这份报告" className="report-detail-composer">{conversationComposer}</section> : null}
+      {conversationComposer && workspace.selectedReport ? <section aria-label="询问这份医疗报告" className="report-detail-composer">{conversationComposer}</section> : null}
       <SourcePreview workspace={workspace} />
     </article>
   );

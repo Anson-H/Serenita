@@ -1,12 +1,18 @@
+import { memberDisplayName } from "./memberPresentation";
 import { useEffect, useRef, useState, type FormEvent, type RefObject, type SetStateAction } from "react";
 import { saveMemberPreferences, updateMember, type Member, type MemberFields } from "../../api/memberApi";
 import { GroupedList, ReadonlyField } from "../../components/GroupedList";
 import { TrashIcon } from "../../components/icons";
 import { WorkspaceToolbar } from "../../components/WorkspaceToolbar";
 import { useActiveScope } from "../../utils/useActiveScope";
+import { registerNavigationSave } from "../../utils/pendingNavigation";
+import { formatDateOnly } from "../../utils/localTime";
 import { DefaultMemberField } from "./DefaultMemberField";
 import { MemberFieldsEditor } from "./MemberFieldsEditor";
 import { useMembers } from "./MemberProvider";
+
+import { useMedicalHistory } from "./useMedicalHistory";
+import { MedicalHistoryFields } from "./MedicalHistoryFields";
 
 const memberAutoSaveDelayMs = 400;
 
@@ -25,6 +31,7 @@ export function MemberInformationPanel({ member, onClose, panelRef }: {
   panelRef?: RefObject<HTMLElement | null>;
 }) {
   const members = useMembers();
+  const history = useMedicalHistory(member.member_id, member.can_edit);
   const isCurrent = useActiveScope(member.member_id);
   const initialDraft: MemberFields = {
     member_name: member.member_name, sex: member.sex, birth_date: member.birth_date,
@@ -44,6 +51,7 @@ export function MemberInformationPanel({ member, onClose, panelRef }: {
   const autoSaveHandleRef = useRef<number | null>(null);
   const deletingRef = useRef(false);
   const persistOnUnmountRef = useRef<() => void>(() => undefined);
+  const navigationSaveRef = useRef<() => Promise<boolean>>(async () => true);
   const busy = closing || deleting;
 
   function canPersist(snapshot: MemberSnapshot) {
@@ -95,18 +103,30 @@ export function MemberInformationPanel({ member, onClose, panelRef }: {
     return queueSave(snapshot);
   }
 
+  async function saveBeforeLeaving() {
+    if (deletingRef.current) return true;
+    setClosing(true);
+    try {
+      const profileSaved = await flushLatest();
+      const historySaved = await history.flush();
+      return profileSaved && historySaved;
+    } finally {
+      if (isCurrent()) setClosing(false);
+    }
+  }
+
+  navigationSaveRef.current = saveBeforeLeaving;
+  useEffect(() => registerNavigationSave(() => navigationSaveRef.current()), []);
+
   async function requestClose() {
     if (busy) return;
-    setClosing(true);
-    const saved = await flushLatest();
-    if (!isCurrent()) return;
-    if (saved) onClose();
-    else setClosing(false);
+    if (await saveBeforeLeaving() && isCurrent()) onClose();
   }
 
   function submit(event: FormEvent) {
     event.preventDefault();
     void flushLatest();
+    void history.flush();
   }
 
   function changeDraft(update: SetStateAction<MemberFields>) {
@@ -135,11 +155,13 @@ export function MemberInformationPanel({ member, onClose, panelRef }: {
       autoSaveHandleRef.current = null;
     }
     try {
+      await history.cancel();
       await saveChainRef.current;
       await members.removeMember(member.member_id);
       if (isCurrent()) onClose();
     } catch (cause) {
       deletingRef.current = false;
+      history.resume();
       if (isCurrent()) setError(cause instanceof Error ? cause.message : "成员未删除。");
     } finally { if (isCurrent()) setDeleting(false); }
   }
@@ -176,18 +198,19 @@ export function MemberInformationPanel({ member, onClose, panelRef }: {
   return <section aria-label="个人信息" className="member-information-detail" id="member-information-detail" ref={(node) => {
     if (panelRef) panelRef.current = node;
   }} tabIndex={-1}>
-    <WorkspaceToolbar className="member-information-toolbar" onBack={() => void requestClose()} title="个人信息" />
+    <WorkspaceToolbar className="member-information-toolbar" onBack={() => void requestClose()} title={memberDisplayName(member)} />
     <form className="member-information-pane" onSubmit={submit}>
-      <div className="member-information-scroll scroll-content">
+      <div className="member-information-scroll scroll-content content-column">
         <GroupedList layout="fields" density="standard">
           {member.can_edit ? <MemberFieldsEditor value={draft} disabled={busy} onChange={changeDraft} /> : <>
             <ReadonlyField label="成员名称" value={member.member_name} />
             <ReadonlyField label="性别" value={member.sex ? { male: "男", female: "女", other: "其他" }[member.sex] : "未设置"} />
-            <ReadonlyField label="出生日期" value={member.birth_date || "未设置"} />
+            <ReadonlyField label="出生日期" value={member.birth_date ? formatDateOnly(member.birth_date) : "未知"} />
             <ReadonlyField label="血型" value={member.blood_type ? { a: "A 型", b: "B 型", ab: "AB 型", o: "O 型", other: "其他" }[member.blood_type] : "未设置"} />
           </>}
           <DefaultMemberField isDefault={isDefault} value={setAsDefault} disabled={busy} onChange={changeDefault} />
         </GroupedList>
+        <MedicalHistoryFields history={history} canEdit={member.can_edit} disabled={busy} />
         {!member.is_owned ? <p className="content-description">来自 {member.owner_account} 的共享健康档案 · {member.can_edit ? "可编辑" : "只读"}</p> : null}
         {member.is_owned ? <div className="member-settings-group">
           <button className="control control--danger" type="button" disabled={busy || !canDelete} onClick={() => void remove()}><TrashIcon /><span>删除成员</span></button>

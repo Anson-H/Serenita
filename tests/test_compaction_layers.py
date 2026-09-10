@@ -1,4 +1,4 @@
-from backend.app.application.conversation_compaction import ConversationCompaction
+from backend.app.application.conversations.compaction import ConversationCompaction
 """Independent history/prefix summaries, followed by protected original messages."""
 import json
 import re
@@ -11,7 +11,7 @@ from backend.app.agent_runtime.compaction import (
     summarize_compaction, summarize_history,
 )
 from backend.app.agent_runtime.model_types import AssistantModelOutput
-from backend.app.application.conversation_service import ConversationService
+from backend.app.application.conversations.service import ConversationService
 
 
 ESTIMATE = ConversationCompaction.estimate_model_request_tokens

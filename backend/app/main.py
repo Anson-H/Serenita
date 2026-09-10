@@ -1,9 +1,11 @@
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from backend.app.api import account_settings, auth, conversations, favorites, members, model_providers, reports
+from backend.app.api import notifications, body_metrics, medications, medical_logs, account_settings, auth, conversations, favorites, members, model_providers, reports
 from backend.app.core.errors import SerenitaError
 from backend.app.api.errors import error_http_status
 from backend.app.storage.crypto import ProviderSecretError, WebSecretError
@@ -11,7 +13,16 @@ from backend.app.storage.sqlite import UnsupportedSchemaError
 
 
 def create_app(*, paths=None) -> FastAPI:
-    app = FastAPI(title="Serenita API", version="0.2.0")
+    @asynccontextmanager
+    async def lifespan(app):
+        worker = asyncio.create_task(app.state.services.notification_scheduler.run())
+        try:
+            yield
+        finally:
+            worker.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker
+    app = FastAPI(title="Serenita API", version="0.2.0", lifespan=lifespan)
     from backend.app.application.services import ApplicationServices
     app.state.services = ApplicationServices(paths)
     app.add_middleware(
@@ -83,6 +94,7 @@ def create_app(*, paths=None) -> FastAPI:
             response.headers["Pragma"] = "no-cache"
         return response
 
+    app.include_router(notifications.router)
     app.include_router(auth.router)
     app.include_router(account_settings.router)
     app.include_router(model_providers.router)
@@ -90,4 +102,7 @@ def create_app(*, paths=None) -> FastAPI:
     app.include_router(favorites.router)
     app.include_router(reports.router)
     app.include_router(members.router)
+    app.include_router(medical_logs.router)
+    app.include_router(medications.router)
+    app.include_router(body_metrics.router)
     return app

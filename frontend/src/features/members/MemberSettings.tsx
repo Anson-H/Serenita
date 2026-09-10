@@ -1,3 +1,4 @@
+import { EmptyState } from "../../components/EmptyState";
 import { useEffect, useState } from "react";
 import { fetchMemberGrants, revokeMemberGrant, saveMemberPreferences, setMemberGrants, type MemberGrant } from "../../api/memberApi";
 import { GroupedList } from "../../components/GroupedList";
@@ -66,7 +67,7 @@ export function MemberGrantsPanel() {
     finally { setBusy(false); }
   }
   return <section className="settings-section member-grants-section">
-    <p className="content-description">仅共享选中成员的健康档案，不共享聊天、附件、收藏或账号设置。以后新增的成员不会自动共享。</p>
+    <p className="content-description">仅共享选中成员的健康档案，不共享聊天、附件、收藏或账号设置。以后创建的成员不会自动共享。</p>
     <form onSubmit={event => { event.preventDefault(); void mutate(() => setMemberGrants(recipient.trim(), Object.entries(selection).map(([member_id, permission]) => ({ member_id, permission }))), "授权已生效。"); }}>
       <GroupedList layout="fields" density="standard"><label className="field-row"><span>接收方用户标识</span><input autoCapitalize="none" autoComplete="off" spellCheck={false} required maxLength={20} disabled={busy} value={recipient} onChange={event => setRecipient(event.target.value)} placeholder="准确的用户标识" /></label></GroupedList>
       <div className="member-settings-group">
@@ -81,7 +82,7 @@ export function MemberGrantsPanel() {
         </div>)}
       </GroupedList>
       </div>
-      <p className="content-description">编辑权限可修改基础资料、导入和删除报告、保存解读结果；接收方不能再次授权。</p>
+      <p className="content-description">编辑权限可更新基础资料、导入和删除医疗报告、保存解读结果；接收方不能再次授权。</p>
       <button className="control control--primary" type="submit" disabled={busy || !recipient.trim() || !Object.keys(selection).length}><CheckIcon /><span>授予权限</span></button>
     </form>
     {error ? <p role="alert">{error}</p> : null}{feedback ? <p role="status">{feedback}</p> : null}
@@ -91,7 +92,7 @@ export function MemberGrantsPanel() {
       <div className="member-grant-identity"><span>{owned.find(member => member.member_id === grant.member_id)?.member_name}</span><span>{grant.grantee_account}</span></div>
       <SelectPopover ariaLabel={`${grant.grantee_account}的健康档案权限`} disabled={busy} menuWidth="content" menuAlign="end" interactionOwner="self" value={grant.permission} options={[{ value: "read", label: "只读" }, { value: "edit", label: "编辑" }]} onChange={permission => mutate(() => setMemberGrants(grant.grantee_account, [{ member_id: grant.member_id, permission }]), "权限已更新。")} />
       <button className="control control--inline control--icon control--danger" data-interaction-owner="self" aria-label="撤销" title="撤销授权" type="button" disabled={busy} onClick={() => void mutate(() => revokeMemberGrant(grant.member_id, grant.account_id), "授权已撤销。")}><TrashIcon /></button>
-    </div>)}</GroupedList> : <p className="member-grants-empty">尚未向其他账号共享健康档案。</p>}
+    </div>)}</GroupedList> : <EmptyState layout="inline" title="尚未向其他账号共享健康档案。" />}
     </div>
   </section>;
 }

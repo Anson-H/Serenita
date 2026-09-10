@@ -1,9 +1,10 @@
 import { expect, test, type Route } from "@playwright/test";
 import { mockWorkspace } from "../helpers/workspace";
+import { expectSelectionGaps } from "../helpers/selectionSpacing";
 import type { AddedModel } from "../../src/api/types";
 
 const profile = { availability: "available" as const, supports_text: true, supports_tool_calling: true, file_mime_types: [] };
-const model: AddedModel = { model_id: "test:model", remote_model_id: "model", provider_id: "test", model_name: "测试模型", supports_text: true, supports_tool_calling: true, file_mime_types: [], thinking_modes: ["non_thinking"], capability_profiles: { default_state: "non_thinking", non_thinking: profile, thinking: { ...profile, availability: "unavailable" } }, context_window_tokens: 32000, max_output_tokens: 8000 };
+const model: AddedModel = { model_id: "test:model", remote_model_id: "model", provider_id: "test", model_name: "测试模型", supports_text: true, supports_tool_calling: true, file_mime_types: [], model_type: "generation", embedding_capabilities: null, embedding_dimensions: null, max_input_tokens: null, max_batch_size: null, thinking_modes: ["non_thinking"], capability_profiles: { default_state: "non_thinking", non_thinking: profile, thinking: { ...profile, availability: "unavailable" } }, context_window_tokens: 32000, max_output_tokens: 8000 };
 
 test("accepted messages leave an empty new chat while other conversations and list reads are pending", async ({ page }) => {
   await mockWorkspace(page, [model]);
@@ -104,7 +105,7 @@ for (const hasTouch of [false, true]) {
         created_at: "2026-09-07T00:00:00+08:00", last_active_at: "2026-09-07T00:00:00+08:00", pending_turn_status: null, queued_input_count: 0
       }], has_more: false, next_cursor: null } }));
       await page.goto("/health/self");
-      await page.getByRole("button", { name: "按报告类型筛选", exact: true }).click();
+      await page.getByRole("button", { name: "按医疗报告类型筛选", exact: true }).click();
       const reference = page.getByRole("option", { name: "检验报告", exact: true }).locator(".selection-check-control");
       const colors = await reference.evaluate(element => {
         const style = getComputedStyle(element);
@@ -113,6 +114,7 @@ for (const hasTouch of [false, true]) {
       await page.keyboard.press("Escape");
       await page.locator(".conversation-title-button").click({ button: "right" });
       await page.getByRole("menuitem", { name: "多选", exact: true }).click();
+      await expectSelectionGaps(page.locator('.global-nav > .list-selection-heading'),page.locator('.health-member-nav'),page.locator('.conversation-list-stage'));
       const selected = page.locator(".conversation-selection-toggle");
       await expect(selected).toHaveAttribute("aria-pressed", "true");
       expect(await selected.evaluate(element => {

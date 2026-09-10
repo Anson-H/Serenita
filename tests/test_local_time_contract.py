@@ -2,7 +2,7 @@ from datetime import datetime
 from backend.app.core.time import local_now_iso as now_iso
 from backend.app.application.report_validation import normalize_report_time
 from backend.app.core.time import local_datetime_from_epoch_ms, local_iso, local_now, parse_local_datetime
-from backend.app.session_events import iso_to_epoch_ms
+from backend.app.domain.conversations.events import iso_to_epoch_ms
 
 
 def test_generated_times_use_the_process_local_offset():

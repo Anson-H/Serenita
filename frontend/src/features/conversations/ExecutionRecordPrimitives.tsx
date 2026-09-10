@@ -103,7 +103,7 @@ export function conversationTurnFailureMessage(error: unknown) {
 
 export function FormattedRecordValue({ value }: { value: unknown }) {
   const formatted = useMemo(() => formatRecordValue(value), [value]);
-  return <pre>{formatted}</pre>;
+  return <pre className="scroll-balanced">{formatted}</pre>;
 }
 
 export function previewRecordValue(value: unknown) {

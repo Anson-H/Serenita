@@ -1,0 +1,4 @@
+allowed_tools:
+  - create_medication_batch
+  - update_medication_batch
+  - delete_medication_batch

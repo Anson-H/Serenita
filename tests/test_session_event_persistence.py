@@ -8,11 +8,11 @@ import os
 import threading
 import time
 import pytest
-from backend.app.application.conversation_service import ConversationService
-from backend.app.application import conversation_sse as conversation_sse_module
+from backend.app.application.conversations.service import ConversationService
+from backend.app.application.conversations import sse as conversation_sse_module
 from backend.app.agent_runtime.model_types import ModelStreamChunk, ToolCallDelta
 from backend.app.repositories.conversation_repository import ConversationRepository
-from backend.app.session_events import SessionEventCorruptionError, SessionEventFormatError, SessionHeader, make_event
+from backend.app.domain.conversations.events import SessionEventCorruptionError, SessionEventFormatError, SessionHeader, make_event
 from backend.app.storage.paths import app_paths
 from backend.app.storage.session_persistence import JsonlSessionPersistence, StoredSession
 
@@ -132,10 +132,10 @@ def test_cached_reads_are_isolated_and_follow_another_writers_append_and_replace
     reader.create(SessionHeader(id="cached", account_id=account_id, created_at=200))
     seed = _stable_seed()
     reader.append(account_id, "cached", seed, created_at=200)
-    seed[1].data["content"] = "调用方修改了追加参数"
+    seed[1].data["content"] = "调用方更新了追加参数"
     first = reader.load(account_id, "cached", repair=False)
     assert first.events[1].data["content"] == "继承的问题"
-    first.events[1].data["content"] = "调用方修改了返回值"
+    first.events[1].data["content"] = "调用方更新了返回值"
     assert reader.load(account_id, "cached", repair=False).events[1].data["content"] == "继承的问题"
 
     added = make_event("user/message", 4, {
@@ -258,7 +258,7 @@ def test_event_tail_reads_only_requested_sequence_and_tracks_revision(
     appended = make_event(
         "turn/start",
         4,
-        {"turn_id": "turn-next"},
+        {"turn_id": "turn-next", "user_message_id": "user", "stream_id": "stream"},
         timestamp=201,
     )
     persistence.append(
@@ -364,23 +364,29 @@ def test_agent_turn_events_survive_repository_reload(monkeypatch, tmp_path):
     assert any("# 系统提示词" in str(record["content"]) for record in context_records)
     assert context_records[0]["label"] == "系统提示词"
     tool_catalog = next(
-        record for record in context_records if record["label"] == "4 个可用工具"
+        record for record in context_records if record["context_type"] == "tool_catalog"
     )
     assert tool_catalog["context_type"] == "tool_catalog"
     assert {
         item["function"]["name"] for item in tool_catalog["content"]
-    } == {"load_skill", "update_plan", "web_search", "web_read"}
+    } == {"load_skill", "update_plan", "web_search", "web_read", "read_history", "update_history"}
     assert all(
         item["function"].get("description")
         for item in tool_catalog["content"]
     )
     skill_catalog = next(
-        record for record in context_records if record["label"] == "4 个可用技能"
+        record for record in context_records if record["context_type"] == "skill_catalog"
     )
     assert skill_catalog["context_type"] == "skill_catalog"
     catalog_lines = skill_catalog["content"].strip().splitlines()
     assert catalog_lines[0] == "SKILL_CATALOG"
     assert [line.partition(" ")[0] for line in catalog_lines[1:]] == [
+        "body-metrics",
+        "log",
+        "medication-catalog",
+        "medication-inventory",
+        "medication-plan",
+        "medication-query",
         "report-analysis",
         "report-import",
         "report-query",
@@ -422,7 +428,7 @@ def test_agent_turn_events_survive_repository_reload(monkeypatch, tmp_path):
     assert [
         item["function"]["name"]
         for item in action_header["provider_payload"]["tools"]
-    ] == ["load_skill", "update_plan", "web_read", "web_search"]
+    ] == ["load_skill", "update_plan", "read_history", "update_history", "web_read", "web_search"]
     action_events = [
         event.type
         for event in events
@@ -786,7 +792,7 @@ def test_sse_rebuilds_projection_when_event_log_lineage_changes(
             make_event(
                 "turn/start",
                 len(original_snapshot.events),
-                {"turn_id": "replacement-turn"},
+                {"turn_id": "replacement-turn", "user_message_id": "user", "stream_id": "stream"},
             ),
         ),
         revision="replacement:1",
@@ -1113,3 +1119,36 @@ def test_different_sessions_run_workers_concurrently(monkeypatch, tmp_path):
     assert service.get_turn(
         account_id_for("alice"), second["session_id"], second["turn_id"]
     )["status"] == "completed"
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_answer_keeps_actual_model_after_attachment_model_selection(cancelled, monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path / "model-identity"))
+    account = account_id_for("alice")
+    catalog = BlockingConversationModelCatalog()
+    actual_model = {**catalog.model, "model_id": "test:vision-model", "remote_model_id": "vision-model"}
+    repository = ConversationRepository(JsonlSessionPersistence())
+    service = ConversationService(repository=repository, model_catalog=catalog)
+    monkeypatch.setattr(service.inputs, "model_and_attachment_parts", lambda *_: (actual_model, []))
+    queued = service.send_message(account, None, "测试问题", "model_1", "default", [], member_id=member_id(account))
+    service.start_turn_job(account, queued["session_id"], queued["stream_id"])
+    assert catalog.first_chunk_persisted.wait(timeout=3)
+    try:
+        live = service.get_conversation(account, queued["session_id"])
+        live_content = next(r for r in live["records"] if r["kind"] == "model" and r["channel"] == "content")
+        assert live_content["model_id"] == actual_model["model_id"]
+        if cancelled:
+            service.cancel_turn(account, queued["session_id"], queued["turn_id"])
+    finally:
+        catalog.release.set()
+    service.wait_for_turn_job(account, queued["session_id"], queued["stream_id"], timeout=5)
+    # Read from disk with the selected model removed from the catalog.
+    catalog.model = {**catalog.model, "model_id": "test:another-default"}
+    reloaded = ConversationRepository(JsonlSessionPersistence())
+    detail = ConversationService(repository=reloaded, model_catalog=catalog).get_conversation(account, queued["session_id"])
+    answer = next(r for r in detail["records"] if r["record_id"] == queued["final_assistant_message_id"])
+    assert answer["status"] == ("cancelled" if cancelled else "completed")
+    assert answer["model_id"] == actual_model["model_id"]
+    assert next(r for r in detail["records"] if r["kind"] == "user")["model_id"] == "model_1"
+    stored = JsonlSessionPersistence().load(account, queued["session_id"])
+    assert next(e.data for e in reversed(stored.events) if e.type == "assistant/message")["model_id"] == actual_model["model_id"]

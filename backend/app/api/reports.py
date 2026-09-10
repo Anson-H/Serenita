@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 
@@ -87,12 +88,12 @@ async def add_report_source_files(
     service: ReportService = Depends(get_report_service),
 ):
     if not files:
-        raise_error('invalid_input', "INVALID_REQUEST", "请至少选择一份报告原件。")
+        raise_error('invalid_input', "INVALID_REQUEST", "请至少选择一份医疗报告原件。")
     if len(files) > MAX_REPORT_FILES:
         raise_error(
             'invalid_input',
             "TOO_MANY_FILES",
-            f"每次最多补充 {MAX_REPORT_FILES} 份报告原件。",
+            f"每次最多补充 {MAX_REPORT_FILES} 份医疗报告原件。",
         )
 
     uploads = []
@@ -100,13 +101,13 @@ async def add_report_source_files(
     for file in files:
         content = await file.read(MAX_FILE_BYTES + 1)
         if len(content) > MAX_FILE_BYTES:
-            raise_error('resource_limit', "FILE_TOO_LARGE", "单个报告文件不能超过 20MB。")
+            raise_error('resource_limit', "FILE_TOO_LARGE", "单个医疗报告文件不能超过 20MB。")
         total_bytes += len(content)
         if total_bytes > MAX_REPORT_BATCH_BYTES:
             raise_error(
                 'resource_limit',
                 "FILE_BATCH_TOO_LARGE",
-                "单次补充的报告文件总大小不能超过 100MB。",
+                "单次补充的医疗报告文件总大小不能超过 100MB。",
             )
         uploads.append(
             {
@@ -116,7 +117,7 @@ async def add_report_source_files(
             }
         )
 
-    return report_response(service.add_report_sources(
+    return report_response(await run_in_threadpool(service.add_report_sources,
         member_id,
         report_id,
         uploads=uploads,

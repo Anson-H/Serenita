@@ -17,12 +17,14 @@ def _secure_sqlite_files(path: Path) -> None:
 
 
 @contextmanager
-def connect(path: Path | str):
-    path = Path(path)
-    ensure_private_directory(path.parent)
-    _secure_sqlite_files(path)
-    connection = sqlite3.connect(str(path))
-    _secure_sqlite_files(path)
+def connect(path: Path | str | None = None):
+    path = Path(path) if path is not None else None
+    if path is not None:
+        ensure_private_directory(path.parent)
+        _secure_sqlite_files(path)
+    connection = sqlite3.connect(str(path) if path is not None else ":memory:")
+    if path is not None:
+        _secure_sqlite_files(path)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     try:
@@ -33,4 +35,5 @@ def connect(path: Path | str):
         raise
     finally:
         connection.close()
-        _secure_sqlite_files(path)
+        if path is not None:
+            _secure_sqlite_files(path)

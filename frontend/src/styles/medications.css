@@ -1,0 +1,43 @@
+.medication-tabs { display:flex; gap:var(--space-related); }
+.medication-tabs > button { flex:1; min-width:0; }
+.medication-search { width:100%; }
+.medication-plan-filters { display:grid; grid-template-columns:minmax(0,1fr) var(--size-control-primary) var(--size-control-primary); align-items:center; gap:var(--space-related); }
+.medication-plan-filters[data-mode="search"] { grid-template-columns:var(--size-control-primary) minmax(0,1fr) var(--size-control-primary); }
+.medication-plan-filters[data-mode="date"] { grid-template-columns:var(--size-control-primary) var(--size-control-primary) minmax(0,1fr); }
+.medication-plan-filters > * { min-width:0; }
+.medication-editor,.medication-plan-fields { display:flex; flex-direction:column; gap:var(--space-content); }
+.medication-actions { display:flex; gap:var(--space-related); flex-wrap:wrap; margin-top:var(--space-related); }
+.medication-detail { min-width:0; }
+
+.medication-editor .field-row input { min-width:0; }
+.medication-editor .field-value { overflow-wrap:anywhere; }
+.field-row > .medication-time-controls { display:flex; flex-wrap:nowrap; justify-content:flex-end; align-items:center; gap:var(--space-related); }
+.field-row > .medication-period-values { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-related); overflow:visible; }
+.medication-period-values > .compact-date-field { min-width:max-content; }
+.medication-time-choice { justify-content:flex-start; }
+.medication-time-choice > span:last-child { margin-left:auto; }
+.medication-thumbnail { width:40px; height:40px; object-fit:contain; flex-shrink:0; }
+.medication-load-more { margin:var(--space-content); }
+.medication-batch-summary { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:var(--space-content); text-align:left; }
+.medication-batch-summary[role="checkbox"] { grid-template-columns:auto auto minmax(0,1fr); }
+.medication-batch-details { min-width:0; text-align:right; overflow-wrap:anywhere; }
+.medication-batch-expiry { color: var(--color-foreground); white-space:nowrap; }
+.medication-batch-quantity { display:flex; align-items:center; justify-content:flex-end; gap:var(--space-related); }
+.medication-batch-quantity > input { flex:1; width:0; min-width:0; }
+
+.medication-leaflet-row { grid-column:1 / -1; text-decoration:none; }
+
+.medication-picker-body { display:flex; flex-direction:column; gap:var(--space-content); }
+.medication-picker-choice { display:flex; justify-content:flex-start; gap:var(--space-related); text-align:left; }
+.medication-picker-choice > span { display:flex; flex-direction:column; min-width:0; overflow-wrap:anywhere; }
+
+.medication-setting-value { gap:var(--space-related); }
+.medication-setting-value > svg { width:var(--size-icon-default); height:var(--size-icon-default); flex-shrink:0; }
+.medication-setting-value > .content-description { min-width:0; white-space:normal; }
+.medication-frequency-choice { justify-content:space-between; text-align:left; }
+.medication-schedule-page { outline:none; }
+.medication-schedule-body { display:flex; flex-direction:column; gap:var(--space-content); }
+
+.medication-time-add-row { grid-column:1 / -1; }
+
+.medication-batch-expiry { background: var(--color-danger-soft); border-radius: var(--radius-inline-button); padding-inline: var(--space-related); }

@@ -60,6 +60,8 @@ def safe_detail(detail: dict[str, Any]) -> dict[str, Any]:
         "examination_report",
         "pathology_report",
         "surgery_report",
+        "outpatient_report",
+        "emergency_report",
         "other_report",
     ):
         if isinstance(result.get(typed_key), dict):

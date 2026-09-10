@@ -39,7 +39,7 @@ function synchronizeStructuredDefinitionRows(definition: HTMLDListElement) {
   rows.forEach((row) => {
     const label = row.querySelector<HTMLElement>(".field-label");
     const content = row.querySelector<HTMLElement>(
-      ".report-inline-edit-size-mirror > span:first-child, .report-inline-edit-trigger > span:first-child, .report-inline-edit > input, .report-date-time-anchor"
+      ".report-inline-edit-size-mirror > span:first-child, .report-inline-edit-trigger > span:first-child, .report-inline-edit > input, .date-time-anchor"
     );
     if (!label || !content) return;
 
@@ -185,14 +185,21 @@ export function StructuredReportContent({ report, workspace }: { report: ReportD
   } else if (report.report_type === "手术报告") {
     heading = "手术记录";
     content = <SurgeryContent result={report.surgery_report} workspace={workspace} />;
+  } else if (report.report_type === "门诊病历" || report.report_type === "急诊病历") {
+    heading = report.report_type;
+    const result = report.report_type === "门诊病历" ? report.outpatient_report : report.emergency_report;
+    content = <StructuredDefinition workspace={workspace} fields={(ENTRY_FIELDS[report.report_type] ?? []).map(field => ({
+      key: field.key, field: field.key, label: field.label, inputKind: "textarea",
+      value: (result as Record<string, string | null> | null)?.[field.key]
+    }))} />;
   } else {
-    heading = "报告内容";
+    heading = "医疗报告内容";
     const body = report.other_report?.report_body;
     content = (
       <GroupedList className="structured-definition" density="standard">
         <div className="structured-field field-row report-body-row">
           <div className="field-value">
-            <InlineEditableValue field="report_body" inputKind="textarea" label="报告内容" required value={body} workspace={workspace} />
+            <InlineEditableValue field="report_body" inputKind="textarea" label="医疗报告内容" required value={body} workspace={workspace} />
           </div>
         </div>
       </GroupedList>
@@ -210,4 +217,4 @@ export function StructuredReportContent({ report, workspace }: { report: ReportD
   );
 }
 
-type ReportStructuredFieldsWorkspace = Pick<ReportWorkspaceState, "addSelectedReportLabItem" | "canEdit" | "clearActionFeedback" | "deleteSelectedReportLabItem" | "labItemMutation" | "memberId" | "saving" | "updateSelectedReportField">;
+type ReportStructuredFieldsWorkspace = Pick<ReportWorkspaceState, "reportSaveKey" | "addSelectedReportLabItem" | "canEdit" | "clearActionFeedback" | "deleteSelectedReportLabItem" | "labItemMutation" | "memberId" | "saving" | "updateSelectedReportField">;

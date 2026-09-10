@@ -15,7 +15,20 @@ from backend.app.storage import config_database
 from backend.app.storage.paths import app_paths
 
 
+from backend.app.storage.medical_log_database import MEDICAL_LOG_DATABASE_SCHEMA
+
+from backend.app.storage.medication_database import MEDICATION_DATABASE_SCHEMA
+
+from backend.app.storage.body_metric_database import BODY_METRIC_DATABASE_SCHEMA
+
+from backend.app.storage.notification_database import NOTIFICATION_DATABASE_SCHEMA, BACKGROUND_TASK_DATABASE_SCHEMA
+
 DATABASE_SCHEMAS = (
+    NOTIFICATION_DATABASE_SCHEMA,
+    BACKGROUND_TASK_DATABASE_SCHEMA,
+    BODY_METRIC_DATABASE_SCHEMA,
+    MEDICATION_DATABASE_SCHEMA,
+    MEDICAL_LOG_DATABASE_SCHEMA,
     AUTH_DATABASE_SCHEMA,
     CONFIG_DATABASE_SCHEMA,
     FAVORITES_DATABASE_SCHEMA,
@@ -42,6 +55,31 @@ def test_every_database_is_created_and_validated_from_the_ordered_contract(tmp_p
                     )
                 )
                 assert actual_columns == table.column_names
+
+
+@pytest.mark.parametrize("recorded_on", [None, "", "   "])
+@pytest.mark.parametrize("operation", ["insert", "update"])
+def test_medical_log_database_rejects_empty_recorded_on(recorded_on, operation):
+    with sqlite3.connect(":memory:") as connection:
+        MEDICAL_LOG_DATABASE_SCHEMA.create(connection)
+        connection.execute(
+            "INSERT INTO medical_logs VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("log", "member", "2026-09-10", "随记", "今天睡得不错", "created", "updated"),
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            if operation == "insert":
+                connection.execute(
+                    "INSERT INTO medical_logs VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    ("another", "member", recorded_on, "随记", "正文", "created", "updated"),
+                )
+            else:
+                connection.execute(
+                    "UPDATE medical_logs SET recorded_on = ? WHERE medical_log_id = ?",
+                    (recorded_on, "log"),
+                )
+        assert connection.execute(
+            "SELECT medical_log_id, recorded_on FROM medical_logs"
+        ).fetchall() == [("log", "2026-09-10")]
 
 
 def test_resource_tables_share_one_file_metadata_contract():
@@ -85,6 +123,7 @@ def test_same_named_columns_share_one_column_definition():
                 columns_by_name.setdefault(column.name, []).append(column)
 
     nullable_variants = {
+        "resource_id": {"resource_id TEXT", "resource_id TEXT NOT NULL"},
         "expires_at": {"expires_at TEXT", "expires_at TEXT NOT NULL"},
         "member_id": {"member_id TEXT", "member_id TEXT NOT NULL"},
     }
@@ -118,7 +157,11 @@ def test_shared_columns_keep_the_same_relative_order_in_every_table():
     ]
     for left_index, left in enumerate(tables):
         for right in tables[left_index + 1 :]:
-            shared = set(left.column_names) & set(right.column_names)
+            # A primary key becomes a nullable reference in another object.
+            # Compare shared fields within the same physical group only.
+            left_groups = {column.name: column.group for column in left.columns}
+            right_groups = {column.name: column.group for column in right.columns}
+            shared = {name for name in set(left.column_names) & set(right.column_names) if left_groups[name] == right_groups[name]}
             left_order = tuple(name for name in left.column_names if name in shared)
             right_order = tuple(name for name in right.column_names if name in shared)
             assert left_order == right_order, (
@@ -349,7 +392,7 @@ def test_report_detail_tables_reject_a_different_member(
             "INSERT INTO reports "
             "(report_id, member_id, report_type, report_name, report_time, "
             "created_at, updated_at) VALUES "
-            "('report-1', 'member-1', '其它报告', '报告', '2026-01-01', "
+            "('report-1', 'member-1', '其它医疗报告', '医疗报告', '2026-01-01', "
             "'2026-01-01', '2026-01-01')"
         )
         if table_name == "lab_test_report":

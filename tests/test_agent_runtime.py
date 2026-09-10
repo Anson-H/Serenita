@@ -4,13 +4,14 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from backend.app.agent_runtime.context import AgentContext
 from backend.app.agent_runtime.model_types import AssistantModelOutput, ModelRequest, PromptContextSection, ToolCall
+from backend.app.agent_runtime.prompts import SYSTEM_PROMPT
 from backend.app.agent_runtime.runtime import AgentHarnessRuntime
 from backend.app.core.tabular_json import decode_tabular_json
 from backend.app.providers.errors import ProviderChatCompletionError
-from backend.app.plugins.report.tools.import_tools import ValidateParsedReportsTool
+from backend.app.plugins.medical_report.tools.import_tools import CreateReportTool
 
 
-def test_runtime_context_includes_current_date_without_attachments(monkeypatch):
+def test_runtime_context_includes_current_time_without_attachments(monkeypatch):
     frozen_now = datetime(2026, 8, 19, 2, 30, 0, tzinfo=timezone(timedelta(hours=8)))
     monkeypatch.setattr("backend.app.agent_runtime.runtime.local_now", lambda: frozen_now)
     driver = HarnessDriver(AssistantModelOutput(content="完成。"))
@@ -31,10 +32,10 @@ def test_runtime_context_includes_current_date_without_attachments(monkeypatch):
     )
     assert runtime_metadata.label == "运行时元数据"
     assert "current_time" in request.system
-    assert '"current_date":"2026-08-19"' in request.system
     assert '"current_time":"2026-08-19T02:30:00+08:00"' in request.system
+    assert "current_date" not in request.system
     assert '"visible_attachments":[]' in request.system
-    assert "按运行时元数据中的 `current_date` 解析年份" in request.system
+    assert request.system.startswith(SYSTEM_PROMPT + "\n\n")
 
 
 def test_context_sections_must_exactly_match_the_model_system_prompt():
@@ -534,7 +535,7 @@ def test_update_plan_is_an_ordinary_tool_result():
     created = {
         "goal": "等待用户补充",
         "open_questions": ["目标日期是什么？"],
-        "milestones": ["取得日期"],
+        "milestones": ["读取日期"],
         "completion_criteria": ["日期明确"],
     }
     events = []
@@ -601,7 +602,7 @@ def test_invalid_update_plan_is_an_observation_and_does_not_fail_the_turn():
 
 def test_repeated_update_plan_calls_are_independent_ordinary_tool_results():
     first = {
-        "goal": "先取得资料",
+        "goal": "先读取资料",
         "open_questions": [],
         "milestones": ["读取资料"],
         "completion_criteria": ["资料完整"],
@@ -692,8 +693,8 @@ def test_repeated_schema_failures_suspend_the_tool_instead_of_consuming_the_turn
 
 def test_attachment_resource_is_explicit_in_tool_schema_and_guesses_are_rejected():
     report = {
-        "report_type": "其它报告",
-        "report_name": "测试报告",
+        "report_type": "其它医疗报告",
+        "report_name": "测试医疗报告",
         "report_time": "2026-08-01",
         "source_kind": "unknown",
         "institution_name": None,
@@ -707,24 +708,14 @@ def test_attachment_resource_is_explicit_in_tool_schema_and_guesses_are_rejected
         call("a1", "load_skill", name="worker"),
         call(
             "a2",
-            "validate_parsed_reports",
-            reports=[
-                {
-                    "sources": [
-                        {
-                            "source_type": "conversation_attachment",
-                            "resource_id": "attachment_1",
-                        }
-                    ],
-                    "report": report,
-                }
-            ],
+            "create_report",
+            sources=[{'source_type': 'conversation_attachment', 'resource_id': 'attachment_1'}], report=report,
         ),
         AssistantModelOutput(content="附件标识无效，已停止导入。"),
     )
     instance = runtime(
-        skills=[FakeSkill("worker", {"validate_parsed_reports"})],
-        tools=[ValidateParsedReportsTool(account_id="alice", service=object(), member_id="alice-member")],
+        skills=[FakeSkill("worker", {"create_report"})],
+        tools=[CreateReportTool(account_id="alice", service=object(), member_id="alice-member")],
     )
     result = instance.execute(
         AgentContext(
@@ -750,9 +741,9 @@ def test_attachment_resource_is_explicit_in_tool_schema_and_guesses_are_rejected
     )
 
     validate_schema = next(
-        item for item in driver.requests[1].tools if item.name == "validate_parsed_reports"
+        item for item in driver.requests[1].tools if item.name == "create_report"
     )
-    sources_schema = validate_schema.parameters["properties"]["reports"]["items"]
+    sources_schema = validate_schema.parameters
     source_union = sources_schema["properties"]["sources"]["items"]["oneOf"]
     assert source_union[1]["properties"]["resource_id"]["enum"] == ["actual-resource"]
     runtime_metadata = next(
@@ -771,8 +762,8 @@ def test_attachment_resource_is_explicit_in_tool_schema_and_guesses_are_rejected
 
 def test_single_attachment_cannot_omit_resource_id_at_runtime():
     report = {
-        "report_type": "其它报告",
-        "report_name": "测试报告",
+        "report_type": "其它医疗报告",
+        "report_name": "测试医疗报告",
         "report_time": "2026-08-01",
         "source_kind": "unknown",
         "institution_name": None,
@@ -786,19 +777,14 @@ def test_single_attachment_cannot_omit_resource_id_at_runtime():
         call("a1", "load_skill", name="worker"),
         call(
             "a2",
-            "validate_parsed_reports",
-            reports=[
-                {
-                    "sources": [{"source_type": "conversation_attachment"}],
-                    "report": report,
-                }
-            ],
+            "create_report",
+            sources=[{'source_type': 'conversation_attachment'}], report=report,
         ),
         AssistantModelOutput(content="缺少明确附件标识，未执行导入。"),
     )
     instance = runtime(
-        skills=[FakeSkill("worker", {"validate_parsed_reports"})],
-        tools=[ValidateParsedReportsTool(account_id="alice", service=object(), member_id="alice-member")],
+        skills=[FakeSkill("worker", {"create_report"})],
+        tools=[CreateReportTool(account_id="alice", service=object(), member_id="alice-member")],
     )
     result = instance.execute(
         AgentContext(

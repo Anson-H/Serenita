@@ -122,7 +122,7 @@
 .workspace-header span,
 .settings-section > span,
 .model-picker-header span {
-  color: var(--color-content-inset);
+  color: var(--color-foreground-muted);
   font-size: var(--text-meta);
   font-weight: var(--weight-strong);
   letter-spacing: 0;
@@ -178,10 +178,10 @@
 }
 
 .markdown-content pre {
-  border: 1px solid var(--color-inverse-divider);
+  border: 1px solid var(--color-divider);
   border-radius: var(--radius-control);
-  background: var(--color-inverse-surface);
-  color: var(--color-inverse-text);
+  background: var(--color-content-inset);
+  color: var(--color-foreground);
 }
 
 .message-actions,
@@ -484,7 +484,7 @@
 }
 
 .workspace-header span {
-  color: var(--color-accent);
+  color: var(--color-foreground);
 }
 
 .workspace-header h1 {
@@ -540,7 +540,7 @@
 }
 
 .message-entry.user .message-bubble {
-  max-width: min(78%, 660px);
+  max-width: 88%;
   border-color: transparent;
   border-radius: var(--radius-message-bubble);
   color: var(--color-foreground);
@@ -629,9 +629,6 @@
     padding: var(--space-content);
   }
 
-  .message-entry.user .message-bubble {
-    max-width: 88%;
-  }
 }
 
 /* Quiet hierarchy pass: content reads as a workspace, not nested cards. */
@@ -744,7 +741,7 @@
 }
 
 .operation-record-error pre {
-  color: var(--color-danger);
+  color: var(--color-foreground);
 }
 
 .assistant-turn-disclosure {
@@ -941,17 +938,17 @@
 }
 
 .conversation-turn-error {
-  color: var(--color-danger);
+  color: var(--color-foreground);
 }
 
 .conversation-turn-error .turn-trace-item-icon,
 .conversation-turn-error .turn-trace-item-label,
 .conversation-turn-error .turn-trace-item-preview {
-  color: var(--color-danger);
+  color: var(--color-foreground);
 }
 
 .conversation-turn-error .operation-record-body pre {
-  color: var(--color-danger);
+  color: var(--color-foreground);
 }
 
 .turn-execution {
@@ -1164,7 +1161,7 @@
 
 .conversation-tail-button {
   position: absolute;
-  z-index: 4;
+  z-index: 6;
   right: calc(
     var(--composer-visible-right-offset, 0px)
     + env(safe-area-inset-right)
@@ -1236,22 +1233,6 @@
   }
 }
 
-.conversation-bulk-toolbar {
-  display: block;
-  flex: 0 0 auto;
-  width: 100%;
-}
-
-.conversation-bulk-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-control-block) var(--space-control-inline);
-}
-
-.conversation-bulk-actions > button {
-  min-width: 0;
-}
-
 /* Agent-produced report artifacts live with the turn that created them. */
 
 .related-reports {
@@ -1302,7 +1283,7 @@
   margin: 0;
   overflow-y: auto;
   overscroll-behavior-y: contain;
-  padding: 0;
+  padding-block: 0;
   border-radius: 0 0 var(--radius-list) var(--radius-list);
   background: transparent;
   list-style: none;
@@ -1333,6 +1314,7 @@
   font-weight: var(--weight-regular);
   line-height: var(--line-body);
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
   transition: background-color var(--transition-fast);
   grid-template-rows: minmax(0, 1fr);
@@ -1500,4 +1482,20 @@
 
 .chat-member-control .select-popover {
   max-width: 100%;
+}
+
+:root[data-theme="dark"] .markdown-content pre {
+  border-color: var(--color-inverse-divider);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-text);
+}
+
+.conversation-turn-error .turn-trace-item-icon { color: var(--color-danger); }
+
+.conversation-model-identity {
+  margin-block: var(--space-related);
+  color: var(--color-foreground-muted);
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }

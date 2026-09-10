@@ -61,7 +61,7 @@ def test_preparation_uses_current_skills_and_revokes_tools_before_model_call():
         order.append("skills")
         return iter(names)
 
-    def prepare(request, force):
+    def prepare(request, rebuild, force):
         order.append("prepare")
         assert force is False
         if not prepared:
@@ -107,6 +107,85 @@ def test_skill_projection_replaces_initial_and_in_memory_loaded_skills():
     assert_paired(driver.messages)
 
 
+def test_request_rebuilder_uses_history_skill_visibility_without_inferring_suspension():
+    driver = HarnessDriver(AssistantModelOutput(content="done"))
+    rebuilt = []
+
+    def prepare(request, rebuild, force):
+        assert "echo" not in {tool.name for tool in request.tools}
+        visible = rebuild(messages=driver.derive(), skill_names=["worker"])
+        assert "echo" in {tool.name for tool in visible.tools}
+        hidden = rebuild(messages=driver.derive(), skill_names=[])
+        assert "echo" not in {tool.name for tool in hidden.tools}
+        rebuilt.extend([visible, hidden])
+        return hidden
+
+    execute(
+        runtime(skills=[FakeSkill("worker", {"echo"})], tools=[EchoTool()]),
+        driver,
+        prepare_request=prepare,
+    )
+    assert driver.requests == [rebuilt[-1]]
+
+
+def test_request_rebuilder_preserves_tool_suspension_after_skill_visibility_changes():
+    driver = HarnessDriver(
+        *(call(f"invalid-{index}", "echo", value=index) for index in range(3)),
+        AssistantModelOutput(content="done"),
+    )
+
+    def prepare(request, rebuild, force):
+        return rebuild(messages=driver.derive(), skill_names=["alternate"])
+
+    result = execute(
+        runtime(
+            skills=[FakeSkill("worker", {"echo"}), FakeSkill("alternate", {"echo"})],
+            tools=[EchoTool()],
+        ),
+        driver,
+        initial_skill_names=["worker"],
+        prepare_request=prepare,
+    )
+    assert "echo" in {tool.name for tool in driver.requests[0].tools}
+    assert "echo" not in {tool.name for tool in driver.requests[-1].tools}
+    assert result.output["tool_results"] == []
+    assert [event.payload["error"]["code"] for event in result.events if event.type == "tool_error"] == [
+        "TOOL_ARGUMENTS_INVALID", "TOOL_ARGUMENTS_INVALID", "REPEATED_INVALID_TOOL_ARGUMENTS"
+    ]
+
+
+def test_pending_skill_result_survives_each_rebuild_once_and_activates_after_success():
+    driver = HarnessDriver(
+        call("load", "load_skill", name="worker"),
+        call("echo", "echo", value="ok"),
+        AssistantModelOutput(content="done"),
+    )
+    candidates = []
+
+    def before_result(request, rebuild):
+        driver.messages[0] = {"role": "user", "content": "summary"}
+        for _ in range(2):
+            candidate = rebuild(messages=driver.derive(), skill_names=[])
+            assert "echo" in {tool.name for tool in candidate.tools}
+            assert [message.get("tool_call_id") for message in candidate.messages if message["role"] == "tool"] == ["load"]
+            assert_paired(candidate.messages)
+            candidates.append(candidate)
+        return candidate
+
+    result = execute(
+        runtime(skills=[FakeSkill("worker", {"echo"})], tools=[EchoTool()]),
+        driver,
+        before_tool_result=before_result,
+        estimate_request_tokens=lambda request: 100 if request.messages[0]["content"] != "summary" else 20,
+        context_window_tokens=90,
+        reserved_output_tokens=10,
+    )
+    assert len(candidates) == 2
+    assert result.output["tool_results"][0]["output"] == {"value": "ok"}
+    assert [message.get("tool_call_id") for message in driver.messages if message["role"] == "tool"] == ["load", "echo"]
+    assert_paired(driver.messages)
+
+
 def test_skill_projection_restores_surviving_skills_from_events():
     driver = HarnessDriver(
         call("load", "load_skill", name="worker"),
@@ -143,7 +222,7 @@ def test_overflow_retries_only_model_call_and_never_reexecutes_tools(overflow_be
     calls = []
     forced = []
 
-    def prepare(request, force):
+    def prepare(request, rebuild, force):
         calls.append(force)
         if force:
             forced.append(request)
@@ -171,7 +250,7 @@ def test_forced_preparation_tools_authorize_retry_output():
         overflow(), call("denied", tool.name), AssistantModelOutput(content="done")
     )
 
-    def prepare(request, force):
+    def prepare(request, rebuild, force):
         return replace(request, tools=()) if force else request
 
     result = execute(runtime(tools=[tool]), driver, prepare_request=prepare)
@@ -187,7 +266,7 @@ def test_second_overflow_propagates_without_another_compaction_or_action():
     driver = ErrorDriver(first, second)
     calls = []
 
-    def prepare(request, force):
+    def prepare(request, rebuild, force):
         calls.append(force)
         return replace(request, messages=()) if force else request
 
@@ -203,7 +282,7 @@ def test_service_no_progress_error_stops_retry():
     driver = ErrorDriver(overflow())
     failure = RuntimeError("compaction made no progress")
 
-    def prepare(request, force):
+    def prepare(request, rebuild, force):
         if force:
             raise failure
         return request
@@ -222,7 +301,7 @@ def test_other_provider_errors_do_not_force_compaction(code):
     driver = ErrorDriver(failure)
     calls = []
 
-    def prepare(request, force):
+    def prepare(request, rebuild, force):
         calls.append(force)
         return request
 
@@ -262,7 +341,7 @@ def test_tool_candidate_is_complete_and_reestimated_with_rebuilt_system_and_tool
     estimates = []
     section = PromptContextSection("system_prompt", "Prepared", "prepared")
 
-    def prepare(request, force):
+    def prepare(request, rebuild, force):
         assert force is False
         return replace(
             request,
@@ -273,7 +352,7 @@ def test_tool_candidate_is_complete_and_reestimated_with_rebuilt_system_and_tool
             transport_mode="text",
         )
 
-    def before_result(candidate):
+    def before_result(candidate, rebuild):
         candidates.append(candidate)
         assert candidate.system == "prepared"
         assert candidate.context_sections == (section,)
@@ -342,12 +421,12 @@ def test_tool_candidate_is_complete_and_reestimated_with_rebuilt_system_and_tool
     assert_paired(driver.messages)
 
 
-def test_candidate_does_not_mutate_derived_history_or_compact_when_it_fits():
+def test_candidate_does_not_mutate_derived_history_or_compact_below_threshold():
     tool = LogicalPagesTool()
     driver = HarnessDriver(call("pages", tool.name), AssistantModelOutput(content="done"))
 
-    def before_result(_request):
-        pytest.fail("a fitting result must not trigger compaction")
+    def before_result(_request, rebuild):
+        pytest.fail("a result below the threshold must not trigger compaction")
 
     result = runtime(tools=[tool]).execute(
         AgentContext(account_id="alice", member_id="alice-member", task_type="conversation"),
@@ -355,7 +434,7 @@ def test_candidate_does_not_mutate_derived_history_or_compact_when_it_fits():
         complete_model=driver.complete,
         on_event=driver.record,
         before_tool_result=before_result,
-        estimate_request_tokens=lambda _request: 70,
+        estimate_request_tokens=lambda _request: 50,
         context_window_tokens=80,
         reserved_output_tokens=10,
     )
@@ -373,10 +452,10 @@ def test_batched_candidates_include_prior_results_once_after_checkpoint():
     )
     candidates = []
 
-    def before_result(candidate):
+    def before_result(candidate, rebuild):
         candidates.append(candidate)
         driver.messages[0] = {"role": "user", "content": "summary"}
-        return replace(candidate, messages=(driver.messages[0], *candidate.messages[1:]))
+        return rebuild(messages=driver.derive(), skill_names=[])
 
     def estimate(request):
         return 100 if request.messages[0]["content"] != "summary" else 20
@@ -389,6 +468,7 @@ def test_batched_candidates_include_prior_results_once_after_checkpoint():
     assert len(candidates) == 1
     assert tool.calls == 2
     assert len(result.output["tool_results"]) == 2
+    assert [message.get("tool_call_id") for message in driver.messages if message["role"] == "tool"] == ["first", "second"]
     assert_paired(driver.requests[-1].messages)
     assert_paired(driver.messages)
 
@@ -417,7 +497,7 @@ def test_oversized_write_retains_effects_and_raw_result_without_duplicate_reply(
         call("inspect", reader.name, value="ok"),
         AssistantModelOutput(content="done"),
     )
-    callbacks = {"before_tool_result": lambda request: request} if with_compaction else {}
+    callbacks = {"before_tool_result": lambda request, rebuild: request} if with_compaction else {}
     result = execute(
         runtime(tools=[writer, reader]), driver,
         estimate_request_tokens=lambda request: (
@@ -448,7 +528,7 @@ def test_tool_compaction_failure_keeps_completed_effects_in_paired_error():
     driver = HarnessDriver(call("write", writer.name))
     failure = RuntimeError("compaction made no progress")
 
-    def before_result(_candidate):
+    def before_result(_candidate, rebuild):
         raise failure
 
     with pytest.raises(RuntimeError) as caught:

@@ -346,7 +346,7 @@ def test_missing_member_profile_blocks_report_creation_without_repair():
         response = client.post(
             f"/api/members/{member_id}/reports",
             json={
-                "report_type": "其它报告",
+                "report_type": "其它医疗报告",
                 "report_name": "不应创建",
                 "report_time": "2026-09-05T12:00:00+08:00",
                 "institution_name": None,

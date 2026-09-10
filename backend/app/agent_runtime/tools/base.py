@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 
 @dataclass(frozen=True)
@@ -11,6 +11,9 @@ class ToolResult:
     # Harness merges every fragment before it persists or exposes an
     # Observation, so logical pagination never becomes another Agent loop.
     logical_pages: tuple[Dict[str, Any], ...] = field(default_factory=tuple)
+    # Only read tools provide this continuation. It retains the exact query
+    # and storage cursor outside model context and is never serialized.
+    next_page: Callable[[], "ToolResult"] | None = field(default=None, repr=False, compare=False)
 
 
 class Tool:
@@ -62,6 +65,7 @@ class Tool:
         if self.bind_conversation:
             bound["model_id"] = getattr(context, "model_id", None)
             bound["session_id"] = context.session_id
+            bound["turn_id"] = context.turn_id
             bound["source_message_id"] = context.memory.get("current_message_id")
             bound["visible_message_ids"] = list(
                 context.memory.get("visible_message_ids") or []

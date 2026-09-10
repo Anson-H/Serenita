@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from backend.app.model_capabilities import (
+from backend.app.domain.model_capabilities import (
     AUDIO_FILE_MIME_TYPES,
     DEFAULT_CAPABILITY_PROFILE,
     IMAGE_FILE_MIME_TYPES,
@@ -24,6 +24,52 @@ class OpenRouterProvider(ModelProvider):
     provider_name = "OpenRouter"
     default_api_url = "https://openrouter.ai/api/v1"
     default_official_url = "https://openrouter.ai/settings/credits"
+
+    def list_models(self, api_url, api_key, cancellation_token=None):
+        from dataclasses import replace
+        from backend.app.providers.errors import ProviderModelListError, ProviderChatCompletionError
+        models = {}
+        failures = []
+        try:
+            models.update({m.remote_model_id: m for m in super().list_models(api_url, api_key, cancellation_token)})
+        except ProviderModelListError as exc:
+            failures.append(exc)
+        try:
+            payload = self.transport.request_json(url=api_url.rstrip("/") + "/embeddings/models", api_key=api_key, cancellation_token=cancellation_token)
+            models.update({m.remote_model_id: replace(m, model_type="embedding") for m in self.parse_model_payload(payload)})
+        except ProviderChatCompletionError as exc:
+            failures.append(exc)
+        if not models and failures:
+            raise ProviderModelListError(str(failures[0]), code=failures[0].code or "MODEL_ERROR")
+        return list(models.values())
+
+    def embedding_modalities(self, protocol):
+        return {"text", "image", "audio", "video", "document"}
+
+    def build_embedding_request(self, api_url, model, inputs, mode, dimensions, protocol):
+        if all(item["modality"] == "text" for item in inputs) and mode == "independent":
+            return super().build_embedding_request(api_url, model, inputs, mode, dimensions, protocol)
+        from backend.app.providers.errors import ProviderChatCompletionError
+        parts = []
+        for item in inputs:
+            modality, value = item["modality"], item["value"]
+            if modality == "text":
+                part = {"type": "text", "text": value}
+            elif modality == "image":
+                part = {"type": "image_url", "image_url": {"url": value}}
+            elif modality == "audio":
+                part = {"type": "input_audio", "input_audio": {"data": value, "format": item.get("format", "wav")}}
+            elif modality == "video":
+                part = {"type": "input_video", "input_video": {"data": value, "format": item.get("format", "mp4")}}
+            elif modality == "document":
+                part = {"type": "input_file", "input_file": {"data": value, "format": item.get("format", "pdf")}}
+            else:
+                raise ProviderChatCompletionError("输入模态未确认。", code="EMBEDDING_PROTOCOL_UNCONFIRMED")
+            parts.append(part)
+        payload = {"model": model, "input": [{"content": parts}] if mode == "fusion" else [{"content": [part]} for part in parts], "encoding_format": "float"}
+        if dimensions is not None:
+            payload["dimensions"] = dimensions
+        return api_url.rstrip("/") + "/embeddings", payload
 
     def is_context_overflow(self, details: dict[str, Any]) -> bool:
         if not _can_classify_context_error(details):

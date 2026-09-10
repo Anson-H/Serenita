@@ -18,20 +18,20 @@ test("real API, database, UI and Harness agree on settings, reports, favorites a
   await expect(page.locator('input[type="file"][aria-label="附加文件"]')).toHaveAttribute("accept", capabilities.file_mime_types.join(","));
 
   const created = await page.request.post(`/api/members/${memberId}/reports`, { headers, data: {
-    report_type: "其它报告", report_name: "联调报告", report_time: "2026-09-06T09:00:00+08:00", institution_name: "联调机构", other_report: { report_body: "联调报告事实" }
+    report_type: "其它医疗报告", report_name: "联调报告", report_time: "2026-09-06T09:00:00+08:00", institution_name: "联调机构", other_report: { report_body: "联调报告事实" }
   } });
   expect(created.status(), await created.text()).toBe(201);
   const report = await created.json();
   await page.goto(`/reports/${memberId}/${report.report_id}`);
   await expect(page.getByText("联调报告事实", { exact: true })).toBeVisible();
-  const updated = await page.request.patch(`/api/members/${memberId}/reports/${report.report_id}/fields`, { headers, data: { field: "report_name", value: "联调报告已修改" } });
+  const updated = await page.request.patch(`/api/members/${memberId}/reports/${report.report_id}/fields`, { headers, data: { field: "report_name", value: "联调报告已更新" } });
   expect(updated.ok()).toBeTruthy();
   const favorite = await page.request.post("/api/favorites", { headers, data: { member_id: memberId, source_type: "report", source_id: report.report_id, tags: ["联调"] } });
   expect(favorite.ok(), await favorite.text()).toBeTruthy();
   const favoriteId = (await favorite.json()).favorite_id;
   expect((await (await page.request.get(`/api/favorites/${favoriteId}`)).json()).content_snapshot).toContain("联调报告事实");
   await page.goto("/favorites");
-  await expect(page.getByText("其它报告 - 联调报告已修改", { exact: true })).toBeVisible();
+  await expect(page.getByText("其它医疗报告 - 联调报告已更新", { exact: true })).toBeVisible();
 
   await page.goto("/");
   const composer = page.locator(".conversation-composer textarea");

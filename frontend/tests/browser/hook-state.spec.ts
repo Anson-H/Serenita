@@ -24,14 +24,17 @@ test("report upload retry retains successful resources and does not submit a bat
       },
       submitMessage: async input => {
         submissions.push({ memberId: input.memberId, sessionId: input.sessionId, resources: input.contextResources });
-        input.onSubmitted?.();
-        return undefined;
+        if (submissions.length === 1) return undefined;
+        input.onSubmitted?.("upload-session");
+        return { session_id: "upload-session" } as NonNullable<Awaited<ReturnType<Options["submitMessage"]>>>;
       }
     };
     const h = mountHook(useReportUpload, options);
     await act(async () => h.current.startReportUpload(files));
     const partial = { uploaded: h.current.uploadedReportNames, remaining: h.current.remainingReportFiles.map(file => file.name), submissions: submissions.length };
-    await act(async () => h.current.startReportUpload(h.current.remainingReportFiles));
+    await act(async () => h.current.retryReportUpload());
+    const awaitingSubmit = { canRetry: h.current.canRetryReportUpload, remaining: h.current.remainingReportFiles.length };
+    await act(async () => h.current.retryReportUpload());
     const afterRetry = { uploaded: h.current.uploadedReportNames, remaining: h.current.remainingReportFiles.length };
     let pending!: Promise<void>;
     act(() => { pending = h.current.startReportUpload(files); });
@@ -39,16 +42,18 @@ test("report upload retry retains successful resources and does not submit a bat
     h.render(options);
     await act(async () => { release!(); await pending; });
     h.unmount();
-    return { uploads, submissions, partial, afterRetry, errors: errors.flat() };
+    return { uploads, submissions, partial, awaitingSubmit, afterRetry, errors: errors.flat() };
   });
   expect(results.uploads).toEqual([["a.png", "b.png"], ["b.png"], ["a.png", "b.png"]]);
   expect(results.partial).toEqual({ uploaded: ["a.png"], remaining: ["b.png"], submissions: 0 });
+  expect(results.awaitingSubmit).toEqual({ canRetry: true, remaining: 0 });
   expect(results.afterRetry).toEqual({ uploaded: [], remaining: 0 });
   expect(results.errors).toContain("second upload failed");
-  expect(results.submissions).toEqual([{ memberId: "member-a", sessionId: "upload-session", resources: [
+  expect(results.submissions).toHaveLength(2);
+  for (const submission of results.submissions) expect(submission).toEqual({ memberId: "member-a", sessionId: "upload-session", resources: [
     { resource_type: "file", resource_id: "a.png", original_filename: "a.png" },
     { resource_type: "file", resource_id: "b.png", original_filename: "b.png" }
-  ] }]);
+  ] });
 });
 
 test("member selection and request ownership survive A-B-A renders and unmount", async ({ page }) => {
@@ -164,13 +169,14 @@ test("conversation lifecycle loads models during a slow list request and preserv
   const results = await page.evaluate(async () => {
     const { mountHook, act } = await import("../fixtures/hook-state");
     const { useConversationLifecycle } = await import("../../src/features/conversations/useConversationLifecycle");
+    const { ConversationDraftStore } = await import("../../src/features/conversations/conversationDraftStore");
     const { apiClient } = await import("../fixtures/hook-state");
     type Options = Parameters<typeof useConversationLifecycle>[0];
     let finish!: (value: Awaited<ReturnType<typeof apiClient.fetchConversations>>) => void;
     apiClient.fetchConversations = () => new Promise(resolve => { finish = resolve; });
     apiClient.fetchFavorites = async () => ({ favorites: [], has_more: false, next_cursor: null });
     apiClient.fetchModels = async () => ({ models: [] });
-    apiClient.fetchModelDefaults = async () => ({ defaults: { chat: null, compact: null, title: null, vision_parse: null } });
+    apiClient.fetchModelDefaults = async () => ({ defaults: { chat: null, compact: null, title: null, vision_parse: null, text_embedding: null, multimodal_embedding: null } });
     const detail: Awaited<ReturnType<typeof apiClient.getConversation>> = {
       session_id: "session", records: [], pending_turns: [], queued_inputs: [], member_id: null,
       member_name: null, access_state: "available", title: "会话", parent_session_id: null,
@@ -179,6 +185,8 @@ test("conversation lifecycle loads models during a slow list request and preserv
     apiClient.getConversation = async () => detail;
     let modelReady = false, cleared = 0;
     const base: Partial<Options> = {
+      draftStore: new ConversationDraftStore(),
+      refreshModelCatalog: async () => { await Promise.all([apiClient.fetchModels(), apiClient.fetchModelDefaults()]); modelReady = true; },
       route: "/", activeStreamRef: { current: null }, conversationRequestSeqRef: { current: 0 },
       currentSessionId: null, conversationDetail: null,
       setModelCatalog: catalog => { if (typeof catalog !== "function") modelReady = catalog.status === "ready"; },

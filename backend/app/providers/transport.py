@@ -38,6 +38,33 @@ def _messages_include_native_attachment(messages: list[dict[str, Any]]) -> bool:
 
 
 class ProviderTransport:
+    def request_json(self, *, url, api_key, payload=None, cancellation_token=None, timeout_seconds=None):
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "Accept": "application/json"}
+        content = json.dumps(payload, allow_nan=False).encode() if payload is not None else None
+        method = "POST" if payload is not None else "GET"
+        timeout = timeout_seconds or self.policy.timeout_seconds
+        try:
+            if cancellation_token is not None:
+                status, body = self._request_bytes_cancellable(method=method, url=url, headers=headers, content=content, timeout_seconds=timeout, cancellation_token=cancellation_token)
+            else:
+                with self._urlopen(request.Request(url, data=content, headers=headers, method=method), timeout=timeout) as response:
+                    status, body = response.status, response.read()
+        except error.HTTPError as exc:
+            status, body = exc.code, exc.read()
+        except (TimeoutError, socket.timeout) as exc:
+            raise ProviderChatCompletionError("连接超时", code="MODEL_TIMEOUT") from exc
+        except OSError as exc:
+            raise ProviderChatCompletionError("模型服务连接失败", code="MODEL_CONNECTION_FAILED") from exc
+        if not 200 <= status < 300:
+            raise self.errors.completion_error(status, _decode_error_body(body))
+        try:
+            result = json.loads(body)
+        except (ValueError, UnicodeError) as exc:
+            raise ProviderChatCompletionError("接口返回的 JSON 无效", code="INVALID_MODEL_RESPONSE") from exc
+        if not isinstance(result, dict) or result.get("error") or result.get("code"):
+            raise ProviderChatCompletionError("接口未返回有效结果", code="INVALID_MODEL_RESPONSE")
+        return result
+
     def __init__(
         self,
         policy,

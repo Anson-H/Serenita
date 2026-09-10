@@ -121,7 +121,6 @@ export function useConversationLayout({
   const observedComposerRef = useRef<HTMLFormElement | null>(null);
   const composerMeasurementFrameRef = useRef<number | null>(null);
   const measurementRunningRef = useRef(false);
-  const naturalOverlayHeightRef = useRef(0);
   const bindingKey = `${activeScenario}:${route}:${conversationEnabled ? "on" : "off"}`;
   const scrollController = useConversationScrollController({
     bindingKey,
@@ -189,6 +188,28 @@ export function useConversationLayout({
         `${Math.floor(visibleStage.height)}px`
       );
 
+      const previousComposerRect = composer.getBoundingClientRect();
+      const currentlyExtreme =
+        stage.dataset.heightExtreme === "true" ||
+        composer.dataset.heightExtreme === "true";
+      const visibleBottomInset = Math.max(
+        0,
+        visibleStage.bottom - previousComposerRect.bottom
+      );
+      const estimatedSafeAreaBottom = Math.max(
+        0,
+        visibleBottomInset - (currentlyExtreme ? itemGap : contentGap)
+      );
+      const stableBottomInset = contentGap + estimatedSafeAreaBottom;
+
+      // Measure the current unconstrained content. A cached height from the first
+      // layout can keep a short window compact after its content or width changes.
+      for (const element of [stage, composer]) {
+        setBooleanDataAttribute(element, "heightCompact", false);
+        setBooleanDataAttribute(element, "heightExtreme", false);
+        element.style.removeProperty("--composer-max-height");
+      }
+
       if (textarea) {
         textarea.style.height = `${COMPOSER_TEXTAREA_MIN_HEIGHT_PX}px`;
         const borderHeight = textarea.offsetHeight - textarea.clientHeight;
@@ -207,32 +228,11 @@ export function useConversationLayout({
       }
 
       let composerRect = composer.getBoundingClientRect();
-      const visibleBottomInset = Math.max(
-        0,
-        visibleStage.bottom - composerRect.bottom
-      );
-      const currentlyCompact =
-        stage.dataset.heightCompact === "true" ||
-        composer.dataset.heightCompact === "true";
-      const currentlyExtreme =
-        stage.dataset.heightExtreme === "true" ||
-        composer.dataset.heightExtreme === "true";
-      const estimatedSafeAreaBottom = Math.max(
-        0,
-        visibleBottomInset - (currentlyExtreme ? itemGap : contentGap)
-      );
-      const stableBottomInset = contentGap + estimatedSafeAreaBottom;
-      const measuredOverlayHeight = Math.ceil(
+      const desiredOverlayHeight = Math.ceil(
         Math.max(composerRect.height, composer.scrollHeight) +
         stableBottomInset +
         contentGap
       );
-      if (!currentlyCompact) {
-        naturalOverlayHeightRef.current = measuredOverlayHeight;
-      }
-      const desiredOverlayHeight = currentlyCompact
-        ? Math.max(naturalOverlayHeightRef.current, measuredOverlayHeight)
-        : measuredOverlayHeight;
       const preferredComposerBudget = Math.max(
         0,
         visibleStage.height -
@@ -371,7 +371,6 @@ export function useConversationLayout({
     composerObserverRef.current?.disconnect();
     composerObserverRef.current = null;
     observedComposerRef.current = node;
-    naturalOverlayHeightRef.current = 0;
     const stage = node?.closest<HTMLElement>("[data-composer-stage]") ?? conversationStageRef.current;
     if (node && stage) {
       setBooleanDataAttribute(stage, "heightCompact", false);

@@ -46,18 +46,24 @@ class WebAccessService:
         repository: WebAccessRepository | None = None,
         adapter_factory: AdapterFactory | None = None,
         observation_resolver: ObservationResolver | None = None,
+        cancellation_token=None,
+        deadline: float | None = None,
     ):
         self.repository = repository or WebAccessRepository()
         self._adapter_factory = adapter_factory or _default_adapter_factory
         self._observation_resolver = observation_resolver
+        self.cancellation_token = cancellation_token
+        self.deadline = deadline
 
     def for_runtime(
-        self, observation_resolver: ObservationResolver | None
+        self, observation_resolver: ObservationResolver | None, *, cancellation_token=None, deadline=None
     ) -> "WebAccessService":
         return WebAccessService(
             repository=self.repository,
             adapter_factory=self._adapter_factory,
             observation_resolver=observation_resolver,
+            cancellation_token=cancellation_token,
+            deadline=deadline,
         )
 
     @staticmethod
@@ -90,7 +96,7 @@ class WebAccessService:
         return normalized
 
     def _adapter(self, provider_id: str, api_url: str) -> WebProviderAdapter:
-        return self._adapter_factory(provider_id, api_url)
+        return self._adapter_factory(provider_id, api_url).for_execution(self.cancellation_token, self.deadline)
 
     def settings(self, account_id: str) -> dict[str, Any]:
         stored = self.repository.get(account_id)
@@ -425,7 +431,7 @@ class WebAccessService:
             )
             raise WebAccessError(
                 "WEB_NO_CONTENT",
-                "选中的搜索结果未取得正文。",
+                "未能读取所选搜索结果的网页正文。",
                 details={
                     "failures": [
                         {

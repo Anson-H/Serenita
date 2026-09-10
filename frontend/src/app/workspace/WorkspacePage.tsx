@@ -3,7 +3,7 @@ import { useStatusNotification } from "../../components/StatusNotificationCenter
 import { PatientShell } from "../PatientShell";
 import type { RoutePath } from "../routes";
 import { WorkspaceRouteContent } from "./WorkspaceRouteContent";
-import { useWorkspacePageModel } from "./useWorkspacePageModel";
+import { useConversationController } from "../../features/conversations/useConversationController";
 
 type WorkspacePageProps = {
   route: RoutePath;
@@ -22,7 +22,7 @@ export function WorkspacePage({
   onAccountProfileChange,
   ShellComponent = PatientShell
 }: WorkspacePageProps) {
-  const workspaceModel = useWorkspacePageModel({
+  const workspaceModel = useConversationController({
     route,
     onNavigate,
     session,
@@ -54,8 +54,8 @@ export function WorkspacePage({
       title:
         workspaceModel.reportWorkspace.selectedReportId &&
           !workspaceModel.reportWorkspace.selectedReport
-          ? "报告详情加载失败"
-          : "报告操作未完成",
+          ? "医疗报告详情加载失败"
+          : "医疗报告操作未完成",
       tone: "error"
     }
   );
@@ -69,7 +69,7 @@ export function WorkspacePage({
       onClick: () => void workspaceModel.reportWorkspace.loadReports()
     },
     id: "report-list-load-error",
-    title: "报告列表加载失败",
+    title: "医疗报告列表加载失败",
     tone: "error"
   });
   useStatusNotification(
@@ -90,7 +90,7 @@ export function WorkspacePage({
       }
       : undefined,
     id: "report-analysis-error",
-    title: "报告解读未完成",
+    title: "医疗报告解读未完成",
     tone: "error"
   });
 

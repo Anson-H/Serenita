@@ -22,6 +22,7 @@ type WorkspaceRouteShellProps = {
   activeScenario: ScenarioTab;
   children: ReactNode;
   conversations: ConversationSummary[];
+  conversationPagination?: { hasMore: boolean; loading: boolean; error: string; loadMore: () => Promise<void> };
   currentSession: Extract<AuthSession, { authenticated: true }>;
   currentSessionId: string | null;
   onBatchDeleteConversations: (sessionIds: string[]) => Promise<string[]>;
@@ -96,6 +97,7 @@ export function WorkspaceRouteShell({
   activeScenario,
   children,
   conversations,
+  conversationPagination,
   currentSession,
   currentSessionId,
   onBatchDeleteConversations,
@@ -116,6 +118,7 @@ export function WorkspaceRouteShell({
       healthNavigation={healthNavigation}
       activeScenario={activeScenario}
       conversations={conversations}
+      conversationPagination={conversationPagination}
       currentSession={currentSession}
       currentSessionId={currentSessionId}
       mobileSidebarOpen={shellControls.mobileSidebarOpen}

@@ -1,3 +1,4 @@
+import { navigationLabels } from "../../components/navigationLabels";
 import { GroupedList } from "../../components/GroupedList";
 import { TrashIcon } from "../../components/icons";
 import {
@@ -48,7 +49,7 @@ export function LabItemFields({
           onClick={() => onNavigate("primary-category")}
           type="button"
         >
-          <span>主分类</span>
+          <span>{navigationLabels.primaryCategory}</span>
           <small className="dictionary-category-navigation-summary" title={primaryCategorySummary}>
             {primaryCategorySummary}
           </small>
@@ -60,7 +61,7 @@ export function LabItemFields({
           onClick={() => onNavigate("related-categories")}
           type="button"
         >
-          <span>关联分类</span>
+          <span>{navigationLabels.relatedCategories}</span>
           <SettingsTrailingSummary className="dictionary-category-navigation-summary" title={relatedCategorySummary}>
             {relatedCategorySummary}
           </SettingsTrailingSummary>

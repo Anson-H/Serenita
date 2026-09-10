@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass, field
 from enum import IntEnum
 from functools import lru_cache
@@ -40,6 +41,8 @@ class Column:
     nullable: bool = True
     default: str | None = None
     collation: str | None = None
+    non_blank: bool | None = None
+    json_kind: str | None = None
 
     def __post_init__(self) -> None:
         _require_identifier(self.name, "column")
@@ -59,6 +62,36 @@ class Column:
         if self.default is not None:
             parts.extend(("DEFAULT", self.default))
         return " ".join(parts)
+
+    @property
+    def requires_content(self) -> bool:
+        if self.non_blank is not None:
+            return self.non_blank
+        return not self.nullable or self.group != ColumnGroup.DATA
+
+    def value_checks(self) -> tuple[CheckConstraint, ...]:
+        expressions = []
+        if self.storage_type == "TEXT" and self.requires_content:
+            expressions.append(non_blank_sql(self.name))
+        if self.storage_type == "BLOB":
+            expressions.append(f"typeof({self.name}) = 'blob' AND length({self.name}) > 0")
+        if self.json_kind is not None:
+            if self.json_kind not in {"array", "object", "container"}:
+                raise ValueError("JSON column must contain an array or object")
+            kinds = "IN ('array','object')" if self.json_kind == 'container' else f"= '{self.json_kind}'"
+            expressions.append(
+                f"CASE WHEN json_valid({self.name}) THEN "
+                f"json_type({self.name}) {kinds} ELSE 0 END"
+            )
+        return tuple(CheckConstraint(
+            f"{self.name} IS NULL OR ({expression})" if self.nullable else expression
+        ) for expression in expressions)
+
+
+def non_blank_sql(name: str) -> str:
+    """Match Python str.strip(), including tabs, newlines and Unicode spaces."""
+    whitespace = "char(9,10,11,12,13,28,29,30,31,32,133,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288)"
+    return f"typeof({name}) = 'text' AND length(trim({name}, {whitespace})) > 0"
 
 
 @dataclass(frozen=True)
@@ -198,9 +231,49 @@ class Table:
         clauses.append(f"PRIMARY KEY ({', '.join(self.primary_key)})")
         clauses.extend(foreign_key.sql() for foreign_key in self.foreign_keys)
         clauses.extend(constraint.sql() for constraint in self.unique_constraints)
-        clauses.extend(check.sql() for check in self.checks)
+        clauses.extend(check.sql() for check in self.value_checks)
         body = ",\n    ".join(clauses)
         return f"CREATE TABLE IF NOT EXISTS {self.name} (\n    {body}\n)"
+
+    @property
+    def value_checks(self) -> tuple[CheckConstraint, ...]:
+        return tuple(check for column in self.columns for check in column.value_checks()) + self.checks
+
+    def validate_values(self, values: dict, *, partial: bool = False) -> None:
+        """Validate application writes using the same expressions as SQLite.
+
+        Partial writes check supplied columns; merged records additionally check
+        cross-column rules. This does not access or modify a stored database.
+        """
+        columns = [c for c in self.columns if not partial or c.name in values]
+        if not columns:
+            return
+        with closing(sqlite3.connect(":memory:")) as connection:
+            row = {}
+            for column in columns:
+                value = values.get(column.name)
+                if column.name not in values and column.default is not None:
+                    value = connection.execute(f"SELECT {column.default}").fetchone()[0]
+                if value is None and not column.nullable:
+                    raise ValueError(f"{self.name}.{column.name} 不能为空。")
+                row[column.name] = value
+            checks = (
+                tuple(check for c in columns for check in c.value_checks())
+                if partial else self.value_checks
+            )
+            if not checks:
+                return
+            source = ", ".join(f"? AS {name}" for name in row)
+            predicates = ", ".join(f"({check.expression})" for check in checks)
+            try:
+                results = connection.execute(
+                    f"WITH input AS (SELECT {source}) SELECT {predicates} FROM input",
+                    tuple(row.values()),
+                ).fetchone()
+            except sqlite3.Error as exc:
+                raise ValueError(f"{self.name} 字段内容格式不符合要求。") from exc
+            if any(result == 0 for result in results):
+                raise ValueError(f"{self.name} 字段内容或必填条件不符合要求。")
 
     def create_index_sql(self) -> tuple[str, ...]:
         return tuple(index.sql(self.name) for index in self.indexes)

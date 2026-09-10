@@ -1,6 +1,5 @@
 """Request and response schemas."""
 from backend.app.schemas.report import (
-    ExtractedReports,
     ParsedReport,
 )
 from backend.app.schemas.lab_dictionary import (
@@ -18,7 +17,6 @@ __all__ = [
     "CreateLabItemRequest",
     "ConversationPreferences",
     "DeleteLabDictionaryEntryRequest",
-    "ExtractedReports",
     "MergeLabDictionaryItemsRequest",
     "ParsedReport",
     "UpdateLabCategoryRequest",

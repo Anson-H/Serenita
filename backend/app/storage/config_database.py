@@ -1,4 +1,5 @@
 from __future__ import annotations
+from backend.app.storage.notification_database import ACCOUNT_PREFERENCES_TABLE
 
 import sqlite3
 from pathlib import Path
@@ -129,6 +130,13 @@ CONVERSATION_PREFERENCES_TABLE_SCHEMA = Table(
             default="1",
         ),
         Column(
+            "is_model_identity_visible",
+            "INTEGER",
+            ColumnGroup.STATE,
+            nullable=False,
+            default="0",
+        ),
+        Column(
             "is_token_usage_visible",
             "INTEGER",
             ColumnGroup.STATE,
@@ -213,6 +221,7 @@ CONVERSATION_PREFERENCES_TABLE_SCHEMA = Table(
                 "is_context_window_usage_visible",
                 "is_related_content_visible",
                 "is_token_usage_visible",
+                "is_model_identity_visible",
                 "is_current_user_message_visible",
                 "is_conversation_history_visible",
                 "is_context_model_tool_request_visible",
@@ -285,6 +294,7 @@ WEB_PROVIDERS_TABLE_SCHEMA = Table(
 CONFIG_DATABASE_SCHEMA = Database(
     name="settings.db",
     tables=(
+        ACCOUNT_PREFERENCES_TABLE,
         MODEL_PROVIDERS_TABLE_SCHEMA,
         MODELS_TABLE_SCHEMA,
         MODEL_ACCESS_SETTINGS_TABLE_SCHEMA,
@@ -377,6 +387,7 @@ def initialize_config_database(
         connection.execute(create_models_table_sql())
         ensure_model_access_settings_table(connection)
         for table in (
+            ACCOUNT_PREFERENCES_TABLE,
             MEMBER_PREFERENCES_TABLE_SCHEMA,
             CONVERSATION_PREFERENCES_TABLE_SCHEMA,
             WEB_PROVIDERS_TABLE_SCHEMA,
@@ -393,6 +404,7 @@ def initialize_config_database(
             "INSERT OR IGNORE INTO conversation_preferences (singleton_id) VALUES (1)"
         )
         timestamp = local_now_iso()
+        connection.execute("INSERT OR IGNORE INTO account_preferences (singleton_id,notifications_updated_at) VALUES (1,?)", (timestamp,))
         connection.executemany(
             """
             INSERT OR IGNORE INTO web_providers (

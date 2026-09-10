@@ -1,3 +1,4 @@
+import { navigationLabels } from "../../components/navigationLabels";
 import type { ComponentType } from "react";
 import { GroupedList } from "../../components/GroupedList";
 
@@ -15,16 +16,19 @@ import {
 import type { AccountPanel, SettingsSection } from "./settingsTypes";
 
 export type SettingsNavigationTarget =
+  | "theme"
   | "members"
   | "account-profile"
   | "account-password"
   | "account-grants"
+  | "account-notifications"
   | "providers"
   | "defaults"
   | "conversation"
   | "web"
   | "lab-categories"
-  | "lab-items";
+  | "lab-items"
+  | "medication-catalog";
 
 type NavigationItem = {
   icon: ComponentType<{ className?: string }>;
@@ -37,33 +41,41 @@ const settingsNavigationGroups: readonly {
   items: readonly NavigationItem[];
 }[] = [
     {
-      label: "账号",
+      label: "账号安全",
       items: [
-        { icon: UserIcon, label: "账号资料", target: "account-profile" },
-        { icon: LockIcon, label: "密码安全", target: "account-password" },
-        { icon: UserIcon, label: "授权管理", target: "account-grants" }
+        { icon: UserIcon, label: navigationLabels.accountProfile, target: "account-profile" },
+        { icon: LockIcon, label: navigationLabels.accountPassword, target: "account-password" },
+        { icon: UserIcon, label: navigationLabels.accountGrants, target: "account-grants" }
+      ]
+    },
+    {
+      label: navigationLabels.notifications,
+      items: [
+        { icon: MessageIcon, label: navigationLabels.notifications, target: "account-notifications" }
       ]
     },
     {
       label: "模型与工具",
       items: [
-        { icon: ServerIcon, label: "模型提供方", target: "providers" },
-        { icon: SlidersIcon, label: "默认模型", target: "defaults" },
-        { icon: GlobeIcon, label: "联网工具", target: "web" }
+        { icon: ServerIcon, label: navigationLabels.providers, target: "providers" },
+        { icon: SlidersIcon, label: navigationLabels.defaults, target: "defaults" },
+        { icon: GlobeIcon, label: navigationLabels.web, target: "web" }
       ]
     },
     {
       label: "数据",
       items: [
-        { icon: ListTreeIcon, label: "检验分类目录", target: "lab-categories" },
-        { icon: ListChecksIcon, label: "检验指标目录", target: "lab-items" }
+        { icon: ListTreeIcon, label: navigationLabels.labCategories, target: "lab-categories" },
+        { icon: ListChecksIcon, label: navigationLabels.labItems, target: "lab-items" },
+        { icon: ListChecksIcon, label: "药品目录", target: "medication-catalog" }
       ]
     },
     {
       label: "显示",
       items: [
-        { icon: UserIcon, label: "健康档案", target: "members" },
-        { icon: MessageIcon, label: "聊天设置", target: "conversation" }
+        { icon: SlidersIcon, label: navigationLabels.theme, target: "theme" },
+        { icon: UserIcon, label: navigationLabels.health, target: "members" },
+        { icon: MessageIcon, label: navigationLabels.conversation, target: "conversation" }
       ]
     }
   ];
@@ -79,6 +91,7 @@ function navigationTargetIsActive(
   if (target === "account-password") {
     return activeSection === "account" && accountPanel === "password";
   }
+  if (target === "account-notifications") return activeSection === "account" && accountPanel === "notifications";
   if (target === "account-grants") {
     return activeSection === "account" && accountPanel === "grants";
   }

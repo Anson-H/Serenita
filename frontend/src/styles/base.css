@@ -1,6 +1,7 @@
 /* Base reset and native element defaults */
 
 :root {
+  background: var(--color-surface);
   color: var(--color-foreground);
   font-family: var(--font-ui);
   font-size: var(--text-body);
@@ -40,6 +41,7 @@
 }
 
 body {
+  background: var(--color-surface);
   margin: 0;
   min-width: var(--size-page-min-width);
   min-height: 100vh;
@@ -81,6 +83,10 @@ button:disabled {
   *::before,
   *::after {
     scroll-behavior: auto !important;
-    transition-duration: 1ms !important;
+    transition-duration: 0s !important;
   }
 }
+
+/* Links and native controls share the theme’s text and selection colors. */
+a { color: inherit; }
+:root { accent-color: var(--color-accent); }

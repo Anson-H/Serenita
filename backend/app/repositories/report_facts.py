@@ -322,16 +322,8 @@ class ReportFacts:
 
             if target is not None:
                 target_report_id = str(target["report_id"])
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO report_source_links(
-                        report_id, resource_id, member_id, is_primary, created_at
-                    )
-                    SELECT ?, resource_id, member_id, 0, ?
-                    FROM report_source_links
-                    WHERE member_id = ? AND report_id = ?
-                    """,
-                    (target_report_id, timestamp, member_id, source_report_id),
+                self.copy_report_sources(
+                    transaction, member_id, source_report_id, target_report_id
                 )
                 connection.execute(
                     """
@@ -388,19 +380,9 @@ class ReportFacts:
                         timestamp,
                     ),
                 )
-                copied_sources = connection.execute(
-                    """
-                    INSERT INTO report_source_links(
-                        report_id, resource_id, member_id, is_primary, created_at
-                    )
-                    SELECT ?, resource_id, member_id, is_primary, ?
-                    FROM report_source_links
-                    WHERE member_id = ? AND report_id = ?
-                    """,
-                    (target_report_id, timestamp, member_id, source_report_id),
-                ).rowcount
-                if not copied_sources:
-                    raise ValueError("拆分检验报告时未找到原件来源。")
+                self.copy_report_sources(
+                    transaction, member_id, source_report_id, target_report_id
+                )
                 connection.execute(
                     """
                     UPDATE lab_test_report
@@ -447,6 +429,45 @@ class ReportFacts:
             except (IndexError, ValueError):
                 continue
         return f"{base}{maximum + 1:04d}"
+
+    def copy_report_sources(
+        self, transaction: ReportTransaction, member_id: str,
+        source_report_id: str, target_report_id: str,
+    ) -> None:
+        """Preserve evidence when facts move; empty manual sources stay empty."""
+        if source_report_id == target_report_id:
+            return
+        db = transaction.connection
+        rows = db.execute(
+            """SELECT resource_id FROM report_source_links
+            WHERE member_id = ? AND report_id = ?
+            ORDER BY is_primary DESC, created_at, resource_id""",
+            (member_id, source_report_id),
+        ).fetchall()
+        timestamp = _now_iso()
+        copied = 0
+        for row in rows:
+            copied += db.execute(
+                """INSERT OR IGNORE INTO report_source_links
+                (report_id, resource_id, member_id, is_primary, created_at)
+                VALUES (?, ?, ?, 0, ?)""",
+                (target_report_id, row["resource_id"], member_id, timestamp),
+            ).rowcount
+        if rows and not db.execute(
+            """SELECT 1 FROM report_source_links
+            WHERE member_id = ? AND report_id = ? AND is_primary = 1""",
+            (member_id, target_report_id),
+        ).fetchone():
+            db.execute(
+                """UPDATE report_source_links SET is_primary = 1
+                WHERE member_id = ? AND report_id = ? AND resource_id = ?""",
+                (member_id, target_report_id, rows[0]["resource_id"]),
+            )
+        if copied:
+            db.execute(
+                "UPDATE reports SET updated_at = ? WHERE member_id = ? AND report_id = ?",
+                (timestamp, member_id, target_report_id),
+            )
 
     def category_usage(self, transaction: ReportTransaction, member_id, category_name):
         connection = transaction.connection
@@ -543,6 +564,7 @@ class ReportFacts:
         collisions = connection.execute(
             """
             SELECT DISTINCT
+                source_result.member_id AS member_id,
                 source_result.report_id AS source_report_id,
                 source_result.result_text AS source_result_text,
                 source_result.reference_text AS source_reference_text,
@@ -583,6 +605,7 @@ class ReportFacts:
             (target_item_id, source_item_id),
         ).fetchall()
         exact_duplicate_reports: set[str] = set()
+        source_transfers: set[tuple[str, str, str]] = set()
         result_conflicts: list[dict[str, Any]] = []
         for row in collisions:
             values_match = (
@@ -595,6 +618,10 @@ class ReportFacts:
             )
             if values_match:
                 exact_duplicate_reports.add(str(row["source_report_id"]))
+                source_transfers.add((
+                    str(row["member_id"]), str(row["source_report_id"]),
+                    str(row["target_report_id"]),
+                ))
                 continue
             result_conflicts.append(
                 {
@@ -618,6 +645,10 @@ class ReportFacts:
                 details=result_conflicts,
             )
 
+        for member_id, source_report_id, target_report_id in sorted(source_transfers):
+            self.copy_report_sources(
+                transaction, member_id, source_report_id, target_report_id
+            )
         for report_id in exact_duplicate_reports:
             connection.execute(
                 """

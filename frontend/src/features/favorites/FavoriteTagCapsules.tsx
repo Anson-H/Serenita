@@ -1,17 +1,16 @@
-import { useLayoutEffect, useRef } from "react";
+import { navigationLabels } from "../../components/navigationLabels";
+import {ContentDialog} from "../../components/ContentDialog";
+import { useId } from "react";
 import {
+  CheckIcon,
   EditIcon,
   PlusIcon,
   XIcon
 } from "../../components/icons";
 import {
-  captureScrollPosition,
-  focusWithoutScroll,
   formTextValue,
   isImeComposing,
-  restoreScrollPosition,
-  syncCommittedText,
-  type ScrollPositionSnapshot
+  syncCommittedText
 } from "../../utils/inputMethod";
 
 type FavoriteTagCapsulesProps = {
@@ -43,15 +42,8 @@ export function FavoriteTagCapsules({
   tags,
   title
 }: FavoriteTagCapsulesProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const scrollSnapshotRef = useRef<ScrollPositionSnapshot | null>(null);
 
-  useLayoutEffect(() => {
-    if (!editing || !adding) return;
-    focusWithoutScroll(inputRef.current);
-    restoreScrollPosition(scrollSnapshotRef.current);
-    scrollSnapshotRef.current = null;
-  }, [adding, editing]);
+  const formId=useId();
 
   return (
     <div
@@ -87,7 +79,7 @@ export function FavoriteTagCapsules({
         <span className="favorite-tag-pill-empty metadata-token-empty">未设置标签</span>
       )}
       {editing && adding ? (
-        <form
+        <ContentDialog creation title={navigationLabels.addTag} onClose={()=>onCommitAdd('')} actions={<><button className="control control--primary" type="submit" form={formId} disabled={!draft.trim()}><CheckIcon/>完成</button></>}><form id={formId}
           className="favorite-tag-add-form metadata-token-add-form"
           onSubmit={(event) => {
             event.preventDefault();
@@ -95,7 +87,7 @@ export function FavoriteTagCapsules({
           }}
         >
           <input
-            aria-label={`新增标签：${title}`}
+            aria-label={`添加标签：${title}`}
             name="favorite-tag"
             onChange={(event) => onDraftChange(event.target.value)}
             onCompositionEnd={(event) => syncCommittedText(event, onDraftChange)}
@@ -105,22 +97,16 @@ export function FavoriteTagCapsules({
               }
             }}
             placeholder="新标签"
-            ref={inputRef}
             value={draft}
           />
-        </form>
+        </form></ContentDialog>
       ) : null}
       {editing && !adding ? (
         <button
-          aria-label={`新增标签：${title}`}
+          aria-label={`添加标签：${title}`}
           className="control control--inline-compact control--icon control--ghost favorite-tag-add-button metadata-token-add-button metadata-token-action-button"
           data-interaction-owner="self"
-          onClick={(event) => {
-            scrollSnapshotRef.current = captureScrollPosition(
-              event.currentTarget.closest<HTMLElement>(".favorite-list")
-            );
-            onStartAdd();
-          }}
+          onClick={onStartAdd}
           type="button"
         >
           <PlusIcon />

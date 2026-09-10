@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from backend.app.core.time import local_now_iso
-from backend.app.storage.config_database import initialize_config_database
+from backend.app.storage.config_database import initialize_config_database, WEB_PROVIDERS_TABLE_SCHEMA
 from backend.app.storage.crypto import (
     seal_web_secret,
     unseal_web_secret,
@@ -106,6 +106,7 @@ class WebAccessRepository:
     ) -> None:
         self._initialize(account_id)
         provider = self._provider_id(provider_id)
+        WEB_PROVIDERS_TABLE_SCHEMA.validate_values({'provider_id': provider, 'api_url': api_url}, partial=True)
         timestamp = local_now_iso()
         with connect(self._path(account_id)) as connection:
             connection.execute(

@@ -1,6 +1,6 @@
 from typing import Iterable
-from backend.app.session_activity import reduce_session_activity
-from backend.app.session_events import SessionEvent, event_now_ms, make_event
+from backend.app.domain.conversations.queries import reduce_session_activity
+from backend.app.domain.conversations.events import SessionEvent, event_now_ms, make_event
 
 
 def interrupted_turn_closers(events: Iterable[SessionEvent]) -> list[SessionEvent]:

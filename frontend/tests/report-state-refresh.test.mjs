@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadModule } from "./helpers/load-module.mjs";
-const { ReportStateRefresher } = loadModule("features/reports/reportStateRefresh.ts");
+const { ReportStateRefresher } = loadModule("features/reports/model/conversationRefresh.ts");
 const { reportReferenceStatus, reportResourceKey, reportResourceStateMap } = loadModule("features/reports/reportContext.ts");
 const state = (member, id, availability = "available") => ({ member_id: member, resource_id: id, resource_type: "report", availability, current_created_at: "created", current_updated_at: "new" });
 const pending = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };

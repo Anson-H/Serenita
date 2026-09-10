@@ -31,11 +31,11 @@ export function useFavoriteMessageActions({
     try {
       if (existing) {
         await apiClient.deleteFavorite(existing.favorite_id);
+        setFavorites(current => current.filter(item => item.favorite_id !== existing.favorite_id));
       } else {
-        await apiClient.createFavorite(currentSessionId, message.message_id, []);
+        const created = await apiClient.createFavorite(currentSessionId, message.message_id, []);
+        setFavorites(current => [...current.filter(item => item.favorite_id !== created.favorite_id), created]);
       }
-      const response = await apiClient.fetchFavorites();
-      setFavorites(response.favorites);
       showStatusNotification({
         id: `favorite-message-${message.message_id}`,
         message: existing ? "已取消收藏。" : "已收藏。",

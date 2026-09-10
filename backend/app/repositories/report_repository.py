@@ -1,12 +1,16 @@
+from backend.app.repositories.report_sources import ReportSources
+from backend.app.repositories.report_queries import ReportQueries
 from contextlib import contextmanager
 from backend.app.repositories.lab_catalog import LabCatalog
 from backend.app.repositories.report_facts import ReportFacts
 from backend.app.repositories.report_transaction import ReportTransaction
-from backend.app.repositories.report_values import _lab_value_key, _now_iso, _row_dict
+from backend.app.repositories.report_values import _lab_value_key, _now_iso
 from backend.app.storage.report_database import REPORT_DATABASE_SCHEMA
 from backend.app.core.report_errors import ReportImportWriteConflictError
 from backend.app.schemas.report import (
     REPORT_TYPED_STORAGE_FIELDS,
+    REPORT_STRUCTURES,
+    REPORT_TYPED_FIELDS,
     REPORT_REQUIRED_EDITABLE_FIELDS,
 )
 
@@ -25,7 +29,7 @@ _HARDENED_REPORT_STORAGE: set[Path] = set()
 _HARDENED_REPORT_STORAGE_LOCK = threading.Lock()
 
 
-class ReportRepository:
+class ReportRepository(ReportSources, ReportQueries):
     """SQLite persistence for an owner's member-scoped reports and source files."""
 
     def __init__(self, account_id: str, paths: Optional[AppPaths] = None):
@@ -158,16 +162,9 @@ class ReportRepository:
 
     def init_db(self) -> None:
         database_path = self.paths.reports_db(self.account_id)
-        has_schema = self.validate_existing_database()
-        database_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            database_path.parent.chmod(0o700)
-        except OSError:
-            pass
-        with connect(database_path) as connection:
-            REPORT_DATABASE_SCHEMA.create(connection)
-        if not has_schema:
-            self.validate_existing_database()
+        from backend.app.storage.database_lifecycle import ensure_database
+
+        ensure_database(REPORT_DATABASE_SCHEMA, database_path)
         try:
             database_path.chmod(0o600)
         except OSError:
@@ -200,117 +197,6 @@ class ReportRepository:
                     continue
             _HARDENED_REPORT_STORAGE.add(storage_key)
 
-    def report_exists(self, member_id: str, report_id: str) -> bool:
-        self.init_db()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            row = connection.execute(
-                "SELECT 1 FROM reports WHERE member_id = ? AND report_id = ?",
-                (member_id, report_id),
-            ).fetchone()
-        return row is not None
-
-    def register_source_file(
-        self,
-        member_id: str,
-        *,
-        resource_id: str,
-        relative_path: str,
-        mime_type: str,
-        size_bytes: int,
-        sha256: str,
-        source_kind: str,
-    ) -> tuple[dict[str, Any], bool]:
-        self.init_db()
-        timestamp = _now_iso()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            connection.execute(
-                """
-                INSERT INTO report_sources (
-                    resource_id, member_id, mime_type, size_bytes,
-                    relative_path, sha256, source_kind, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    resource_id,
-                    member_id,
-                    mime_type,
-                    size_bytes,
-                    relative_path,
-                    sha256,
-                    source_kind,
-                    timestamp,
-                ),
-            )
-        return self.source_file(member_id, resource_id), True
-
-    def source_file(self, member_id: str, resource_id: str) -> Optional[dict[str, Any]]:
-        self.init_db()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            row = connection.execute(
-                "SELECT * FROM report_sources WHERE member_id = ? AND resource_id = ?",
-                (member_id, resource_id),
-            ).fetchone()
-        return _row_dict(row)
-
-    def delete_source_if_unlinked(
-        self, member_id: str, resource_id: str
-    ) -> Optional[dict[str, Any]]:
-        """Delete an unlinked upload record and transactionally queue its file."""
-        self.init_db()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute(
-                "SELECT * FROM report_sources WHERE member_id = ? AND resource_id = ?",
-                (member_id, resource_id),
-            ).fetchone()
-            if row is None:
-                return None
-            linked = connection.execute(
-                """
-                SELECT 1 FROM report_source_links
-                WHERE member_id = ? AND resource_id = ? LIMIT 1
-                """,
-                (member_id, resource_id),
-            ).fetchone()
-            if linked is not None:
-                return None
-            self.facts.enqueue_file_cleanup(
-                ReportTransaction(connection), member_id, row["relative_path"]
-            )
-            connection.execute(
-                "DELETE FROM report_sources WHERE member_id = ? AND resource_id = ?",
-                (member_id, resource_id),
-            )
-            return dict(row)
-
-    def file_cleanup_jobs(
-        self, member_id: str | None = None, *, limit: int = 8
-    ) -> list[dict[str, Any]]:
-        """Return a small member_id-scoped batch of durable source cleanup jobs."""
-        self.init_db()
-        safe_limit = max(1, min(int(limit), 50))
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            rows = connection.execute(
-                """
-                SELECT cleanup_id, member_id, relative_path, attempt_count
-                FROM report_source_file_cleanup_outbox
-                WHERE (? IS NULL OR member_id = ?)
-                ORDER BY attempt_count, created_at, cleanup_id
-                LIMIT ?
-                """,
-                (member_id, member_id, safe_limit),
-            ).fetchall()
-        return [dict(row) for row in rows]
-
-    def file_cleanup_count(self, member_id: str) -> int:
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            return int(
-                connection.execute(
-                    "SELECT COUNT(*) FROM report_source_file_cleanup_outbox WHERE member_id = ?",
-                    (member_id,),
-                ).fetchone()[0]
-            )
-
     def delete_member_on_connection(
         self,
         connection,
@@ -341,285 +227,6 @@ class ReportRepository:
             (member_id,),
         )
 
-    def complete_file_cleanup(self, member_id: str, cleanup_id: str) -> bool:
-        self.init_db()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            cursor = connection.execute(
-                """
-                DELETE FROM report_source_file_cleanup_outbox
-                WHERE member_id = ? AND cleanup_id = ?
-                """,
-                (member_id, cleanup_id),
-            )
-        return cursor.rowcount > 0
-
-    def record_file_cleanup_attempt(self, member_id: str, cleanup_id: str) -> bool:
-        """Record a retry without persisting filesystem paths or error details."""
-        self.init_db()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            cursor = connection.execute(
-                """
-                UPDATE report_source_file_cleanup_outbox
-                SET attempt_count = attempt_count + 1, last_attempt_at = ?
-                WHERE member_id = ? AND cleanup_id = ?
-                """,
-                (_now_iso(), member_id, cleanup_id),
-            )
-        return cursor.rowcount > 0
-
-    def update_source_kind(
-        self, member_id: str, resource_id: str, source_kind: str
-    ) -> bool:
-        if source_kind not in {"screenshot", "scan", "pdf", "photo", "unknown"}:
-            return False
-        self.init_db()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            cursor = connection.execute(
-                """
-                UPDATE report_sources SET source_kind = ?
-                WHERE member_id = ? AND resource_id = ?
-                """,
-                (source_kind, member_id, resource_id),
-            )
-        return cursor.rowcount > 0
-
-    def report_ids_for_source(self, member_id: str, resource_id: str) -> list[str]:
-        self.init_db()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            rows = connection.execute(
-                """
-                SELECT report_id FROM report_source_links
-                WHERE member_id = ? AND resource_id = ? ORDER BY report_id
-                """,
-                (member_id, resource_id),
-            ).fetchall()
-        return [row["report_id"] for row in rows]
-
-    def create_report(
-        self,
-        member_id: str,
-        report_data: dict[str, Any],
-        *,
-        resource_id: str,
-    ) -> str:
-        self.init_db()
-        timestamp = _now_iso()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            report_id = self.facts.next_report_id(
-                ReportTransaction(connection),
-                report_data["report_type"],
-                report_data["report_time"],
-            )
-            connection.execute(
-                """
-                INSERT INTO reports (
-                    report_id, member_id, report_type, report_name, report_time,
-                    institution_name,
-                    analysis_content, analysis_outdated,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, '', 0, ?, ?)
-                """,
-                (
-                    report_id,
-                    member_id,
-                    report_data["report_type"],
-                    report_data["report_name"],
-                    report_data["report_time"],
-                    report_data.get("institution_name"),
-                    timestamp,
-                    timestamp,
-                ),
-            )
-            self._insert_typed_payload(connection, member_id, report_id, report_data)
-            connection.execute(
-                """
-                INSERT INTO report_source_links(report_id, resource_id, member_id, is_primary, created_at)
-                VALUES (?, ?, ?, 1, ?)
-                """,
-                (report_id, resource_id, member_id, timestamp),
-            )
-        return report_id
-
-    def link_source(self, member_id: str, report_id: str, resource_id: str) -> bool:
-        result = self.link_report_sources(
-            member_id,
-            report_id=report_id,
-            resource_ids=[resource_id],
-        )
-        return bool(result["linked_resource_ids"])
-
-    def source_digests_for_report(self, member_id: str, report_id: str) -> set[str]:
-        self.init_db()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            rows = connection.execute(
-                """
-                SELECT f.sha256
-                FROM report_source_links l
-                JOIN report_sources f
-                  ON f.resource_id = l.resource_id AND f.member_id = l.member_id
-                WHERE l.member_id = ? AND l.report_id = ?
-                """,
-                (member_id, report_id),
-            ).fetchall()
-        return {str(row["sha256"]) for row in rows}
-
-    def list_reports(
-        self,
-        member_id: str,
-        *,
-        report_type: Optional[str] = None,
-    ) -> dict[str, Any]:
-        self.init_db()
-        clauses = ["r.member_id = ?"]
-        parameters: list[Any] = [member_id]
-        if report_type:
-            clauses.append("r.report_type = ?")
-            parameters.append(report_type)
-        query = f"""
-            SELECT r.report_id, r.member_id, r.report_type, r.report_name,
-                   r.report_time,
-                   r.institution_name, r.analysis_content, r.analysis_outdated,
-                   r.analysis_updated_at,
-                   r.created_at, r.updated_at,
-                   CASE WHEN r.report_type = '检验报告'
-                        THEN (SELECT COUNT(*) FROM lab_test_report l
-                              WHERE l.report_id = r.report_id AND l.member_id = r.member_id)
-                        ELSE 1 END AS total_count,
-                   CASE WHEN r.report_type = '检验报告'
-                        THEN (SELECT COUNT(*) FROM lab_test_report l
-                              WHERE l.report_id = r.report_id AND l.member_id = r.member_id
-                                AND l.flag_text IN ('异常', '偏高', '偏低'))
-                        ELSE 0 END AS flagged_count
-            FROM reports r
-            WHERE {" AND ".join(clauses)}
-            ORDER BY r.report_time DESC, r.created_at DESC
-        """
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            rows = connection.execute(query, parameters).fetchall()
-        reports = [self._list_item(row) for row in rows]
-        return {"reports": reports, "total": len(reports)}
-
-    def get_report(self, member_id: str, report_id: str) -> Optional[dict[str, Any]]:
-        return self.get_report_detail(member_id, report_id)
-
-    def get_report_detail(
-        self, member_id: str, report_id: str
-    ) -> Optional[dict[str, Any]]:
-        self.init_db()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            row = connection.execute(
-                """
-                SELECT report_id, member_id, report_type, report_name,
-                       report_time,
-                       institution_name, analysis_content, analysis_outdated,
-                       analysis_updated_at, created_at, updated_at
-                FROM reports WHERE member_id = ? AND report_id = ?
-                """,
-                (member_id, report_id),
-            ).fetchone()
-            if row is None:
-                return None
-            sources = connection.execute(
-                """
-                SELECT f.resource_id, f.mime_type, f.size_bytes,
-                       f.source_kind, f.relative_path, f.created_at, l.is_primary
-                FROM report_source_links l
-                JOIN report_sources f ON f.resource_id = l.resource_id AND f.member_id = l.member_id
-                WHERE l.member_id = ? AND l.report_id = ?
-                ORDER BY l.is_primary DESC, l.created_at
-                """,
-                (member_id, report_id),
-            ).fetchall()
-            lab_rows = connection.execute(
-                """
-                SELECT * FROM lab_test_report
-                WHERE member_id = ? AND report_id = ? ORDER BY item_name_zh
-                """,
-                (member_id, report_id),
-            ).fetchall()
-            exam = connection.execute(
-                "SELECT * FROM examination_report WHERE member_id = ? AND report_id = ?",
-                (member_id, report_id),
-            ).fetchone()
-            pathology = connection.execute(
-                "SELECT * FROM pathology_report WHERE member_id = ? AND report_id = ?",
-                (member_id, report_id),
-            ).fetchone()
-            surgery = connection.execute(
-                "SELECT * FROM surgery_report WHERE member_id = ? AND report_id = ?",
-                (member_id, report_id),
-            ).fetchone()
-            other = connection.execute(
-                "SELECT * FROM other_report WHERE member_id = ? AND report_id = ?",
-                (member_id, report_id),
-            ).fetchone()
-
-        detail = dict(row)
-        detail["analysis_content"] = str(detail.get("analysis_content") or "")
-        detail["analysis_outdated"] = bool(detail.get("analysis_outdated"))
-        detail["has_analysis"] = bool(detail["analysis_content"].strip())
-        detail["sources"] = [
-            {**dict(source), "is_primary": bool(source["is_primary"])}
-            for source in sources
-        ]
-        detail["lab_test_results"] = [dict(item) for item in lab_rows]
-        detail["examination_report"] = _row_dict(exam)
-        detail["pathology_report"] = _row_dict(pathology)
-        detail["surgery_report"] = _row_dict(surgery)
-        detail["other_report"] = _row_dict(other)
-        return detail
-
-    def report_evidence(
-        self, member_id: str, report_ids: Optional[Iterable[str]] = None
-    ) -> list[dict[str, Any]]:
-        if report_ids is None:
-            report_ids = [
-                item["report_id"] for item in self.list_reports(member_id)["reports"]
-            ]
-        evidence = []
-        for report_id in report_ids:
-            detail = self.get_report_detail(member_id, report_id)
-            if detail:
-                evidence.append(detail)
-        return evidence
-
-    def update_report(
-        self,
-        member_id: str,
-        report_id: str,
-        *,
-        report_type: Optional[str] = None,
-        report_time: Optional[str] = None,
-    ) -> Optional[dict[str, Any]]:
-        self.init_db()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            current = connection.execute(
-                "SELECT report_type, report_time FROM reports WHERE member_id = ? AND report_id = ?",
-                (member_id, report_id),
-            ).fetchone()
-            if current is None:
-                return None
-            if report_type is not None and report_type != current["report_type"]:
-                raise ValueError("不能直接跨报告类型修改，请重新解析原始文件后确认。")
-            actual_time = (
-                report_time if report_time is not None else current["report_time"]
-            )
-            if actual_time != current["report_time"]:
-                timestamp = _now_iso()
-                connection.execute(
-                    """
-                    UPDATE reports
-                    SET report_time = ?, analysis_outdated = CASE
-                            WHEN trim(analysis_content) <> '' THEN 1 ELSE analysis_outdated END,
-                        updated_at = ?
-                    WHERE member_id = ? AND report_id = ?
-                    """,
-                    (actual_time, timestamp, member_id, report_id),
-                )
-        return self.get_report_detail(member_id, report_id)
-
     def update_report_fields(
         self,
         member_id: str,
@@ -630,7 +237,7 @@ class ReportRepository:
         """Update report fields and refresh evidence metadata in one transaction."""
 
         if not updates:
-            raise ValueError("字段修改列表不能为空。")
+            raise ValueError("字段更新列表不能为空。")
         seen_targets: set[tuple[str, str]] = set()
         for update in updates:
             field = str(update.get("field") or "")
@@ -641,7 +248,7 @@ class ReportRepository:
             )
             target = (field, item_id)
             if target in seen_targets:
-                raise ValueError("同一次操作不能重复修改同一字段。")
+                raise ValueError("同一次操作不能重复更新同一字段。")
             seen_targets.add(target)
 
         self.init_db()
@@ -686,7 +293,7 @@ class ReportRepository:
                 stored_value: Optional[str] = normalized or None
                 if field == "report_name" and report["report_type"] == "检验报告":
                     raise ValueError(
-                        "检验报告名称必须在账号检验指标分类目录中统一修改。"
+                        "检验报告名称必须在账号检验指标分类目录中统一更新。"
                     )
 
                 changed = False
@@ -728,7 +335,7 @@ class ReportRepository:
                         (member_id, report_id, item_id),
                     ).fetchone()
                     if row is None:
-                        raise LookupError("报告指标不存在。")
+                        raise LookupError("医疗报告指标不存在。")
                     changed = stored_value != row[column]
                     if changed:
                         connection.execute(
@@ -738,14 +345,14 @@ class ReportRepository:
                 else:
                     mapping = typed_fields.get(report["report_type"], {}).get(field)
                     if mapping is None:
-                        raise ValueError("该字段不属于当前报告类型。")
+                        raise ValueError("该字段不属于当前医疗报告类型。")
                     table, column = mapping
                     row = connection.execute(
                         f"SELECT {column} FROM {table} WHERE member_id = ? AND report_id = ?",
                         (member_id, report_id),
                     ).fetchone()
                     if row is None:
-                        raise LookupError("报告结构化内容不存在。")
+                        raise LookupError("医疗报告结构化内容不存在。")
                     changed = stored_value != row[column]
                     if changed:
                         connection.execute(
@@ -879,7 +486,7 @@ class ReportRepository:
                 dictionary_category_name = str(dictionary_item["category_name"])
                 if dictionary_category_name != report_category_name:
                     raise ValueError(
-                        f"该报告属于“{report_category_name}”，不能添加主分类为“{dictionary_category_name}”的指标。"
+                        f"该医疗报告属于“{report_category_name}”，不能添加主分类为“{dictionary_category_name}”的指标。"
                     )
                 connection.execute(
                     """
@@ -955,7 +562,7 @@ class ReportRepository:
                 )
             if len(rows) <= len(normalized_item_ids):
                 raise ValueError(
-                    "不能删除检验报告中的最后一个指标；如需移除该内容，请明确删除整份报告。"
+                    "不能删除检验报告中的最后一个指标；如需移除该内容，请明确删除整份医疗报告。"
                 )
             placeholders = ", ".join("?" for _item_id in normalized_item_ids)
             connection.execute(
@@ -1008,21 +615,6 @@ class ReportRepository:
                 timestamp=timestamp,
             )
         return self.get_report_detail(member_id, report_id)
-
-    def lab_indicator_snapshot(
-        self, member_id: str, report_id: str, item_id: str
-    ) -> Optional[dict[str, Any]]:
-        self.init_db()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            row = connection.execute(
-                """
-                SELECT report_id, item_id, item_name_zh, result_text, reference_text, flag_text
-                FROM lab_test_report
-                WHERE member_id = ? AND report_id = ? AND item_id = ?
-                """,
-                (member_id, report_id, item_id),
-            ).fetchone()
-        return _row_dict(row)
 
     def save_report_analysis(
         self,
@@ -1101,7 +693,7 @@ class ReportRepository:
         timestamp: str,
     ) -> str:
         if not resource_ids:
-            raise ValueError("创建报告必须至少关联一个来源。")
+            raise ValueError("创建医疗报告必须至少关联一个来源。")
         report_id = self._create_report_record_on_connection(
             connection,
             member_id,
@@ -1127,13 +719,7 @@ class ReportRepository:
         *,
         timestamp: str,
     ) -> None:
-        for table in (
-            "lab_test_report",
-            "examination_report",
-            "pathology_report",
-            "surgery_report",
-            "other_report",
-        ):
+        for table in ("lab_test_report", *REPORT_TYPED_FIELDS):
             connection.execute(
                 f"DELETE FROM {table} WHERE member_id = ? AND report_id = ?",
                 (member_id, report_id),
@@ -1179,7 +765,7 @@ class ReportRepository:
                 )
                 if issues:
                     raise ReportImportWriteConflictError(
-                        "解析报告包含无法唯一匹配的检验指标。", details=issues
+                        "解析医疗报告包含无法唯一匹配的检验指标。", details=issues
                     )
                 report["lab_test_results"] = normalized
             report_id = self._create_report_on_connection(
@@ -1221,99 +807,6 @@ class ReportRepository:
             )
         return {"report_id": report_id}
 
-    def link_parsed_report_sources(
-        self,
-        member_id: str,
-        *,
-        report_id: str,
-        resource_ids: list[str],
-    ) -> dict[str, Any]:
-        return self.link_report_sources(
-            member_id,
-            report_id=report_id,
-            resource_ids=resource_ids,
-        )
-
-    def link_report_sources(
-        self,
-        member_id: str,
-        *,
-        report_id: str,
-        resource_ids: list[str],
-    ) -> dict[str, Any]:
-        """Link existing source rows and make the first source primary when needed."""
-
-        unique_resource_ids = list(
-            dict.fromkeys(str(resource_id) for resource_id in resource_ids)
-        )
-        if not unique_resource_ids or any(
-            not resource_id for resource_id in unique_resource_ids
-        ):
-            raise ValueError("关联报告必须至少包含一个来源。")
-        self.init_db()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            if (
-                connection.execute(
-                    "SELECT 1 FROM reports WHERE member_id = ? AND report_id = ?",
-                    (member_id, report_id),
-                ).fetchone()
-                is None
-            ):
-                raise LookupError("目标报告不存在。")
-
-            placeholders = ",".join("?" for _ in unique_resource_ids)
-            source_rows = connection.execute(
-                f"""
-                SELECT resource_id FROM report_sources
-                WHERE member_id = ? AND resource_id IN ({placeholders})
-                """,
-                (member_id, *unique_resource_ids),
-            ).fetchall()
-            available_resource_ids = {str(row["resource_id"]) for row in source_rows}
-            missing_resource_ids = [
-                resource_id
-                for resource_id in unique_resource_ids
-                if resource_id not in available_resource_ids
-            ]
-            if missing_resource_ids:
-                raise LookupError("要关联的报告原件不存在。")
-
-            existing_source_count = int(
-                connection.execute(
-                    """
-                SELECT COUNT(*) FROM report_source_links
-                WHERE member_id = ? AND report_id = ?
-                """,
-                    (member_id, report_id),
-                ).fetchone()[0]
-            )
-            timestamp = _now_iso()
-            linked_resource_ids: list[str] = []
-            for source_index, resource_id in enumerate(unique_resource_ids):
-                cursor = connection.execute(
-                    """
-                    INSERT OR IGNORE INTO report_source_links(
-                        report_id, resource_id, member_id, is_primary, created_at
-                    ) VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        report_id,
-                        resource_id,
-                        member_id,
-                        int(existing_source_count == 0 and source_index == 0),
-                        timestamp,
-                    ),
-                )
-                if cursor.rowcount:
-                    linked_resource_ids.append(resource_id)
-            if linked_resource_ids:
-                connection.execute(
-                    "UPDATE reports SET updated_at = ? WHERE member_id = ? AND report_id = ?",
-                    (timestamp, member_id, report_id),
-                )
-        return {"report_id": report_id, "linked_resource_ids": linked_resource_ids}
-
     def merge_parsed_report(
         self,
         member_id: str,
@@ -1331,7 +824,7 @@ class ReportRepository:
                 (member_id, report_id),
             ).fetchone()
             if target is None:
-                raise LookupError("模型指定的目标报告不存在。")
+                raise LookupError("模型指定的目标医疗报告不存在。")
             report = deepcopy(parsed_report)
             differences: list[dict[str, Any]] = []
             for field in ("report_type", "report_name", "report_time"):
@@ -1406,12 +899,7 @@ class ReportRepository:
                             }
                         )
             elif not differences:
-                typed_table, payload_field = {
-                    "检查报告": ("examination_report", "examination_report"),
-                    "病理报告": ("pathology_report", "pathology_report"),
-                    "手术报告": ("surgery_report", "surgery_report"),
-                    "其它报告": ("other_report", "other_report"),
-                }[str(report["report_type"])]
+                typed_table = payload_field = REPORT_STRUCTURES[str(report["report_type"])][0]
                 parsed_payload = report.get(payload_field)
                 stored_payload = connection.execute(
                     f"SELECT * FROM {typed_table} WHERE member_id = ? AND report_id = ?",
@@ -1445,7 +933,7 @@ class ReportRepository:
 
             if differences:
                 raise ReportImportWriteConflictError(
-                    "解析内容与目标报告存在不同旧值，未执行合并。",
+                    "解析内容与目标医疗报告存在不同旧值，未执行合并。",
                     details=differences,
                 )
 
@@ -1484,7 +972,7 @@ class ReportRepository:
                 )
                 changed = True
             if not resource_ids:
-                raise ValueError("合并报告必须至少包含一个来源。")
+                raise ValueError("合并医疗报告必须至少包含一个来源。")
             for resource_id in dict.fromkeys(resource_ids):
                 connection.execute(
                     """
@@ -1530,22 +1018,6 @@ class ReportRepository:
                 ReportTransaction(connection), member_id, report_id
             )
         return orphaned
-
-    def source_for_report(
-        self, member_id: str, report_id: str, resource_id: str
-    ) -> Optional[dict[str, Any]]:
-        self.init_db()
-        with connect(self.paths.reports_db(self.account_id)) as connection:
-            row = connection.execute(
-                """
-                SELECT f.* FROM report_sources f
-                JOIN report_source_links l ON l.resource_id = f.resource_id AND l.member_id = f.member_id
-                JOIN reports r ON r.report_id = l.report_id AND r.member_id = l.member_id
-                WHERE r.member_id = ? AND r.report_id = ? AND f.resource_id = ?
-                """,
-                (member_id, report_id, resource_id),
-            ).fetchone()
-        return _row_dict(row)
 
     def _insert_typed_payload(
         self, connection, member_id: str, report_id: str, report_data: dict[str, Any]
@@ -1617,89 +1089,12 @@ class ReportRepository:
                         item.get("flag_text") or "未标记",
                     ),
                 )
-        elif report_type == "检查报告":
-            item = report_data["examination_report"]
+        else:
+            table, model = REPORT_STRUCTURES[report_type]
+            item = report_data[table]
+            fields = tuple(model.model_fields)
             connection.execute(
-                """
-                INSERT INTO examination_report (
-                    report_id, member_id, exam_name, clinical_diagnosis,
-                    exam_method, exam_findings, exam_diagnosis
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    report_id,
-                    member_id,
-                    item["exam_name"],
-                    item.get("clinical_diagnosis"),
-                    item.get("exam_method"),
-                    item.get("exam_findings"),
-                    item.get("exam_diagnosis"),
-                ),
-            )
-        elif report_type == "病理报告":
-            item = report_data["pathology_report"]
-            connection.execute(
-                """
-                INSERT INTO pathology_report (
-                    report_id, member_id, submitted_specimen, gross_examination,
-                    diagnosis, sampling_location
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    report_id,
-                    member_id,
-                    item.get("submitted_specimen"),
-                    item.get("gross_examination"),
-                    item.get("diagnosis"),
-                    item.get("sampling_location"),
-                ),
-            )
-        elif report_type == "手术报告":
-            item = report_data["surgery_report"]
-            fields = (
-                "preoperative_diagnosis",
-                "intraoperative_diagnosis",
-                "anesthesia_method",
-                "started_at",
-                "ended_at",
-                "blood_transfusion",
-                "intraoperative_blood_loss",
-                "intraoperative_urine_output",
-                "intraoperative_transfusion",
-                "intraoperative_infusion",
-                "intraoperative_other_drugs",
-                "procedure_description",
-                "postoperative_vital_signs",
-            )
-            connection.execute(
-                f"""
-                INSERT INTO surgery_report(report_id, member_id, {", ".join(fields)})
-                VALUES (?, ?, {", ".join("?" for _ in fields)})
-                """,
+                f"INSERT INTO {table}(report_id, member_id, {', '.join(fields)}) "
+                f"VALUES (?, ?, {', '.join('?' for _ in fields)})",
                 (report_id, member_id, *(item.get(field) for field in fields)),
             )
-        else:
-            connection.execute(
-                """
-                INSERT INTO other_report(report_id, member_id, report_body)
-                VALUES (?, ?, ?)
-                """,
-                (report_id, member_id, report_data["other_report"]["report_body"]),
-            )
-
-    def _list_item(self, row) -> dict[str, Any]:
-        analysis_content = str(row["analysis_content"] or "")
-        return {
-            "report_id": row["report_id"],
-            "member_id": row["member_id"],
-            "report_type": row["report_type"],
-            "report_name": row["report_name"],
-            "report_time": row["report_time"],
-            "institution_name": row["institution_name"],
-            "flagged_count": row["flagged_count"],
-            "total_count": row["total_count"],
-            "has_analysis": bool(analysis_content.strip()),
-            "analysis_outdated": bool(row["analysis_outdated"]),
-            "created_at": row["created_at"],
-            "updated_at": row["updated_at"],
-        }

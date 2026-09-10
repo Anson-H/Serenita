@@ -57,6 +57,7 @@ class ConfigRepository:
             ),
             "is_related_content_visible": bool(row["is_related_content_visible"]),
             "is_token_usage_visible": bool(row["is_token_usage_visible"]),
+            "is_model_identity_visible": bool(row["is_model_identity_visible"]),
             "visible_context_types": [
                 context_type
                 for context_type, column in CONTEXT_DISPLAY_COLUMNS.items()
@@ -86,6 +87,7 @@ class ConfigRepository:
         is_context_window_usage_visible: bool,
         is_related_content_visible: bool,
         is_token_usage_visible: bool,
+        is_model_identity_visible: bool,
         visible_context_types: list[str],
         tool_display_types: list[str],
     ) -> dict[str, Any]:
@@ -110,6 +112,7 @@ class ConfigRepository:
             ),
             "is_related_content_visible": int(is_related_content_visible),
             "is_token_usage_visible": int(is_token_usage_visible),
+            "is_model_identity_visible": int(is_model_identity_visible),
         }
         values.update(
             {

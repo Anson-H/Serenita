@@ -11,7 +11,9 @@ REPORT_PREFIXES = {
     "检查报告": "EXAM",
     "病理报告": "PATH",
     "手术报告": "SURG",
-    "其它报告": "OTHER",
+    "门诊病历": "OUTPATIENT",
+    "急诊病历": "EMERGENCY",
+    "其它医疗报告": "OTHER",
 }
 
 

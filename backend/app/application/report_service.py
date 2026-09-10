@@ -61,7 +61,12 @@ def authorized_report(*, write: bool = False):
                         "健康档案所有者与当前存储不一致。",
                         "conflict",
                     )
-                return method(self, member_id, *args, **kwargs)
+                result = method(self, member_id, *args, **kwargs)
+            if write and method.__name__ != "write_report_analysis":
+                from backend.app.core.notification_runtime import notification_runtime
+                runtime = notification_runtime(self.paths)
+                runtime.changed(tuple(runtime.revisions), reschedule=True)
+            return result
 
         return authorized
 
@@ -91,7 +96,7 @@ class ReportService:
             or self.repository.paths.root.resolve() != self.paths.root.resolve()
             or self.repository.account_id != scope.account_id
         ):
-            raise ValueError("报告存储必须与已授权成员的账号和数据根一致。")
+            raise ValueError("医疗报告存储必须与已授权成员的账号和数据根一致。")
         self.sources = ReportSourceStore(self.repository)
 
     @property
@@ -111,64 +116,38 @@ class ReportService:
     def report_exists(self, member_id: str, report_id: str) -> bool:
         return self.repository.report_exists(member_id, report_id)
 
-    @authorized_report()
-    def validate_parsed_reports(
+    def _validate_write_input(
         self,
         member_id: str,
         *,
-        reports: list[dict[str, Any]],
+        report: dict[str, Any],
+        sources: list[dict[str, Any]],
         source_text: str,
         session_id: str,
         source_message_id: str,
         visible_attachments: dict[str, dict[str, Any]],
         authorized_report_sources: dict[str, dict[str, Any]],
-    ) -> dict[str, Any]:
-        """Validate final Agent-authored report boundaries and trusted sources only."""
-
-        if not reports:
-            raise ValueError("至少需要提交一份最终报告。")
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Validate content and resolve trusted sources before any persistence."""
+        prepared = validate_final_parsed_report(report)
+        if not isinstance(sources, list) or not sources:
+            raise ValueError("每份医疗报告必须绑定至少一个来源。")
         canonical_sources: list[dict[str, Any]] = []
-        source_indexes: dict[tuple[str, ...], int] = {}
-        canonical_reports: list[dict[str, Any]] = []
-        for report_index, entry in enumerate(reports):
-            if not isinstance(entry, dict):
-                raise ValueError("报告项必须是对象。")
-            raw_sources = entry.get("sources")
-            if not isinstance(raw_sources, list) or not raw_sources:
-                raise ValueError("每份报告必须绑定至少一个来源。")
-            current_indexes: list[int] = []
-            seen_in_report: set[tuple[str, ...]] = set()
-            for reference in raw_sources:
-                source, key = self.sources.validate_parsed_source_reference(
-                    member_id,
-                    reference,
-                    source_text=source_text,
-                    session_id=session_id,
-                    source_message_id=source_message_id,
-                    visible_attachments=visible_attachments,
-                    authorized_report_sources=authorized_report_sources,
-                )
-                if key in seen_in_report:
-                    raise ValueError("同一份报告不能重复绑定同一个来源。")
-                seen_in_report.add(key)
-                if key not in source_indexes:
-                    source_indexes[key] = len(canonical_sources)
-                    canonical_sources.append(source)
-                current_indexes.append(source_indexes[key])
-            canonical_reports.append(
-                {
-                    "report_index": report_index,
-                    "source_indexes": current_indexes,
-                    "report": validate_final_parsed_report(entry.get("report")),
-                }
+        seen: set[tuple[str, ...]] = set()
+        for reference in sources:
+            source, key = self.sources.validate_parsed_source_reference(
+                member_id, reference,
+                source_text=source_text,
+                session_id=session_id,
+                source_message_id=source_message_id,
+                visible_attachments=visible_attachments,
+                authorized_report_sources=authorized_report_sources,
             )
-        return {
-            "sources": [
-                {"source_index": index, **source}
-                for index, source in enumerate(canonical_sources)
-            ],
-            "reports": canonical_reports,
-        }
+            if key in seen:
+                raise ValueError("同一份医疗报告不能重复绑定同一个来源。")
+            seen.add(key)
+            canonical_sources.append(source)
+        return prepared, canonical_sources
 
     @authorized_report()
     def read_report_sources(self, member_id: str, report_id: str) -> dict[str, Any]:
@@ -176,14 +155,14 @@ class ReportService:
 
         detail = self.repository.get_report_detail(member_id, report_id)
         if detail is None:
-            raise_error("missing", "REPORT_NOT_FOUND", "报告不存在。")
+            raise_error("missing", "REPORT_NOT_FOUND", "医疗报告不存在。")
         sources = []
         for source_index, source in enumerate(detail.get("sources") or []):
             resource_id = str(source.get("resource_id") or "")
             path = self.sources.source_path(member_id, source)
             if not resource_id or not path.is_file():
                 raise_error(
-                    "missing", "REPORT_SOURCE_NOT_FOUND", "报告原始文件不存在。"
+                    "missing", "REPORT_SOURCE_NOT_FOUND", "医疗报告原始文件不存在。"
                 )
             sources.append(
                 {
@@ -199,7 +178,7 @@ class ReportService:
                 }
             )
         if not sources:
-            raise_error("missing", "REPORT_SOURCE_NOT_FOUND", "报告没有已保存原件。")
+            raise_error("missing", "REPORT_SOURCE_NOT_FOUND", "医疗报告没有已保存原件。")
         return {"report_id": report_id, "sources": sources}
 
     @authorized_report(write=True)
@@ -221,7 +200,7 @@ class ReportService:
             parsed,
         )
         if stored is None:
-            raise_error("missing", "REPORT_NOT_FOUND", "报告不存在。")
+            raise_error("missing", "REPORT_NOT_FOUND", "医疗报告不存在。")
         return {
             "report_id": report_id,
             "analysis_content": stored.get("analysis_content"),
@@ -237,7 +216,7 @@ class ReportService:
     def validate_report_context(self, member_id: str, report_id: str) -> dict[str, Any]:
         detail = self.repository.get_report(member_id, report_id)
         if detail is None:
-            raise_error("missing", "REPORT_NOT_FOUND", "报告不存在。")
+            raise_error("missing", "REPORT_NOT_FOUND", "医疗报告不存在。")
         return {
             "resource_type": "report",
             "resource_id": report_id,
@@ -284,7 +263,7 @@ class ReportService:
 
         detail = self.repository.get_report(member_id, report_id)
         if detail is None:
-            raise_error("missing", "REPORT_NOT_FOUND", "报告不存在。")
+            raise_error("missing", "REPORT_NOT_FOUND", "医疗报告不存在。")
         presented = safe_detail(detail)
         report_evidence = model_report_evidence(presented)
         analysis_content = str(presented.get("analysis_content") or "").strip()
@@ -315,41 +294,19 @@ class ReportService:
         }
 
     @authorized_report()
-    def read_report_catalog(
-        self,
-        member_id: str,
-        *,
-        before_date: str | None = None,
-        after_date: str | None = None,
-    ) -> dict[str, Any]:
-        """Return one consistent, value-free report catalog snapshot."""
-        upper_bound = str(before_date or "").strip()
-        lower_bound = str(after_date or "").strip()
-        eligible: list[dict[str, Any]] = []
-        for row in self.repository.list_reports(member_id)["reports"]:
-            report_time = str(row.get("report_time") or "")
-            if upper_bound and report_time[:10] > upper_bound[:10]:
-                continue
-            if lower_bound and report_time[:10] < lower_bound[:10]:
-                continue
-            eligible.append(
-                {
-                    "report_id": str(row.get("report_id") or ""),
-                    "report_type": row.get("report_type"),
-                    "report_name": row.get("report_name"),
-                    "report_time": report_time,
-                }
-            )
-        eligible.sort(
-            key=lambda item: (str(item["report_time"]), str(item["report_id"])),
-            reverse=True,
-        )
-        report_ids = [str(item["report_id"]) for item in eligible]
-        return {
-            "total": len(eligible),
-            "reports": eligible,
-            "report_ids": report_ids,
-        }
+    def read_report_catalog(self, member_id: str, *, before_date: str | None = None,
+                            after_date: str | None = None, cursor: str | None = None,
+                            limit: int = 24) -> dict[str, Any]:
+        from backend.app.schemas.medical_log import calendar_date
+
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("目录每页数量须为 1 至 100。")
+        before_date = calendar_date(before_date or None)
+        after_date = calendar_date(after_date or None)
+        if before_date and after_date and before_date < after_date:
+            raise ValueError("日期下界不能晚于上界。")
+        return self.repository.report_catalog(member_id, before_date=before_date,
+                                              after_date=after_date, cursor=cursor, limit=limit)
 
     def _evidence_requested_type(
         self, filters: Optional[dict[str, Any]]
@@ -358,7 +315,7 @@ class ReportService:
             return None
         requested_type = filters.get("report_type")
         if requested_type and requested_type not in REPORT_PREFIXES:
-            raise ValueError("报告类型筛选值无效。")
+            raise ValueError("医疗报告类型筛选值无效。")
         return requested_type
 
     @staticmethod
@@ -570,7 +527,7 @@ class ReportService:
         normalized_type = None
         if report_type and report_type not in {"all", "全部"}:
             if report_type not in REPORT_PREFIXES:
-                raise_error("invalid_input", "INVALID_REQUEST", "报告类型筛选值无效。")
+                raise_error("invalid_input", "INVALID_REQUEST", "医疗报告类型筛选值无效。")
             normalized_type = report_type
         return self.repository.list_reports(member_id, report_type=normalized_type)
 
@@ -579,7 +536,7 @@ class ReportService:
         self.sources.drain_file_cleanup(member_id)
         detail = self.repository.get_report(member_id, report_id)
         if detail is None:
-            raise_error("missing", "REPORT_NOT_FOUND", "报告不存在。")
+            raise_error("missing", "REPORT_NOT_FOUND", "医疗报告不存在。")
         return safe_detail(detail)
 
     @authorized_report(write=True)
@@ -615,15 +572,15 @@ class ReportService:
             raise_error(
                 "missing",
                 "REPORT_NOT_FOUND",
-                "报告已不存在，可能已被删除或合并，无法补充原件。",
+                "医疗报告已不存在，可能已被删除或合并，无法补充原件。",
             )
         if not uploads:
-            raise_error("invalid_input", "INVALID_REQUEST", "请至少选择一份报告原件。")
+            raise_error("invalid_input", "INVALID_REQUEST", "请至少选择一份医疗报告原件。")
         if len(uploads) > MAX_REPORT_FILES:
             raise_error(
                 "invalid_input",
                 "TOO_MANY_FILES",
-                f"每次最多补充 {MAX_REPORT_FILES} 份报告原件。",
+                f"每次最多补充 {MAX_REPORT_FILES} 份医疗报告原件。",
             )
 
         normalized_uploads = [
@@ -636,7 +593,7 @@ class ReportService:
             raise_error(
                 "resource_limit",
                 "FILE_BATCH_TOO_LARGE",
-                "单次补充的报告文件总大小不能超过 100MB。",
+                "单次补充的医疗报告文件总大小不能超过 100MB。",
             )
 
         digest_names: dict[str, list[str]] = {}
@@ -664,7 +621,7 @@ class ReportService:
             raise_error(
                 "conflict",
                 "REPORT_SOURCE_DUPLICATE",
-                f"以下原件已经关联到该报告：{'、'.join(already_linked_names)}。",
+                f"以下原件已经关联到该医疗报告：{'、'.join(already_linked_names)}。",
             )
 
         created_resource_ids: list[str] = []
@@ -681,13 +638,14 @@ class ReportService:
                 member_id,
                 report_id=report_id,
                 resource_ids=created_resource_ids,
+                reject_duplicate_content=True,
             )
         except LookupError:
             self.sources.cleanup_new_unlinked_sources(member_id, created_resource_ids)
             raise_error(
                 "missing",
                 "REPORT_NOT_FOUND",
-                "报告已不存在，可能已被删除或合并，无法补充原件。",
+                "医疗报告已不存在，可能已被删除或合并，无法补充原件。",
             )
         except Exception:
             self.sources.cleanup_new_unlinked_sources(member_id, created_resource_ids)
@@ -704,7 +662,7 @@ class ReportService:
     ) -> dict[str, Any]:
         if not updates:
             raise_error(
-                "invalid_input", "INVALID_REPORT_FIELD", "字段修改列表不能为空。"
+                "invalid_input", "INVALID_REPORT_FIELD", "字段更新列表不能为空。"
             )
         prepared: list[dict[str, Any]] = []
         for update in updates:
@@ -744,7 +702,7 @@ class ReportService:
             raise_error(
                 "missing",
                 "REPORT_NOT_FOUND",
-                "报告已不存在，可能已被删除或合并，无法继续修改。",
+                "医疗报告已不存在，可能已被删除或合并，无法继续更新。",
             )
         return self.get_report(member_id, report_id)
 
@@ -814,7 +772,7 @@ class ReportService:
             raise_error(
                 "missing",
                 "REPORT_NOT_FOUND",
-                "报告已不存在，可能已被删除或合并，无法继续添加指标。",
+                "医疗报告已不存在，可能已被删除或合并，无法继续添加指标。",
             )
         return self.get_report(member_id, report_id)
 
@@ -842,7 +800,7 @@ class ReportService:
             raise_error(
                 "missing",
                 "REPORT_NOT_FOUND",
-                "报告已不存在，可能已被删除或合并，无法继续添加指标。",
+                "医疗报告已不存在，可能已被删除或合并，无法继续添加指标。",
             )
         return self.get_report(member_id, report_id)
 
@@ -870,7 +828,7 @@ class ReportService:
             raise_error(
                 "missing",
                 "REPORT_NOT_FOUND",
-                "报告已不存在，可能已被删除或合并，无法继续删除指标。",
+                "医疗报告已不存在，可能已被删除或合并，无法继续删除指标。",
             )
         return self.get_report(member_id, report_id)
 
@@ -888,7 +846,7 @@ class ReportService:
             raise_error(
                 "missing",
                 "REPORT_NOT_FOUND",
-                "报告已不存在，可能已被删除或合并，无需再次删除。",
+                "医疗报告已不存在，可能已被删除或合并，无需再次删除。",
             )
         self.sources.drain_file_cleanup(member_id)
         return {"report_id": report_id, "deleted": True}
@@ -899,13 +857,25 @@ class ReportService:
         member_id: str,
         report_id: str,
         *,
-        parsed_report: dict[str, Any],
-        parsed_sources: list[dict[str, Any]],
+        report: dict[str, Any],
+        sources: list[dict[str, Any]],
+        session_id: str,
+        source_text: str,
+        source_message_id: str,
+        visible_attachments: dict[str, dict[str, Any]],
+        authorized_report_sources: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
+        parsed_report, parsed_sources = self._validate_write_input(
+            member_id, report=report, sources=sources,
+            session_id=session_id, source_text=source_text,
+            source_message_id=source_message_id,
+            visible_attachments=visible_attachments,
+            authorized_report_sources=authorized_report_sources,
+        )
         current = self.repository.get_report(member_id, report_id)
         if current is None:
-            raise_error("missing", "REPORT_NOT_FOUND", "报告不存在。")
-        prepared = validate_final_parsed_report(parsed_report)
+            raise_error("missing", "REPORT_NOT_FOUND", "医疗报告不存在。")
+        prepared = parsed_report
         prepared["report_time"] = str(current["report_time"])
         visible_original = any(
             source.get("source_type") == "report_source"
@@ -914,14 +884,14 @@ class ReportService:
         )
         if not visible_original:
             raise ValueError(
-                '重新分类必须绑定通过 read_report_information(fields=["sources"]) 读取的当前报告原件。'
+                '重新分类必须绑定通过 read_report_information(fields=["sources"]) 读取的当前医疗报告原件。'
             )
         updated = self.repository.reclassify_report(member_id, report_id, prepared)
         if updated is None:
             raise_error(
                 "missing",
                 "REPORT_NOT_FOUND",
-                "报告已不存在，可能已被删除或合并，无法继续重新分类。",
+                "医疗报告已不存在，可能已被删除或合并，无法继续重新分类。",
             )
         return self.get_report(member_id, report_id)
 
@@ -932,10 +902,10 @@ class ReportService:
         self.sources.drain_file_cleanup(member_id)
         source = self.repository.source_for_report(member_id, report_id, resource_id)
         if source is None:
-            raise_error("missing", "REPORT_SOURCE_NOT_FOUND", "报告原始文件不存在。")
+            raise_error("missing", "REPORT_SOURCE_NOT_FOUND", "医疗报告原始文件不存在。")
         path = self.sources.source_path(member_id, source)
         if not path.is_file():
-            raise_error("missing", "REPORT_SOURCE_NOT_FOUND", "报告原始文件不存在。")
+            raise_error("missing", "REPORT_SOURCE_NOT_FOUND", "医疗报告原始文件不存在。")
         return path, path.name, source["mime_type"]
 
     @authorized_report(write=True)
@@ -943,10 +913,21 @@ class ReportService:
         self,
         member_id: str,
         *,
-        parsed_report: dict[str, Any],
-        parsed_sources: list[dict[str, Any]],
-        session_id: str = "",
+        report: dict[str, Any],
+        sources: list[dict[str, Any]],
+        session_id: str,
+        source_text: str,
+        source_message_id: str,
+        visible_attachments: dict[str, dict[str, Any]],
+        authorized_report_sources: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
+        parsed_report, parsed_sources = self._validate_write_input(
+            member_id, report=report, sources=sources,
+            session_id=session_id, source_text=source_text,
+            source_message_id=source_message_id,
+            visible_attachments=visible_attachments,
+            authorized_report_sources=authorized_report_sources,
+        )
         sources, created_resource_ids = self.sources.ensure_parsed_sources(
             member_id, parsed_sources, session_id=session_id
         )
@@ -965,12 +946,22 @@ class ReportService:
         self,
         member_id: str,
         *,
-        parsed_report: dict[str, Any],
-        parsed_sources: list[dict[str, Any]],
+        report: dict[str, Any],
+        sources: list[dict[str, Any]],
         target_report_id: str,
-        session_id: str = "",
+        session_id: str,
+        source_text: str,
+        source_message_id: str,
+        visible_attachments: dict[str, dict[str, Any]],
+        authorized_report_sources: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
-        del parsed_report
+        _parsed_report, parsed_sources = self._validate_write_input(
+            member_id, report=report, sources=sources,
+            session_id=session_id, source_text=source_text,
+            source_message_id=source_message_id,
+            visible_attachments=visible_attachments,
+            authorized_report_sources=authorized_report_sources,
+        )
         sources, created_resource_ids = self.sources.ensure_parsed_sources(
             member_id, parsed_sources, session_id=session_id
         )
@@ -989,11 +980,22 @@ class ReportService:
         self,
         member_id: str,
         *,
-        parsed_report: dict[str, Any],
-        parsed_sources: list[dict[str, Any]],
+        report: dict[str, Any],
+        sources: list[dict[str, Any]],
         target_report_id: str,
-        session_id: str = "",
+        session_id: str,
+        source_text: str,
+        source_message_id: str,
+        visible_attachments: dict[str, dict[str, Any]],
+        authorized_report_sources: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
+        parsed_report, parsed_sources = self._validate_write_input(
+            member_id, report=report, sources=sources,
+            session_id=session_id, source_text=source_text,
+            source_message_id=source_message_id,
+            visible_attachments=visible_attachments,
+            authorized_report_sources=authorized_report_sources,
+        )
         sources, created_resource_ids = self.sources.ensure_parsed_sources(
             member_id, parsed_sources, session_id=session_id
         )

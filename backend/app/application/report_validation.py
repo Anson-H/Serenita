@@ -2,6 +2,7 @@ import re
 from datetime import date
 from typing import Any, Iterable
 from backend.app.schemas.report import ParsedReport
+from backend.app.storage.report_database import REPORT_DATABASE_SCHEMA
 from backend.app.core.time import local_iso
 
 
@@ -74,6 +75,12 @@ def validate_final_parsed_report(
         category = next(iter(categories))
         if str(parsed.get("report_name") or "").strip() != category:
             raise ValueError("检验报告 report_name 必须与唯一 category_name 完全一致。")
+    REPORT_DATABASE_SCHEMA.table_by_name['reports'].validate_values(parsed, partial=True)
+    for name in ('examination_report', 'pathology_report', 'surgery_report', 'outpatient_report', 'emergency_report', 'other_report'):
+        if parsed.get(name) is not None:
+            REPORT_DATABASE_SCHEMA.table_by_name[name].validate_values(parsed[name], partial=True)
+    for item in parsed.get('lab_test_results', []):
+        REPORT_DATABASE_SCHEMA.table_by_name['lab_test_report'].validate_values(item, partial=True)
     return parsed
 
 

@@ -46,11 +46,12 @@ export function revealWebProviderCredential(providerId: string) {
   );
 }
 
-export function testWebProvider(providerId: string, apiKey?: string) {
+export function testWebProvider(providerId: string, apiKey?: string, signal?: AbortSignal) {
   return request<WebProviderTestResponse>(
     `/account-settings/web-access/providers/${encodeURIComponent(providerId)}/test`,
     {
       method: "POST",
+      signal,
       body: JSON.stringify(apiKey ? { api_key: apiKey } : {})
     }
   );

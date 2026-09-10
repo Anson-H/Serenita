@@ -189,7 +189,7 @@ export function ComposerModelControl({
               </button>
               <GroupedList
                 aria-label="模型"
-                className="composer-model-side-panel"
+                className="composer-model-side-panel scroll-balanced"
                 role="radiogroup"
                 density="standard"
               >

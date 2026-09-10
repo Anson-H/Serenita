@@ -58,54 +58,60 @@ test("refreshes after a mutation share a fresh read once the stale request finis
   assert.equal(sessions[0].title, "generated");
 });
 
-function reportActions(api, extra = {}) {
+async function reportActions(api) {
   const effects = [];
-  const state = {
-    detailRequestSequenceRef: ref(1), isCurrentScope: () => true,
-    canEdit: true, selectedReport: { report_id: "a", member_id: "member-a" },
-    saving: false, labItemMutation: null, deletingAnalysis: false,
-    setSaving: value => effects.push(["saving", value]),
-    setActionError: value => effects.push(["error", value]), memberId: "member-a",
-    selectedReportIdRef: ref("a"), setSelectedReport: value => effects.push(["detail", value]),
-    refreshConversationReportStates: async ids => effects.push(["resources", ids]),
-    loadReports: async () => effects.push(["list"]), setActionMessage: value => effects.push(["message", value]),
-    deleting: false, setLabItemMutation: noop, analyzing: false, setDeletingAnalysis: noop,
-    setLatestAnalysisReportId: noop, setAnalysisError: noop, addingSources: false,
-    setAddingSources: noop, ...extra
-  };
-  const { createReportMutationActions } = loadModule("features/reports/reportMutationActions.ts", {}, {
-    "../../api/client": { apiClient: api }
+  const { ReportDetailState } = loadModule("features/reports/model/detail.ts");
+  const detail = new ReportDetailState("member-a", {
+    read: async (_member, reportId) => ({ report_id: reportId, member_id: "member-a" }),
+    isCurrent: () => true, beforeNavigate: async () => true, onError: noop, onOpened: noop,
   });
-  return { state, effects, actions: createReportMutationActions(state) };
+  await detail.open("a");
+  detail.subscribe(() => effects.push(["detail", detail.snapshot().selectedReport]));
+  const { ReportMutationActions } = loadModule("features/reports/model/mutations.ts", {}, {
+    "../../../api/client": { apiClient: api }
+  });
+  const actions = new ReportMutationActions(detail, {
+    canEdit: () => true, deleting: () => false, analyzing: () => false,
+    onChanged: async ids => { effects.push(["resources", ids], ["list"]); },
+    onAnalysisDeleted: noop, onError: value => effects.push(["error", value]),
+    onMessage: value => effects.push(["message", value]),
+  });
+  return { detail, effects, actions };
 }
 
 test("a report save returning after A to B to A cannot update the new selection", async () => {
   const gate = deferred();
   const calls = [];
-  const { state, effects, actions } = reportActions({ updateReportField: (...args) => {
+  const { detail, effects, actions } = await reportActions({ updateReportField: (...args) => {
     calls.push(args); return gate.promise;
   } });
   const save = actions.updateSelectedReportField({ field: "report_name", value: "edited" });
-  state.detailRequestSequenceRef.current += 2;
-  gate.resolve({ report_id: "a", report_name: "stale" });
+  await settle();
+  await detail.open("b");
+  await detail.open("a");
+  effects.length = 0;
+  gate.resolve({ report_id: "a", member_id: "member-a", report_name: "stale" });
   assert.equal(await save, false);
   assert.deepEqual(calls, [["member-a", "a", { field: "report_name", value: "edited" }]]);
-  assert.deepEqual(effects, [["saving", true], ["error", ""]]);
+  assert.deepEqual(effects, []);
+  assert.equal(detail.snapshot().selectedReport.report_name, undefined);
+  assert.equal(actions.snapshot().saving, false);
 });
 
 test("report mutation publishes one detail, list and resource refresh and preserves original failure", async () => {
-  const updated = { report_id: "a", report_name: "edited" };
-  const success = reportActions({ updateReportField: async () => updated });
+  const updated = { report_id: "a", member_id: "member-a", report_name: "edited" };
+  const success = await reportActions({ updateReportField: async () => updated });
   assert.equal(await success.actions.updateSelectedReportField({ field: "report_name", value: "edited" }), updated);
   assert.deepEqual(success.effects.filter(([name]) => ["detail", "list", "resources"].includes(name)), [
     ["detail", updated], ["resources", ["a"]], ["list"]
   ]);
-  const failure = reportActions({
+  const failure = await reportActions({
     updateReportField: async () => { throw new Error("original save failure"); },
     getReport: async () => { throw new Error("readback failure"); }
   });
   assert.equal(await failure.actions.updateSelectedReportField({ field: "report_name", value: "edited" }), false);
-  assert.deepEqual(failure.effects.slice(-2), [["error", "original save failure"], ["saving", false]]);
+  assert.deepEqual(failure.effects.at(-1), ["error", "original save failure"]);
+  assert.equal(failure.actions.snapshot().saving, false);
 });
 
 test("model save reads and publishes the catalog once; cancelled probes cannot republish it", async () => {
@@ -126,7 +132,7 @@ test("model save reads and publishes the catalog once; cancelled probes cannot r
   const controllers = ref(new Map());
   const actions = createModelSettingsActions(new Proxy({
     modelProbeAbortControllersRef: controllers,
-    publishModelCatalog: (...args) => calls.push(["publish", ...args])
+    refreshModels: async () => { const { models } = await apiClient.fetchModels(); const { defaults } = await apiClient.fetchModelDefaults(); calls.push(["publish", models, defaults]); }
   }, { get: (target, key) => target[key] ?? noop }));
   await actions.updateAddedModel("provider:model", { model_name: "updated" }, { notify: false });
   assert.deepEqual(calls, [
@@ -224,4 +230,30 @@ test("category saves follow renamed targets and latest revisions without replaci
   assert.equal(state.categoryFormRef.current.description, "B draft");
   assert.equal(forms.length, formsBefore);
   assert.deepEqual(selected, []);
+});
+
+
+test('conversation pages retain loaded history during refresh and retry failed next pages', async () => {
+  const { createConversationIndex } = loadModule('features/conversations/conversationIndex.ts');
+  let fail = true;
+  const calls = [];
+  let sessions = [];
+  let hasMore = false;
+  const index = createConversationIndex(async cursor => {
+    calls.push(cursor);
+    if (cursor && fail) throw new Error('offline');
+    return cursor ? { sessions: [{ session_id: 'old', title: 'older' }], next_cursor: null }
+      : { sessions: [{ session_id: 'new', title: 'newest' }], next_cursor: 'older-page' };
+  }, value => { sessions = typeof value === 'function' ? value(sessions) : value; }, () => true, value => { hasMore = value; });
+  await index.refresh();
+  assert.equal(hasMore, true);
+  await assert.rejects(index.loadMore(), /offline/);
+  assert.deepEqual(sessions.map(item => item.session_id), ['new']);
+  fail = false;
+  await index.loadMore();
+  assert.equal(hasMore, false);
+  assert.deepEqual(sessions.map(item => item.session_id), ['new', 'old']);
+  await index.refresh();
+  assert.deepEqual(sessions.map(item => item.session_id), ['new', 'old']);
+  assert.deepEqual(calls, [undefined, 'older-page', 'older-page', undefined, 'older-page']);
 });

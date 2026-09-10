@@ -13,7 +13,7 @@ from tests.api_client import TestClient
 from backend.app.agent_runtime.model_types import ModelRequest, ToolSchema
 from backend.app.plugins import PluginRuntimeContext, build_builtin_skills
 from backend.app.application.model_provider_service import ModelProviderService
-from backend.app.plugins.web.adapters import ExaAdapter, TavilyAdapter
+from backend.app.plugins.web.adapters import ExaAdapter, TavilyAdapter, WebProviderAdapter
 from backend.app.plugins.web.citations import export_web_citation_markdown, web_citation_sources_from_events
 from backend.app.plugins.web.errors import WebAccessError
 from backend.app.plugins.web.service import WebAccessService
@@ -335,7 +335,7 @@ def test_tavily_read_preserves_partial_failures():
     ]
 
 
-class FakeAdapter:
+class FakeAdapter(WebProviderAdapter):
     provider_id = "tavily"
 
     def __init__(self):
@@ -640,6 +640,7 @@ def test_web_credentials_are_account_isolated_encrypted_and_only_explicitly_reve
             ).fetchall()
         }
     assert tables == {
+        "account_preferences",
         "model_providers",
         "models",
         "model_access_settings",

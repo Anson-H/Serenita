@@ -201,6 +201,24 @@ class AppPaths:
     def reports_db(self, account_id: str) -> Path:
         return self.account_root(account_id) / "reports" / "db_storage" / "reports.db"
 
+    def medical_logs_db(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "medical_logs" / "db_storage" / "medical_logs.db"
+
+    def body_metrics_db(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "body_metrics" / "db_storage" / "body_metrics.db"
+
+    def medications_db(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "medications" / "db_storage" / "medications.db"
+
+    def notifications_db(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "notifications" / "db_storage" / "notifications.db"
+
+    def background_tasks_db(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "background_tasks" / "db_storage" / "background_tasks.db"
+
+    def medication_files_dir(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "medications" / "files"
+
     def report_attachments_dir(self, account_id: str) -> Path:
         return self.account_root(account_id) / "reports" / "attachments"
 

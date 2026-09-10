@@ -115,6 +115,18 @@ for (const sample of [
   });
 }
 
+test("compact composer returns to normal when the available height recovers", async ({ page }) => {
+  await arrangeProductionConversation(page, { height: 296, mode: "compact", width: 390 });
+  for (const height of [320, 296, 320]) {
+    await page.setViewportSize({ width: 390, height });
+    await waitForStableProductionHeightMode(page, height === 320 ? "normal" : "compact");
+  }
+  const composer = page.locator(".conversation-composer");
+  await expect(composer).not.toHaveAttribute("data-height-compact", "true");
+  await composer.getByRole("textbox", { name: "输入健康问题" }).fill("恢复后仍然可以输入");
+  await waitForStableProductionHeightMode(page, "normal");
+});
+
 test("300x160 production workspace keeps extreme composer, tail control and tray reachable", async ({ page }) => {
   const { composer, fixture, stage, tailButton } =
     await arrangeProductionConversation(page, {
@@ -171,13 +183,15 @@ test("300x160 production workspace keeps extreme composer, tail control and tray
     const stage = document.querySelector<HTMLElement>(".home-workspace-content")!;
     const composer = stage.querySelector<HTMLElement>(".conversation-composer")!;
     const textarea = composer.querySelector<HTMLTextAreaElement>("textarea")!;
+    const surface = composer.querySelector<HTMLElement>(".conversation-composer-surface")!;
     const stageRect = stage.getBoundingClientRect();
     const composerRect = composer.getBoundingClientRect();
     const textareaRect = textarea.getBoundingClientRect();
     return {
       composerInsideStage:
         composerRect.left >= stageRect.left && composerRect.right <= stageRect.right,
-      composerOverflow: composer.scrollWidth - composer.clientWidth,
+      // The blurred backdrop intentionally spans the full column; measure editable content.
+      surfaceOverflow: surface.scrollWidth - surface.clientWidth,
       documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
       stageOverflow: stage.scrollWidth - stage.clientWidth,
       textareaInsideComposer:
@@ -187,7 +201,7 @@ test("300x160 production workspace keeps extreme composer, tail control and tray
   });
   expect(horizontalGeometry).toMatchObject({
     composerInsideStage: true,
-    composerOverflow: 0,
+    surfaceOverflow: 0,
     documentOverflow: 0,
     stageOverflow: 0,
     textareaInsideComposer: true

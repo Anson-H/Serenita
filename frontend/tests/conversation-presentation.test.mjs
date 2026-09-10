@@ -417,6 +417,7 @@ describe("context-window-usage", () => {
       is_context_window_usage_visible: false,
       is_related_content_visible: true,
       is_token_usage_visible: false,
+      is_model_identity_visible: false,
       visible_context_types: [],
       tool_display_types: ["model_tool_request", "tool_call"]
     });
@@ -443,17 +444,21 @@ describe("context-window-usage", () => {
     assert.equal(aliceDefaults.showContextWindowUsage, false);
     assert.equal(aliceDefaults.showRelatedContent, true);
     assert.equal(aliceDefaults.showTokenUsage, false);
+    assert.equal(aliceDefaults.showModelIdentity, false);
 
     settingsModule.writeContextAssemblyDisplaySettings("alice", {
       ...aliceDefaults,
       showContextWindowUsage: true,
       showRelatedContent: false,
-      showTokenUsage: true
+      showTokenUsage: true,
+      showModelIdentity: true
     });
 
     assert.equal(readSettings("alice").showContextWindowUsage, true);
     assert.equal(readSettings("alice").showRelatedContent, false);
     assert.equal(readSettings("alice").showTokenUsage, true);
+    assert.equal(readSettings("alice").showModelIdentity, true);
+    assert.equal(readSettings("bob").showModelIdentity, false);
     assert.equal(readSettings("bob").showContextWindowUsage, false);
   });
 });

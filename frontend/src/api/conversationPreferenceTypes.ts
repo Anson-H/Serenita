@@ -32,6 +32,7 @@ export type ConversationPreferences = {
   is_context_window_usage_visible: boolean;
   is_related_content_visible: boolean;
   is_token_usage_visible: boolean;
+  is_model_identity_visible: boolean;
   visible_context_types: ConversationContextDisplayType[];
   tool_display_types: ToolExecutionDisplayType[];
 };

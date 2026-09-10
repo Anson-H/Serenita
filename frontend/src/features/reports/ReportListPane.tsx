@@ -1,9 +1,13 @@
+import { ListSelectionSlot } from "../../components/ListSelectionSlot";
+import { navigationLabels } from "../../components/navigationLabels";
+import { EmptyState } from "../../components/EmptyState";
 import type { HTMLAttributes } from "react";
 import {
   useEffect
 } from "react";
 import { createPortal } from "react-dom";
 import { GroupedList } from "../../components/GroupedList";
+import { DateField } from "../../components/DateField";
 import { useListContextMenu } from "../../components/useListContextMenu";
 import { useActiveScope } from "../../utils/useActiveScope";
 import { useScopedState } from "../../utils/useScopedState";
@@ -12,16 +16,21 @@ import { useReportSelection } from "./useReportSelection";
 import type { ReportSummary } from "../../api/client";
 import {
   AlertIcon,
+  CalendarIcon,
+  FilterIcon,
+  SearchIcon,
   CheckIcon,
   ChevronRightIcon,
   ListChecksIcon,
   PlusIcon,
   StarIcon,
-  TrashIcon,
-  XIcon
+  TrashIcon
 } from "../../components/icons";
 import { MultiSelectPopover } from "../../components/MultiSelectPopover";
 import { SelectAllButton } from "../../components/SelectAllButton";
+import { ListSelectionBar } from "../../components/ListSelectionBar";
+import { ListCount } from "../../components/ListCount";
+import { ListBulkActions } from "../../components/ListBulkActions";
 import {
   reportDisplayTitle,
   reportListDateHeading
@@ -92,7 +101,7 @@ function ReportTimelineItem({
     >
       {selectionMode ? (
         <button
-          aria-label={`${selected ? "取消选择" : "选择"}报告：${title}`}
+          aria-label={`${selected ? "取消选择" : "选择"}医疗报告：${title}`}
           aria-pressed={selected}
           className="report-selection-toggle selection-check-control"
           data-interaction-owner="row"
@@ -107,7 +116,7 @@ function ReportTimelineItem({
       ) : null}
       <button
         aria-current={active && !selectionMode ? "page" : undefined}
-        aria-label={selectionMode ? `${selected ? "取消选择" : "选择"}报告：${title}` : `打开报告：${title}`}
+        aria-label={selectionMode ? `${selected ? "取消选择" : "选择"}医疗报告：${title}` : `打开医疗报告：${title}`}
         className="report-timeline-item"
         data-interaction-owner="row"
         onClick={(event) => {
@@ -146,6 +155,7 @@ export function ReportListPane({
   const [batchBusy, setBatchBusy] = useScopedState(false, isCurrentScope);
   const [selectedReportIds, setSelectedReportIds] = useReportSelection(workspace.memberId);
   const [selectionMode, setSelectionMode] = useScopedState(false, isCurrentScope);
+  const [filterMode, setFilterMode] = useScopedState<"type" | "search" | "date">("type", isCurrentScope);
   useEffect(() => { setBatchBusy(false); setSelectionMode(false); }, [workspace.memberId]);
   const { contextMenu, menuRef: contextMenuRef, closeContextMenu, rowProps, onMenuKeyDown } =
     useListContextMenu({ enabled: !selectionMode, scope: `reports:${workspace.memberId}` });
@@ -222,8 +232,8 @@ export function ReportListPane({
   const contextMenuPortal = contextMenu && contextReport && typeof document !== "undefined"
     ? createPortal(
       <GroupedList
-        aria-label={`${reportDisplayTitle(contextReport)} 的报告操作`}
-        className="context-action-menu report-context-menu"
+        aria-label={`${reportDisplayTitle(contextReport)} 的医疗报告操作`}
+        className="context-action-menu scroll-balanced report-context-menu"
         onKeyDown={onMenuKeyDown}
         ref={contextMenuRef}
         role="menu"
@@ -267,49 +277,48 @@ export function ReportListPane({
 
   return (
     <section
-      aria-label="报告列表"
+      aria-label="医疗报告列表"
       className="report-library"
       data-selection-mode={selectionMode ? "true" : undefined}
     >
       <div className="report-library-controls">
-        <MultiSelectPopover
-          allSelectedLabel="全部报告类型"
-          ariaLabel="按报告类型筛选"
+        <ListSelectionSlot active={selectionMode} selection={<ListSelectionBar summary={`已选择 ${selectedReportIds.size} 份医疗报告`} label="医疗报告多选" cancelLabel="退出医疗报告多选" busy={batchBusy} onCancel={cancelSelection}>
+              <SelectAllButton
+                disabled={batchBusy || workspace.listLoading}
+                ids={workspace.reports.map((report) => report.report_id)}
+                onChange={setSelectedReportIds}
+                scopeLabel="当前筛选结果中的医疗报告"
+                selectedIds={selectedReportIds}
+              />
+          </ListSelectionBar>}>
+        <div className="report-filter-bar" data-mode={filterMode}>
+        {filterMode === "type" ? <MultiSelectPopover
+          allSelectedLabel="全部医疗报告类型"
+          ariaLabel="按医疗报告类型筛选"
           className="report-filter-picker multi-select-filter-picker"
-          emptySelectedLabel="未选择报告类型"
+          emptySelectedLabel="未选择医疗报告类型"
           menuWidth="trigger" menuAlign="start" interactionOwner="self"
           onChange={workspace.selectReportTypes}
           options={workspace.REPORT_TYPES.map((type) => ({
             label: type,
             value: type
           }))}
-          selectedCountLabel={(count) => `已选 ${count} 种报告类型`}
+          selectedCountLabel={(count) => `已选 ${count} 种医疗报告类型`}
           values={workspace.selectedReportTypes}
-        />
-        {selectionMode ? (
-          <div aria-live="polite" className="list-selection-heading standard-control-bar" role="status">
-            <strong>已选择 {selectedReportIds.size} 份报告</strong>
-            <div className="compact-control-actions">
-              <SelectAllButton
-                disabled={batchBusy || workspace.listLoading}
-                ids={workspace.reports.map((report) => report.report_id)}
-                onChange={setSelectedReportIds}
-                scopeLabel="当前筛选结果中的报告"
-                selectedIds={selectedReportIds}
-              />
-              <button
-                aria-label="退出报告多选"
-                className="control control--inline control--icon control--ghost report-selection-cancel standard-bar-icon-control"
-                disabled={batchBusy}
-                onClick={cancelSelection}
-                title="退出报告多选"
-                type="button"
-              >
-                <XIcon />
-              </button>
-            </div>
-          </div>
-        ) : null}
+        /> : <button type="button" className="control control--icon" aria-label="展开类型筛选栏" title="展开类型筛选栏"
+          onClick={() => setFilterMode("type")}><FilterIcon /></button>}
+        {filterMode === "search" ? <input aria-label="搜索医疗报告" placeholder="搜索名称或机构" type="search" value={workspace.reportQuery}
+          onChange={event => workspace.setReportQuery(event.target.value)} /> :
+          <button type="button" className="control control--icon" aria-label="展开搜索栏" title="展开搜索栏"
+            onClick={() => setFilterMode("search")}><SearchIcon /></button>}
+        {filterMode === "date" ? <div className="date-range-filter" role="group" aria-label="日期范围">
+          <DateField compact emptyLabel="不限" emptyOptionLabel="不限" label="起始日期" value={workspace.reportAfterDate} onChange={workspace.setReportAfterDate} />
+          <span aria-hidden="true">至</span>
+          <DateField compact emptyLabel="不限" emptyOptionLabel="不限" label="结束日期" value={workspace.reportBeforeDate} onChange={workspace.setReportBeforeDate} />
+        </div> : <button type="button" className="control control--icon" aria-label="展开日期范围栏" title="展开日期范围栏"
+          onClick={() => setFilterMode("date")}><CalendarIcon /></button>}
+        </div>
+        </ListSelectionSlot>
       </div>
 
       <div
@@ -318,7 +327,7 @@ export function ReportListPane({
         id="report-archive-list"
       >
         {workspace.listLoading && !workspace.reports.length ? (
-          <div className="report-list-skeleton" aria-label="正在加载报告">
+          <div className="report-list-skeleton" aria-label="正在加载医疗报告">
             {[0, 1, 2, 3].map((item) => <span key={item} />)}
           </div>
         ) : dateGroups.length ? (
@@ -346,65 +355,44 @@ export function ReportListPane({
             ))}
           </div>
         ) : workspace.listError ? null : (
-          <div className="report-list-empty workspace-empty-state">
-            <strong>
-              {workspace.selectedReportTypes.length === 0
-                ? "未选择报告类型"
-                : allReportTypesSelected
-                  ? "暂无报告"
-                  : "暂无该类型报告"}
-            </strong>
-            <p>
-              {workspace.selectedReportTypes.length === 0
-                ? "在筛选选择框中选择报告类型后可查看对应报告。"
-                : "可以文字录入，也可以上传文件"}
-            </p>
-          </div>
+          <EmptyState className="report-list-empty" title={workspace.selectedReportTypes.length === 0
+                ? "未选择医疗报告类型"
+                  : workspace.reportQuery.trim() || workspace.reportAfterDate || workspace.reportBeforeDate
+                    ? "没有匹配的医疗报告"
+                  : allReportTypesSelected
+                  ? "暂无医疗报告"
+                  : "暂无该类型医疗报告"}
+            description={workspace.selectedReportTypes.length === 0
+                ? "在筛选选择框中选择医疗报告类型后可查看对应医疗报告。"
+                : workspace.reportQuery.trim() || workspace.reportAfterDate || workspace.reportBeforeDate
+                  ? "请调整搜索内容或日期范围。"
+                  : "可以文字录入，也可以上传文件"}
+            />
         )}
         {!workspace.listLoading && !workspace.listError && workspace.total > 0 ? (
-          <p className="object-list-count">共 {workspace.total} 份报告</p>
+          <ListCount total={workspace.total} unit="份" label="医疗报告" />
         ) : null}
       </div>
 
       {!selectionMode ? (
         <div className="list-floating-actions report-library-floating-actions">
           <button
-            aria-label="新增报告"
+            aria-label={navigationLabels.createReport}
             className="control control--primary primary-action creation-action-button control-primary"
             disabled={!workspace.canEdit || workspace.creating}
             onClick={onRequestCreate}
             type="button"
           >
             <PlusIcon />
-            <span>{workspace.creating ? "新增中" : "新增报告"}</span>
+            <span>{workspace.creating ? "创建中" : navigationLabels.createReport}</span>
           </button>
         </div>
       ) : null}
 
-      {selectionMode ? (
-        <section className="report-bulk-toolbar" aria-label="批量报告操作">
-          <div className="report-bulk-actions">
-            <button
-              className="control control--secondary"
-              disabled={!selectedReportIds.size || batchBusy}
-              onClick={() => void favoriteSelection()}
-              type="button"
-            >
-              <StarIcon />
-              <span>收藏</span>
-            </button>
-            <button
-              className="control control--secondary control--danger removal-action-control"
-              disabled={!workspace.canEdit || !selectedReportIds.size || batchBusy}
-              onClick={() => void deleteSelection()}
-              type="button"
-            >
-              <TrashIcon />
-              <span>删除</span>
-            </button>
-          </div>
-        </section>
-      ) : null}
+      {selectionMode ? <ListBulkActions label="批量医疗报告操作" inset>
+        <button className="control control--compact control--secondary" disabled={!selectedReportIds.size || batchBusy} onClick={() => void favoriteSelection()} type="button"><StarIcon /><span>收藏</span></button>
+        <button className="control control--compact control--secondary control--danger removal-action-control" disabled={!workspace.canEdit || !selectedReportIds.size || batchBusy} onClick={() => void deleteSelection()} type="button"><TrashIcon /><span>删除</span></button>
+      </ListBulkActions> : null}
       {contextMenuPortal}
     </section>
   );

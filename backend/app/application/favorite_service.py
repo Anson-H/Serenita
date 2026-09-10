@@ -3,7 +3,7 @@ import json
 from backend.app.core.favorite_errors import FavoriteSourceConflictError
 import uuid
 
-from backend.app.application.conversation_service import ConversationService
+from backend.app.application.conversations.service import ConversationService
 from backend.app.application.report_service import ReportService
 from backend.app.core.errors import raise_error
 from backend.app.core.member_lifecycle import member_lifecycle_operation
@@ -17,7 +17,7 @@ from backend.app.storage.paths import app_paths
 
 
 def _report_title(report: dict) -> str:
-    report_type = str(report.get("report_type") or "报告").strip() or "报告"
+    report_type = str(report.get("report_type") or "医疗报告").strip() or "医疗报告"
     report_name = str(report.get("report_name") or "").strip()
     if not report_name or report_name == report_type:
         return report_type
@@ -52,8 +52,8 @@ def _report_snapshot(report: dict) -> str:
     lines = [
         f"# {_report_title(report)}",
         "",
-        f"- **报告类型**：{str(report.get('report_type') or '—').strip() or '—'}",
-        f"- **报告时间**：{str(report.get('report_time') or '—').strip() or '—'}",
+        f"- **医疗报告类型**：{str(report.get('report_type') or '—').strip() or '—'}",
+        f"- **医疗报告时间**：{str(report.get('report_time') or '—').strip() or '—'}",
         f"- **就诊机构**：{str(report.get('institution_name') or '—').strip() or '—'}",
     ]
     report_type = report.get("report_type")
@@ -106,10 +106,13 @@ def _report_snapshot(report: dict) -> str:
             report.get("surgery_report"),
             report_snapshot_fields("surgery_report"),
         )
+    elif report_type in {"门诊病历", "急诊病历"}:
+        table = "outpatient_report" if report_type == "门诊病历" else "emergency_report"
+        _append_report_fields(lines, report_type, report.get(table), report_snapshot_fields(table))
     else:
         other_report = report.get("other_report")
         body = (other_report or {}).get("report_body")
-        lines.extend(["", "## 报告内容", "", str(body or "暂无内容").strip()])
+        lines.extend(["", "## 医疗报告内容", "", str(body or "暂无内容").strip()])
     analysis_content = str(report.get("analysis_content") or "").strip()
     if analysis_content:
         lines.extend(["", "## 解读结果", "", analysis_content])
@@ -195,7 +198,7 @@ class FavoriteService:
         source_session_id = payload.source_session_id or ""
         if payload.source_type == "report":
             if not payload.member_id:
-                member_error("MEMBER_REQUIRED", "收藏报告必须指定成员。", 'invalid_input')
+                member_error("MEMBER_REQUIRED", "收藏医疗报告必须指定成员。", 'invalid_input')
             member_id = payload.member_id
             access = self.members.resolve(account_id, member_id)
             report = self.report_service_factory(account_id, member_id).get_report(
@@ -246,7 +249,7 @@ class FavoriteService:
                     },
                 )
         except FavoriteSourceConflictError:
-            duplicate_name = "报告" if payload.source_type == "report" else "回答"
+            duplicate_name = "医疗报告" if payload.source_type == "report" else "回答"
             raise_error('conflict', "CONFLICT", f"该{duplicate_name}已收藏。")
         return self.get_favorite(account_id, favorite_id)
 

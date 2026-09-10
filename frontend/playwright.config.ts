@@ -17,7 +17,7 @@ export default defineConfig({
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    { name: "webkit", testMatch: /conversation-(overlay-geometry|scroll-controller|new-chat)\.spec\.ts/, use: {
+    { name: "webkit", testMatch: /(layout-spacing|navigation-titles|creation-dialogs|add-dialogs|empty-states|theme|conversation-(overlay-geometry|scroll-controller|new-chat)|medication-(navigation|batches|list-actions)|medications)\.spec\.ts/, use: {
       ...devices["Desktop Safari"],
       // Enable full keyboard navigation for this test process, never the user's system preferences.
       launchOptions: process.platform === "darwin" ? {

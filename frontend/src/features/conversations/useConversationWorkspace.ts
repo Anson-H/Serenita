@@ -4,11 +4,11 @@ import {
   type MutableRefObject,
   type SetStateAction,
   useEffect,
-  useRef,
 } from "react";
 import { useActiveScope } from "../../utils/useActiveScope";
 import { useMembers } from "../members/MemberProvider";
 import { createConversationQueueActions } from './conversationQueueActions';
+import type { ConversationDraftStore } from './conversationDraftStore';
 
 import {
   apiClient,
@@ -38,6 +38,7 @@ import {
 const UNTITLED_CONVERSATION_TITLE = "新聊天";
 
 type ConversationWorkspaceOptions = {
+  draftStore: ConversationDraftStore;
   conversationViewRef: MutableRefObject<number>;
   refreshConversations: (isRelevant?: () => boolean) => Promise<void>;
   activeScenario: ScenarioTab;
@@ -85,6 +86,7 @@ export function useConversationWorkspace(options: ConversationWorkspaceOptions) 
   const memberId = options.conversationDetail ? options.conversationDetail.member_id : activeMemberId;
   const isCurrentScope = useActiveScope(`${memberId ?? "unbound"}:${options.currentSessionId ?? ""}`);
   const {
+    draftStore,
     refreshConversations,
     activeScenario,
     activeStreamRef,
@@ -115,12 +117,10 @@ export function useConversationWorkspace(options: ConversationWorkspaceOptions) 
     setCurrentSessionId,
     setConversationDetail,
     setAnnotatedContexts,
-    setAnnotationSelection,
     setEditingMessageId,
     setEditingMessageText,
     setSending,
     setUploadedResources,
-    setUploadingResources,
     thinkingMode,
     uploadedResources,
     uploadingResources
@@ -141,7 +141,6 @@ export function useConversationWorkspace(options: ConversationWorkspaceOptions) 
     setConversationDetail,
     setConversations
   });
-  const restoredQueueContextResourcesRef = useRef<Array<Record<string, unknown>>>([]);
 
   async function cancelActiveGeneration(
     input: Parameters<typeof cancelActiveGenerationFromStream>[0]
@@ -150,9 +149,6 @@ export function useConversationWorkspace(options: ConversationWorkspaceOptions) 
     return cancelActiveGenerationFromStream(input);
   }
 
-  useEffect(() => {
-    restoredQueueContextResourcesRef.current = [];
-  }, [currentSessionId]);
 
   const pendingTurn = conversationDetail?.pending_turns[0] ?? null;
   const pendingStreamId = pendingTurn?.stream_id ?? null;
@@ -258,7 +254,7 @@ export function useConversationWorkspace(options: ConversationWorkspaceOptions) 
     memberId?: string;
     isCurrent?: () => boolean;
     sessionId?: string | null;
-    onSubmitted?: () => void;
+    onSubmitted?: (sessionId: string) => void;
   }) {
     const view = options.conversationViewRef.current;
     const current = () => options.conversationViewRef.current === view
@@ -287,7 +283,7 @@ export function useConversationWorkspace(options: ConversationWorkspaceOptions) 
         return response;
       }
       if (response.disposition === "queued") {
-        input.onSubmitted?.();
+        input.onSubmitted?.(response.session_id);
         prepareConversationMutation(`queue-accepted:${response.session_id}:${response.queued_inputs.length}`);
         setConversationDetail((current) =>
           current?.session_id === response.session_id
@@ -312,7 +308,7 @@ export function useConversationWorkspace(options: ConversationWorkspaceOptions) 
       navigateTo(chatPathForSession(response.session_id));
       // Navigation captures the home draft from this render. Consume the
       // submitted draft afterwards so it cannot be restored as unsent input.
-      input.onSubmitted?.();
+      input.onSubmitted?.(response.session_id);
       const submittedContextResources = response.context_resources ?? input.contextResources;
       showPendingConversationSummary(response);
       showStreamingTurn(
@@ -338,6 +334,7 @@ export function useConversationWorkspace(options: ConversationWorkspaceOptions) 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const rawText = formTextValue(event.currentTarget, "message", composerText);
+    const submittedDraft = draftStore.capture();
 
     if (!conversationEnabled) {
       return;
@@ -345,7 +342,7 @@ export function useConversationWorkspace(options: ConversationWorkspaceOptions) 
 
     const submittedContextResources = [
       ...submittedContextResourcesFromDraft(uploadedResources, annotatedContexts),
-      ...restoredQueueContextResourcesRef.current
+      ...draftStore.snapshot().contextResources
     ];
 
     if (!hasSubmittableDraft(rawText, submittedContextResources)) {
@@ -373,15 +370,11 @@ export function useConversationWorkspace(options: ConversationWorkspaceOptions) 
       rawText,
       contextResources: contextResourcesWithReport,
       startNewConversation,
-      onSubmitted: () => {
-        setComposerText("");
-        setUploadingResources([]);
-        setUploadedResources([]);
-        setAnnotatedContexts([]);
-        setAnnotationSelection(null);
+      sessionId: startNewConversation ? undefined : submittedDraft.sessionId ?? currentSessionId,
+      onSubmitted: sessionId => {
+        draftStore.complete(submittedDraft, sessionId);
         setEditingMessageId(null);
         setEditingMessageText("");
-        restoredQueueContextResourcesRef.current = [];
         clearHomeConversationDraft();
       }
     });
@@ -504,6 +497,7 @@ export function useConversationWorkspace(options: ConversationWorkspaceOptions) 
     await createFork(sessionId);
   }
   const { reorderQueuedInputs, deleteQueuedInput, restoreQueuedInputToDraft, runQueuedInputNow } = createConversationQueueActions({
+    draftStore: options.draftStore,
     prepareConversationMutation,
     setConversationDetail,
     currentSessionId,
@@ -517,7 +511,6 @@ export function useConversationWorkspace(options: ConversationWorkspaceOptions) 
     uploadedResources,
     uploadingResources,
     annotatedContexts,
-    restoredQueueContextResourcesRef,
     setComposerText,
     setUploadedResources,
     setAnnotatedContexts,

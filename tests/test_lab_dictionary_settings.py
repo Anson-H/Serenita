@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests.member_support import create_stored_report
 from member_support import account_id as account_id_for, member_id
 from tests.api_client import TestClient
 
@@ -155,7 +156,7 @@ def test_existing_item_name_conflict_can_merge_without_overwriting_reports(
         sha256="dictionary-merge-source",
         source_kind="unknown",
     )
-    report_id = repository.create_report(
+    report_id = create_stored_report(repository, 
         member_id("alice"),
         {
             "report_type": "检验报告",
@@ -250,7 +251,7 @@ def test_item_merge_rejects_different_results_in_the_same_report(
         account_id_for("alice"), "FILE-merge-conflict", "txt"
     )
     source_path.parent.mkdir(parents=True, exist_ok=True)
-    source_path.write_text("同一报告中的两个结果", encoding="utf-8")
+    source_path.write_text("同一医疗报告中的两个结果", encoding="utf-8")
     repository.register_source_file(
         member_id("alice"),
         resource_id="FILE-merge-conflict",
@@ -260,7 +261,7 @@ def test_item_merge_rejects_different_results_in_the_same_report(
         sha256="dictionary-merge-conflict",
         source_kind="unknown",
     )
-    report_id = repository.create_report(
+    report_id = create_stored_report(repository, 
         member_id("alice"),
         {
             "report_type": "检验报告",
@@ -321,7 +322,7 @@ def test_dictionary_primary_and_related_categories_preserve_history(tmp_path, mo
         sha256="dictionary-source",
         source_kind="unknown",
     )
-    report_id = repository.create_report(
+    report_id = create_stored_report(repository, 
         member_id("alice"),
         {
             "report_type": "检验报告",
@@ -477,7 +478,7 @@ def test_lab_report_names_are_dictionary_managed(tmp_path, monkeypatch):
         sha256="readonly-source",
         source_kind="unknown",
     )
-    report_id = repository.create_report(
+    report_id = create_stored_report(repository, 
         member_id("alice"),
         {
             "report_type": "检验报告",
@@ -530,7 +531,7 @@ def test_primary_category_change_merges_same_source_category_reports(
         sha256="reclassify-source",
         source_kind="unknown",
     )
-    inflammation_report_id = repository.create_report(
+    inflammation_report_id = create_stored_report(repository, 
         member_id("alice"),
         {
             "report_type": "检验报告",
@@ -547,7 +548,7 @@ def test_primary_category_change_merges_same_source_category_reports(
         },
         resource_id="FILE-reclassify",
     )
-    cardiac_report_id = repository.create_report(
+    cardiac_report_id = create_stored_report(repository, 
         member_id("alice"),
         {
             "report_type": "检验报告",

@@ -5,7 +5,7 @@ import json
 from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -149,3 +149,16 @@ def set_grants(payload: GrantsRequest, user: CurrentUser = Depends(require_curre
 @router.delete("/api/account-settings/member-grants/{member_id}/{account_id}")
 def revoke_grant(member_id: str, account_id: str, user: CurrentUser = Depends(require_current_user), service: MemberService = Depends(member_service)):
     return service.revoke(user.account_id, member_id, account_id)
+
+
+from backend.app.schemas.medical_history import MedicalHistoryField, MedicalHistoryUpdate
+
+
+@router.get("/api/members/{member_id}/medical-history")
+def read_medical_history(request: Request, member_id: str, fields: list[MedicalHistoryField] | None = Query(default=None), user: CurrentUser = Depends(require_current_user)):
+    return request.app.state.services.medical_history.read(user.account_id, member_id, fields)
+
+
+@router.patch("/api/members/{member_id}/medical-history")
+def update_medical_history(request: Request, member_id: str, payload: MedicalHistoryUpdate, user: CurrentUser = Depends(require_current_user)):
+    return request.app.state.services.medical_history.update(user.account_id, member_id, payload.model_dump(exclude_unset=True))

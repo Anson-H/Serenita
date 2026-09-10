@@ -1,3 +1,4 @@
+from backend.app.providers.model_type_probe import detect_model_type, probe_embeddings
 from backend.app.core.model_probe_tasks import probes_for_paths
 from backend.app.storage.paths import app_paths
 from backend.app.application.provider_errors import raise_provider_error
@@ -5,15 +6,16 @@ from typing import Any
 from backend.app.core.cancellation import CancellationToken, OperationCancelledError
 from backend.app.core.errors import raise_error
 from backend.app.core.time import local_now_iso as now_iso
-from backend.app.model_capabilities import (
+from backend.app.domain.model_capabilities import (
+    EmbeddingCapabilities,
+    eligible_for_default,
     DEFAULT_CAPABILITY_PROFILE,
-    DEFAULT_CONTEXT_WINDOW_TOKENS,
     MODEL_DEFAULT_PURPOSES,
     ModelCapabilityProfiles,
     ModelCapabilityProfile,
+    ModelModeCapabilityProfile,
     capability_profiles_from_mapping,
     capability_response,
-    profile_from_split_values,
     profiles_from_profile,
 )
 from backend.app.storage.model_codec import (
@@ -50,47 +52,21 @@ def _model_payload_from_provider_model(model: ProviderModel) -> dict[str, Any]:
         "remote_model_id": model.remote_model_id,
         "model_name": model.model_name,
         "created_at": model.created_at,
+        "model_type": model.model_type,
+        "embedding_capabilities": None, "embedding_dimensions": None, "max_input_tokens": None, "max_batch_size": None,
         **capability_response(model.capability_profile()),
     }
 
 
 def _probe_metadata_baseline(
-    provider: ModelProvider,
     *,
-    api_url: str,
-    api_key: str,
-    remote_model_id: str,
+    remote_model: ProviderModel | None,
+    metadata_result: dict,
     current_profile: ModelCapabilityProfile,
     current_profiles: ModelCapabilityProfiles,
-    cancellation_token: CancellationToken | None = None,
-) -> tuple[
-    ModelCapabilityProfile, ModelCapabilityProfiles, dict[str, str], dict[str, bool]
-]:
-    try:
-        list_arguments: dict[str, Any] = {"api_url": api_url, "api_key": api_key}
-        list_arguments["cancellation_token"] = cancellation_token
-        remote_models = provider.list_models(**list_arguments)
-    except ProviderModelListError as exc:
-        return (
-            current_profile,
-            current_profiles,
-            {"status": "unavailable", "message": f"供应商元数据获取失败：{exc}"},
-            {},
-        )
-    remote_model = next(
-        (model for model in remote_models if model.remote_model_id == remote_model_id),
-        None,
-    )
+) -> tuple[ModelCapabilityProfile, ModelCapabilityProfiles, dict[str, str], dict[str, bool]]:
     if remote_model is None:
-        return (
-            current_profile,
-            current_profiles,
-            {
-                "status": "not_found",
-                "message": "供应商模型列表中未找到该模型，已使用现有信息继续探测。",
-            },
-            {},
-        )
+        return current_profile, current_profiles, metadata_result, {}
     listed_profile = remote_model.capability_profile()
     declarations = dict(remote_model.capability_declarations)
     metadata_profile = ModelCapabilityProfile(
@@ -111,16 +87,31 @@ def _probe_metadata_baseline(
         default_thinking_state=listed_profile.default_thinking_state
         if "thinking" in declarations
         else current_profile.default_thinking_state,
-        context_window_tokens=listed_profile.context_window_tokens
-        if listed_profile.context_window_tokens is not None
-        else current_profile.context_window_tokens,
-        max_output_tokens=listed_profile.max_output_tokens
-        if listed_profile.max_output_tokens is not None
-        else current_profile.max_output_tokens,
+        context_window_tokens=current_profile.context_window_tokens
+        if current_profile.context_window_tokens is not None
+        else listed_profile.context_window_tokens,
+        max_output_tokens=current_profile.max_output_tokens
+        if current_profile.max_output_tokens is not None
+        else listed_profile.max_output_tokens,
     )
+    def merge_state(current):
+        return ModelModeCapabilityProfile(
+            availability=current.availability,
+            supports_text=listed_profile.supports_text if "text" in declarations else current.supports_text,
+            file_mime_types=_merge_declared_file_mime_types(
+                current.file_mime_types, listed_profile.file_mime_types, declarations,
+            ),
+            supports_tool_calling=listed_profile.supports_tool_calling
+            if "tool_calling" in declarations else current.supports_tool_calling,
+        )
+
     return (
         metadata_profile,
-        profiles_from_profile(metadata_profile),
+        ModelCapabilityProfiles(
+            default_state=metadata_profile.default_thinking_state if "thinking" in declarations else current_profiles.default_state,
+            non_thinking=merge_state(current_profiles.non_thinking),
+            thinking=merge_state(current_profiles.thinking),
+        ),
         {"status": "refreshed", "message": "已刷新供应商元数据。"},
         declarations,
     )
@@ -314,7 +305,7 @@ class ModelSettingsService:
             else provider.default_official_url
         )
         timestamp = now_iso()
-        with self.repository.transaction(account_id) as connection:
+        with self.repository.transaction(account_id, write=True) as connection:
             connection.save_provider(
                 provider_id=provider.provider_id,
                 provider_name=provider.provider_name,
@@ -353,7 +344,7 @@ class ModelSettingsService:
             else existing["encrypted_api_key"]
         )
         timestamp = now_iso()
-        with self.repository.transaction(account_id) as connection:
+        with self.repository.transaction(account_id, write=True) as connection:
             connection.update_provider(
                 api_url=next_api_url or provider.default_api_url,
                 official_url=next_official_url,
@@ -426,47 +417,17 @@ class ModelSettingsService:
             raise_error(
                 "invalid_structure", "MODEL_NOT_CONFIGURED", "请先配置该模型服务。"
             )
-        if (
-            payload.context_window_tokens is not None
-            and payload.context_window_tokens <= 0
-        ):
-            raise_error(
-                "invalid_structure",
-                "INVALID_MODEL_LIMIT",
-                "上下文 Token 上限必须为正整数或留空。",
-            )
-        if payload.max_output_tokens is not None and payload.max_output_tokens <= 0:
-            raise_error(
-                "invalid_structure",
-                "INVALID_MODEL_LIMIT",
-                "输出 Token 上限必须为正整数或留空。",
-            )
-        model_profile = profile_from_split_values(
-            fallback=DEFAULT_CAPABILITY_PROFILE,
-            thinking_modes=payload.thinking_modes,
-            context_window_tokens=payload.context_window_tokens
-            or DEFAULT_CONTEXT_WINDOW_TOKENS,
-            max_output_tokens=payload.max_output_tokens,
-        )
-        model_profiles = (
-            capability_profiles_from_mapping(
-                payload.capability_profiles.model_dump(),
-                profiles_from_profile(model_profile),
-            )
-            if payload.capability_profiles is not None
-            else profiles_from_profile(model_profile)
-        )
+        if not payload.remote_model_id.strip():
+            raise_error("invalid_structure", "INVALID_MODEL_ID", "模型 ID 不能为空。")
         model_id = f"{payload.provider_id}:{payload.remote_model_id}"
         model_name = payload.remote_model_id
         timestamp = now_iso()
-        with self.repository.transaction(account_id) as connection:
+        with self.repository.transaction(account_id, write=True) as connection:
             connection.save_model(
                 model_id=model_id,
                 provider_id=payload.provider_id,
                 remote_model_id=payload.remote_model_id,
                 model_name=model_name,
-                profile=model_profile,
-                profiles=model_profiles,
                 created_at=timestamp,
                 updated_at=timestamp,
             )
@@ -479,10 +440,37 @@ class ModelSettingsService:
         return {"models": [model_response(row) for row in rows]}
 
     def update_model(self, account_id: str, model_id: str, payload: ModelPatchRequest):
-        with self.repository.transaction(account_id) as connection:
+        with self.repository.transaction(account_id, write=True) as connection:
             row = connection.get_model(model_id=model_id)
             if not row:
                 raise_error("missing", "MODEL_NOT_FOUND", "模型不存在或未添加。")
+            self.probes.cancel(account_id, model_id)
+            supplied = payload.model_fields_set
+            model_type = payload.model_type if "model_type" in supplied else row["model_type"]
+            if model_type is None:
+                raise_error("invalid_structure", "INVALID_MODEL_TYPE", "模型类型不能为空。")
+            if model_type != "generation":
+                if any(getattr(payload, key) is not None for key in supplied & {"thinking_modes", "capability_profiles", "context_window_tokens", "max_output_tokens"}):
+                    raise_error("invalid_structure", "INVALID_MODEL_CAPABILITY", "当前类型不使用生成模型参数。")
+                if model_type != "embedding" and any(getattr(payload, key) is not None for key in supplied & {"embedding_capabilities", "embedding_dimensions", "max_input_tokens", "max_batch_size"}):
+                    raise_error("invalid_structure", "INVALID_MODEL_CAPABILITY", "未确认类型不使用向量参数。")
+                name = payload.model_name.strip() if payload.model_name is not None else row["model_name"]
+                if not name or ("model_name" in supplied and payload.model_name is None):
+                    raise_error("invalid_structure", "INVALID_MODEL_NAME", "模型名称不能为空。")
+                existing = model_response(row)
+                caps = payload.embedding_capabilities.model_dump() if payload.embedding_capabilities else existing["embedding_capabilities"] or EmbeddingCapabilities().model_dump()
+                connection.write_typed_model(model_id=model_id, model_type=model_type, model_name=name,
+                    embedding_capabilities=caps,
+                    **{key: getattr(payload, key) if key in supplied else row[key] for key in ("embedding_dimensions", "max_input_tokens", "max_batch_size")}, updated_at=now_iso())
+                updated_row = connection.get_model(model_id=model_id)
+                cleared = self._reconcile_defaults(connection, updated_row, auto_chat=False)
+                return {**model_response(updated_row), "cleared_defaults": cleared}
+            if any(getattr(payload, key) is not None for key in supplied & {"embedding_capabilities", "embedding_dimensions", "max_input_tokens", "max_batch_size"}):
+                raise_error("invalid_structure", "INVALID_MODEL_CAPABILITY", "生成模型不使用向量参数。")
+            if row["model_type"] != "generation":
+                initial_profile = ModelCapabilityProfile(thinking_modes=payload.thinking_modes or ["default"])
+                connection.write_typed_model(model_id=model_id, model_type="generation", model_name=row["model_name"], profile=initial_profile, profiles=profiles_from_profile(initial_profile), updated_at=now_iso())
+                row = connection.get_model(model_id=model_id)
             current = profile_from_row(row)
             current_profiles = capability_profiles_from_row(row)
             supplied = payload.model_fields_set
@@ -575,11 +563,7 @@ class ModelSettingsService:
             profile = ModelCapabilityProfile(
                 thinking_modes=thinking_modes,
                 default_thinking_state=profiles.default_state,
-                context_window_tokens=(
-                    payload.context_window_tokens
-                    if payload.context_window_tokens is not None
-                    else DEFAULT_CONTEXT_WINDOW_TOKENS
-                )
+                context_window_tokens=payload.context_window_tokens
                 if "context_window_tokens" in supplied
                 else current.context_window_tokens,
                 max_output_tokens=payload.max_output_tokens
@@ -593,10 +577,23 @@ class ModelSettingsService:
                 profile=profile,
                 profiles=profiles,
             )
-        return model_response(updated_row)
+            cleared = self._reconcile_defaults(connection, updated_row)
+        return {**model_response(updated_row), "cleared_defaults": cleared}
 
-    def probe_model_capabilities(self, account_id: str, model_id: str):
-        cancellation_token = self.probes.begin(account_id, model_id)
+    def _reconcile_defaults(self, connection, row, *, auto_chat=True):
+        model = model_response(row)
+        cleared = []
+        for purpose in MODEL_DEFAULT_PURPOSES:
+            current = connection.default_model(purpose)
+            if current and current["model_id"] == row["model_id"] and not eligible_for_default(model, purpose):
+                connection.set_default(purpose, model_id=None)
+                cleared.append(purpose)
+        if auto_chat and eligible_for_default(model, "chat") and not connection.default_model("chat"):
+            connection.set_default("chat", model_id=row["model_id"])
+        return cleared
+
+    def probe_model_capabilities(self, account_id: str, model_id: str, probe_id: str | None = None):
+        cancellation_token = self.probes.begin(account_id, model_id, probe_id)
         try:
             with self.repository.transaction(account_id) as connection:
                 model_row = connection.get_model(model_id=model_id)
@@ -614,49 +611,53 @@ class ModelSettingsService:
                     "invalid_structure", "MODEL_NOT_CONFIGURED", "请先配置该模型服务。"
                 )
             api_url = provider_row["api_url"] or provider.default_api_url
-            (probe_profile, probe_profiles, metadata, declarations) = (
-                _probe_metadata_baseline(
-                    provider,
-                    api_url=api_url,
-                    api_key=api_key,
-                    remote_model_id=model_row["remote_model_id"],
-                    current_profile=profile_from_row(model_row),
-                    current_profiles=capability_profiles_from_row(model_row),
-                    cancellation_token=cancellation_token,
-                )
-            )
-            probe_arguments: dict[str, Any] = {
-                "api_url": api_url,
-                "api_key": api_key,
-                "remote_model_id": model_row["remote_model_id"],
-                "current_profiles": probe_profiles,
-                "thinking_modes": probe_profile.thinking_modes,
-                "capability_declarations": declarations,
-            }
-            probe_arguments["cancellation_token"] = cancellation_token
-            result = provider.probe_capabilities(**probe_arguments)
+            kind, type_checks, type_errors, successes, metadata, listed, conflict = detect_model_type(
+                provider, api_url=api_url, api_key=api_key, remote_model_id=model_row["remote_model_id"], cancellation_token=cancellation_token)
+            if kind == "unknown" and model_row["model_type"] != "unknown":
+                kind = model_row["model_type"]
+            checks = {"type": type_checks, "thinking_modes": {}, "aggregate": {}, "non_thinking": {}, "thinking": {}}
+            errors = {"type": type_errors, "thinking_modes": {}, "non_thinking": {}, "thinking": {}}
+            write = {}
+            if kind == "generation":
+                current_profile = profile_from_row(model_row) if model_row["model_type"] == "generation" else DEFAULT_CAPABILITY_PROFILE
+                current_profiles = capability_profiles_from_row(model_row) if model_row["model_type"] == "generation" else profiles_from_profile(current_profile)
+                probe_profile, probe_profiles, gen_metadata, declarations = _probe_metadata_baseline(
+                    remote_model=listed, metadata_result=metadata,
+                    current_profile=current_profile, current_profiles=current_profiles)
+                result = provider.probe_capabilities(api_url=api_url, api_key=api_key, remote_model_id=model_row["remote_model_id"],
+                    current_profiles=probe_profiles, thinking_modes=probe_profile.thinking_modes,
+                    capability_declarations=declarations, cancellation_token=cancellation_token)
+                write = {"profile": _profile_with_probed_thinking_modes(probe_profile, result.profiles, result.checks["thinking_modes"]), "profiles": result.profiles}
+                checks.update(result.checks)
+                errors.update(result.errors)
+                if not conflict:
+                    metadata = gen_metadata
+            elif kind == "embedding":
+                caps, output_dimensions, embedding_checks, embedding_errors = probe_embeddings(provider, api_url=api_url, api_key=api_key,
+                    remote_model_id=model_row["remote_model_id"], cancellation_token=cancellation_token, successes=successes,
+                    dimensions=model_row["embedding_dimensions"], declared_dimensions=listed.embedding_dimensions if listed else ())
+                checks["embedding"], errors["embedding"] = embedding_checks, embedding_errors
+                max_batch_size = model_row["max_batch_size"]
+                if embedding_checks["batch"] == "unsupported":
+                    max_batch_size = 1
+                elif embedding_checks["batch"] == "supported" and max_batch_size == 1:
+                    max_batch_size = None
+                write = {"embedding_capabilities": caps,
+                    "embedding_dimensions": output_dimensions if output_dimensions is not None else model_row["embedding_dimensions"],
+                    "max_input_tokens": model_row["max_input_tokens"], "max_batch_size": max_batch_size}
             cancellation_token.raise_if_cancelled()
-            probed_profile = _profile_with_probed_thinking_modes(
-                probe_profile, result.profiles, result.checks["thinking_modes"]
-            )
-            with self.repository.transaction(account_id) as connection:
+            with self.repository.transaction(account_id, write=True) as connection:
                 current_row = connection.get_model(model_id=model_id)
-                if not current_row:
-                    raise_error("missing", "MODEL_NOT_FOUND", "模型已被删除。")
+                current_provider = connection.get_provider(provider_id=model_row["provider_id"])
+                if not current_row or dict(current_row) != dict(model_row) or dict(current_provider) != dict(provider_row):
+                    raise OperationCancelledError("模型配置已经改变。")
                 cancellation_token.raise_if_cancelled()
-                updated_row = self._write_model_profile(
-                    connection,
-                    current_row,
-                    model_name=current_row["model_name"],
-                    profile=probed_profile,
-                    profiles=result.profiles,
-                )
-            return {
-                "model": model_response(updated_row),
-                "metadata": metadata,
-                "checks": result.checks,
-                "errors": result.errors,
-            }
+                connection.write_typed_model(model_id=model_id, model_type=kind, model_name=current_row["model_name"], updated_at=now_iso(), **write)
+                import json
+                connection.connection.execute("UPDATE models SET capability_detection = ? WHERE model_id = ?", (json.dumps({"checks": checks, "errors": errors, "metadata": metadata}, ensure_ascii=False), model_id))
+                updated_row = connection.get_model(model_id=model_id)
+                cleared = self._reconcile_defaults(connection, updated_row)
+            return {"model": model_response(updated_row), "metadata": metadata, "checks": checks, "errors": errors, "cleared_defaults": cleared}
         except OperationCancelledError:
             raise_error(
                 "conflict", "MODEL_CAPABILITY_PROBE_CANCELLED", "模型能力识别已停止。"
@@ -677,20 +678,22 @@ class ModelSettingsService:
             for purpose in MODEL_DEFAULT_PURPOSES
             if purpose in payload.model_fields_set
         }
-        with self.repository.transaction(account_id) as connection:
+        with self.repository.transaction(account_id, write=True) as connection:
             for purpose, model_id in updates.items():
                 if model_id is not None:
-                    row = connection.model_id_row(model_id=model_id)
+                    row = connection.get_model(model_id=model_id)
                     if not row:
                         raise_error(
                             "missing", "MODEL_NOT_FOUND", "模型不存在或未添加。"
                         )
+                    if not eligible_for_default(model_response(row), purpose):
+                        raise_error("invalid_structure", "INVALID_DEFAULT_MODEL", "模型类型或输入能力不符合此默认用途。")
             for purpose, model_id in updates.items():
                 self._set_model_default_in_connection(connection, purpose, model_id)
         return self._model_defaults_response(account_id)
 
     def delete_model(self, account_id: str, model_id: str):
-        with self.repository.transaction(account_id) as connection:
+        with self.repository.transaction(account_id, write=True) as connection:
             row = connection.get_model(model_id=model_id)
             if not row:
                 raise_error("missing", "MODEL_NOT_FOUND", "模型不存在或未添加。")

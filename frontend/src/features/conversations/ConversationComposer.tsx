@@ -196,7 +196,7 @@ export function ConversationComposer({
             </summary>
             <div
               aria-label="队列与上下文"
-              className="conversation-composer-auxiliary-tray"
+              className="conversation-composer-auxiliary-tray scroll-balanced"
               id={auxiliaryTrayId}
               role="region"
             >

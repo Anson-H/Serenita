@@ -170,8 +170,8 @@ function ConversationScrollFixture() {
     setMessages(current => [
       {
         ...makeMessage(-nextCount, 220),
-        content: `在当前阅读位置上方新增的第 ${nextCount} 条消息`,
-        label: `上方新增 ${nextCount}`,
+        content: `在当前阅读位置上方添加的第 ${nextCount} 条消息`,
+        label: `上方添加 ${nextCount}`,
         message_id: `fixture-prepended-${nextCount}`,
         record_id: `fixture-prepended-record-${nextCount}`,
         turn_id: `fixture-prepended-turn-${nextCount}`

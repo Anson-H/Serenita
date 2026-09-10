@@ -7,7 +7,7 @@ export type ModelCatalog = {
   error: string;
 };
 export function emptyModelCatalog(): ModelCatalog {
-  return { models: [], defaults: { chat: null, title: null, compact: null, vision_parse: null }, status: 'loading', error: '' };
+  return { models: [], defaults: { chat: null, title: null, compact: null, vision_parse: null, text_embedding: null, multimodal_embedding: null }, status: 'loading', error: '' };
 }
 export async function fetchModelCatalog(): Promise<ModelCatalog> {
   const [models, defaults] = await Promise.all([apiClient.fetchModels(), apiClient.fetchModelDefaults()]);

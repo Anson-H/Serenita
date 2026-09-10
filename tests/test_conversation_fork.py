@@ -1,9 +1,10 @@
+from backend.app.application.conversations.sessions import ConversationSessionCommands
 from backend.app.api.errors import error_http_status
 from member_support import account_id as account_id_for, member_id
 from datetime import datetime, timedelta, timezone
 import pytest
 from backend.app.core.errors import SerenitaError
-from backend.app.application.conversation_service import ConversationService
+from backend.app.application.conversations.service import ConversationService
 from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.storage.paths import app_paths
 from backend.app.storage.session_persistence import JsonlSessionPersistence
@@ -236,6 +237,6 @@ def test_forked_attachment_survives_parent_deletion_until_last_reference(
     ],
 )
 def test_fork_title_increment_preserves_parenthesis_style(title, expected):
-    assert ConversationService._increment_fork_title(title) == expected
+    assert ConversationSessionCommands._increment_fork_title(title) == expected
 
 

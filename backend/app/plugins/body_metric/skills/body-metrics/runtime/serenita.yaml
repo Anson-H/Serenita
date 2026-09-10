@@ -1,0 +1,14 @@
+allowed_tools:
+  - read_body_metric_catalog
+  - read_body_record_catalog
+  - read_body_record
+  - read_body_statistics
+  - create_body_record
+  - update_body_record
+  - delete_body_record
+  - attach_body_record_file
+  - detach_body_record_file
+  - read_history
+  - read_report_catalog
+  - read_report_information
+  - read_log

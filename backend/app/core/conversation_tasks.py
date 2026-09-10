@@ -1,11 +1,47 @@
-"""Shared in-process execution state for one data root."""
+"""按数据根共享会话线程、取消信号、会话锁和事件通知条件。"""
 
 from dataclasses import dataclass, field
 from pathlib import Path
 import threading
 import time
 from backend.app.core.cancellation import CancellationToken
-from backend.app.session_event_notifications import SessionEventNotifications
+
+
+class SessionEventNotifications:
+    """Wake live readers after a session event append has durably committed."""
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._latest_seq_by_session: dict[tuple[str, str], int] = {}
+
+    def publish(self, account_id: str, session_id: str, latest_seq: int) -> None:
+        key = (account_id, session_id)
+        with self._condition:
+            self._latest_seq_by_session[key] = max(
+                latest_seq,
+                self._latest_seq_by_session.get(key, -1),
+            )
+            self._condition.notify_all()
+
+    def has_events_from(self, account_id: str, session_id: str, from_seq: int) -> bool:
+        key = (account_id, session_id)
+        with self._condition:
+            return self._latest_seq_by_session.get(key, -1) >= from_seq
+
+    def wait_for_events(
+        self,
+        account_id: str,
+        session_id: str,
+        from_seq: int,
+        *,
+        timeout: float,
+    ) -> bool:
+        key = (account_id, session_id)
+        with self._condition:
+            return self._condition.wait_for(
+                lambda: self._latest_seq_by_session.get(key, -1) >= from_seq,
+                timeout=max(0.0, timeout),
+            )
 
 
 @dataclass

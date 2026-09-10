@@ -85,7 +85,7 @@ export function ContextInputPreview({
         ref={previewRef}
         role={previewInteractive ? "dialog" : "tooltip"}
       >
-        <div className="context-input-preview-content">
+        <div className="context-input-preview-content scroll-balanced">
           {previewContent}
           {!previewContent && modelInputText ? (
             <pre>{displayModelInputText(modelInputText)}</pre>

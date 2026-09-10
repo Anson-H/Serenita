@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
-from backend.app.session_events import SessionEvent, SessionEventCorruptionError, SessionEventFormatError, SessionHeader, validate_contiguous_events
+from backend.app.domain.conversations.events import SessionEvent, SessionEventCorruptionError, SessionEventFormatError, SessionHeader, validate_contiguous_events
 from backend.app.storage.session_recovery import interrupted_turn_closers
 from backend.app.storage.paths import (
     PRIVATE_FILE_MODE,

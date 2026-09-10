@@ -6,9 +6,9 @@ import pytest
 from backend.app.core.errors import SerenitaError
 from member_support import account_id as account_id_for, member_id
 from backend.app.core.time import local_now_iso as now_iso
-from backend.app.application.conversation_service import ConversationService
+from backend.app.application.conversations.service import ConversationService
 from backend.app.repositories.conversation_repository import ConversationRepository
-from backend.app.session_events import iso_to_epoch_ms
+from backend.app.domain.conversations.events import iso_to_epoch_ms
 from backend.app.storage.session_persistence import JsonlSessionPersistence
 from tests.model_support import ConversationModelCatalog
 
@@ -96,7 +96,7 @@ def _run_operation(
         account_id_for("alice"),
         session_id,
         user_message_id,
-        "修改后的问题",
+        "更新后的问题",
         "model_1",
         "default",
         [],

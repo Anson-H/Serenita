@@ -8,11 +8,6 @@
   margin-top: auto;
 }
 
-.account-copy {
-  display: grid;
-  min-width: 0;
-}
-
 .account-button strong {
   display: block;
   overflow: hidden;
@@ -181,7 +176,7 @@
   box-shadow: none;
 }
 
-.patient-main:has(.home-workspace) {
+.patient-main:has(.home-workspace, .notification-workspace) {
   padding: 0;
 }
 
@@ -197,8 +192,7 @@
 }
 
 .brand-name span,
-.nav-label,
-.account-copy {
+.nav-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -267,7 +261,7 @@
     grid-column: 1;
   }
 
-  .patient-main:has(.home-workspace) {
+  .patient-main:has(.home-workspace, .notification-workspace) {
     padding: 0;
   }
 

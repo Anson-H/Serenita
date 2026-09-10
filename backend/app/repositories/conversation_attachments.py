@@ -12,7 +12,7 @@ from backend.app.core.time import (
     local_now_iso,
     parse_local_datetime,
 )
-from backend.app.session_events import (
+from backend.app.domain.conversations.events import (
     SessionEventCorruptionError,
 )
 from backend.app.storage.paths import ensure_private_directory

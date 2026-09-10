@@ -3,18 +3,14 @@ import { publishAuthInvalidation } from "./authSessionEvents";
 
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
-function apiTargetDescription() {
-  const origin = typeof window === "undefined" ? "http://localhost" : window.location.origin;
-  return new URL(API_BASE_URL, origin).href;
+export const apiUrl = (path: string) => `${API_BASE_URL}${path}`;
+
+export function networkFailureMessage(_error: unknown) {
+  return '连接中断，操作尚未完成。请检查网络后重试。';
 }
 
-export function networkFailureMessage(error: unknown) {
-  const detail = error instanceof Error && error.message ? `（${error.message}）` : "";
-  return `无法连接后端服务${detail}。当前 API 地址为 ${apiTargetDescription()}，请检查网络和服务状态。`;
-}
-
-export function serverFailureMessage(response: Pick<Response, "status">) {
-  return `后端服务返回 ${response.status}。当前 API 地址为 ${apiTargetDescription()}，请检查后端服务日志。`;
+export function serverFailureMessage(_response: Pick<Response, "status">) {
+  return '服务暂时无法完成操作。请稍后重试。';
 }
 
 export type ApiErrorDetail = {
@@ -66,7 +62,7 @@ export async function requestResponse(path: string, init?: RequestInit): Promise
   } catch (error) {
     assertAuthContext(context);
     if (error instanceof Error && error.name === "AbortError") throw error;
-    throw new Error(networkFailureMessage(error));
+    throw new Error(networkFailureMessage(error), {cause:error});
   }
   assertAuthContext(context);
   if (!response.ok) {

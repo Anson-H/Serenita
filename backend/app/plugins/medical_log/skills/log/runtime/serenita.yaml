@@ -1,0 +1,11 @@
+allowed_tools:
+  - read_log
+  - create_log
+  - update_log
+  - delete_log
+  - read_history
+  - read_report_catalog
+  - read_report_information
+  - read_report_analysis
+required_references:
+  - references/log-writing.md

@@ -21,12 +21,12 @@ type Dependencies = {
   setMobileLayer: Dispatch<SetStateAction<SettingsMobileLayer>>;
   setDetailOpen: Dispatch<SetStateAction<boolean>>;
   providers: ProviderSummary[];
-  providerConnectionTestRequestIdsRef: RefObject<Map<string, number>>;
+  providerConnectionTestRequestsRef: RefObject<Map<string, AbortController>>;
   setConnectionTestStates: Dispatch<SetStateAction<Record<string, ProviderConnectionTestState>>>;
   setProviderPageEntryVersion: Dispatch<SetStateAction<number>>;
   setConversationSection: Dispatch<SetStateAction<ConversationSettingsSection>>;
   webAccess: WebAccessSettings | null;
-  webConnectionTestRequestIdsRef: RefObject<Map<string, number>>;
+  webConnectionTestRequestsRef: RefObject<Map<string, AbortController>>;
   setWebConnectionTestStates: Dispatch<SetStateAction<Record<string, ProviderConnectionTestState>>>;
   setWebProviderFeedback: Dispatch<SetStateAction<Record<string, TestState>>>;
   activeSection: SettingsSection;
@@ -42,12 +42,12 @@ export function createSettingsNavigationActions({
   setMobileLayer,
   setDetailOpen,
   providers,
-  providerConnectionTestRequestIdsRef,
+  providerConnectionTestRequestsRef,
   setConnectionTestStates,
   setProviderPageEntryVersion,
   setConversationSection,
   webAccess,
-  webConnectionTestRequestIdsRef,
+  webConnectionTestRequestsRef,
   setWebConnectionTestStates,
   setWebProviderFeedback,
   activeSection,
@@ -65,7 +65,7 @@ export function createSettingsNavigationActions({
 
   function selectProvidersRoot() {
     for (const provider of providers) {
-      invalidateConnectionTestRequest(providerConnectionTestRequestIdsRef, provider.provider_id);
+      invalidateConnectionTestRequest(providerConnectionTestRequestsRef, provider.provider_id);
     }
     setConnectionTestStates({});
     setProviderPageEntryVersion((current) => current + 1);
@@ -94,6 +94,12 @@ export function createSettingsNavigationActions({
     setDetailOpen(true);
   }
 
+  function selectThemeRoot() {
+    setActiveSection("theme");
+    setMobileLayer("root");
+    setDetailOpen(true);
+  }
+
   function selectMembersRoot() {
     setActiveSection("members");
     setMobileLayer("root");
@@ -102,13 +108,19 @@ export function createSettingsNavigationActions({
 
   function selectWebRoot() {
     (webAccess?.providers ?? []).forEach((provider) => {
-      invalidateConnectionTestRequest(webConnectionTestRequestIdsRef, provider.provider_id);
+      invalidateConnectionTestRequest(webConnectionTestRequestsRef, provider.provider_id);
     });
     setWebConnectionTestStates({});
     setWebProviderFeedback({});
     setActiveSection("web");
     setMobileLayer("root");
     setDetailOpen(true);
+  }
+
+  function selectMedicationCatalogRoot() {
+    setActiveSection("medication-catalog");
+    setMobileLayer("dictionary-list");
+    setDetailOpen(false);
   }
 
   function selectLabCatalogRoot(catalog: LabCatalog) {
@@ -122,7 +134,7 @@ export function createSettingsNavigationActions({
       setMobileLayer("provider-list");
     } else if (activeSection === "conversation") {
       setMobileLayer("conversation-list");
-    } else if (activeSection === "lab-categories" || activeSection === "lab-items") {
+    } else if (activeSection === "lab-categories" || activeSection === "lab-items" || activeSection === "medication-catalog") {
       setMobileLayer("dictionary-list");
     }
     setDetailOpen(true);
@@ -149,7 +161,7 @@ export function createSettingsNavigationActions({
       return "聊天设置";
     }
     if (mobileLayer === "dictionary-list") {
-      return activeSection === "lab-items" ? "检验指标目录" : "检验分类目录";
+      return activeSection === "medication-catalog" ? "药品目录" : activeSection === "lab-items" ? "检验指标目录" : "检验分类目录";
     }
     return "账号设置";
   }
@@ -172,6 +184,8 @@ export function createSettingsNavigationActions({
     selectConversationRoot,
     selectConversationSection,
     selectMembersRoot,
+    selectMedicationCatalogRoot,
+    selectThemeRoot,
     selectWebRoot,
     selectLabCatalogRoot,
     openSettingsDetail,

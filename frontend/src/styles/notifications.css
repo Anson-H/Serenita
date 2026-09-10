@@ -1,147 +1,38 @@
+/* Transient operation feedback shares the same theme as the notification page. */
 .status-notification-region {
-  position: fixed;
-  z-index: 80;
-  top: calc(16px + env(safe-area-inset-top));
-  right: 16px;
-  display: grid;
-  width: min(380px, calc(100vw - 32px));
-  gap: var(--space-control-block) var(--space-control-inline);
-  pointer-events: none;
+  position: fixed; z-index: var(--layer-menu); top: calc(var(--space-content) + env(safe-area-inset-top));
+  right: var(--space-content); width: min(380px, calc(100vw - 30px)); display: grid;
+  gap: var(--space-related); pointer-events: none;
 }
-
+/* The shared standard bar owns dimensions; only overlay placement and tone live here. */
 .status-notification {
-  --notification-accent: var(--color-accent);
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) var(--size-control-primary);
-  gap: var(--space-control-block) var(--space-control-inline);
-  align-items: start;
-  min-height: 72px;
-  padding: var(--space-content) var(--space-content) var(--space-content) var(--space-content);
-  border: 1px solid color-mix(in oklch, var(--notification-accent) 24%, var(--color-divider));
-  border-radius: var(--radius-panel);
-  background: color-mix(in oklch, var(--color-surface) 96%, var(--notification-accent) 4%);
-  box-shadow: var(--shadow-overlay);
-  color: var(--color-foreground);
-  pointer-events: auto;
-  animation: status-notification-in 160ms ease-out;
+  display: grid; grid-template-columns: minmax(0, 1fr) var(--size-inline-button);
+  column-gap: var(--space-control-inline);
+  border: 1px solid var(--color-divider);
+  background: var(--color-surface-raised); color: var(--color-foreground);
+  box-shadow: var(--shadow-overlay); pointer-events: auto;
+}
+.status-notification .control-row-icon { color: var(--color-accent); }
+.status-notification[data-tone="success"] .control-row-icon { color: var(--color-success); }
+.status-notification[data-tone="warning"] { background: var(--color-warning-soft); }
+.status-notification[data-tone="warning"] .control-row-icon { color: var(--color-warning); }
+.status-notification[data-tone="error"] { background: var(--color-danger-soft); }
+.status-notification[data-tone="error"] .control-row-icon { color: var(--color-danger); }
+.status-notification-copy { display: grid; min-width: 0; gap: var(--space-related); }
+.status-notification-action { justify-self: end; }
+
+@media (pointer: coarse) {
+  .status-notification { grid-template-columns: minmax(0, 1fr) var(--size-touch-target); }
 }
 
-.status-notification[data-tone="success"] {
-  --notification-accent: var(--color-success);
-}
-
-.status-notification[data-tone="warning"] {
-  --notification-accent: var(--color-warning);
-}
-
-.status-notification[data-tone="error"] {
-  --notification-accent: var(--color-danger);
-}
-
-.status-notification-mark {
-  display: grid;
-  width: var(--size-notification-mark);
-  height: var(--size-notification-mark);
-  place-items: center;
-  border-radius: var(--radius-notification-mark);
-  background: color-mix(in oklch, var(--notification-accent) 13%, transparent);
-  color: var(--notification-accent);
-  font-size: var(--text-body);
-  line-height: var(--line-body);
-  font-weight: var(--weight-strong);
-}
-
-.status-notification-mark .settings-action-icon {
-  width: var(--size-icon-default);
-  height: var(--size-icon-default);
-}
-
-.status-notification-copy {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-related);
-}
-
-.status-notification-kicker {
-  color: var(--notification-accent);
-  font-size: var(--text-meta);
-  font-weight: var(--weight-strong);
-  letter-spacing: 0.05em;
-}
-
-.status-notification-copy strong {
-  font-size: var(--text-body);
-  font-weight: var(--weight-strong);
-  line-height: var(--line-body);
-}
-
-.status-notification-copy p {
-  margin: 0;
-  color: var(--color-foreground-muted);
-  font-size: var(--text-meta);
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-.status-notification-action {
-  justify-self: start;
-  min-height: var(--size-control-primary);
-  margin-top: var(--space-related);
-  padding: var(--space-control-block) var(--space-control-inline);
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--notification-accent);
-  font: inherit;
-  font-size: var(--text-meta);
-  font-weight: var(--weight-strong);
-  cursor: pointer;
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--notification-accent) 34%, var(--color-divider));
-}
-
-.status-notification-close {
-  display: grid;
-  width: var(--size-control-primary);
-  height: var(--size-control-primary);
-  padding: 0;
-  place-items: center;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--color-foreground-muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-@keyframes status-notification-in {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-}
-
-@media (max-width: 650px) {
-  .status-notification-region {
-    top: calc(10px + env(safe-area-inset-top));
-    right: var(--space-content);
-    left: var(--space-content);
-    width: auto;
-  }
-
-  .status-notification {
-    grid-template-columns: 28px minmax(0, 1fr) var(--size-control-primary);
-    min-height: 68px;
-    padding: var(--space-content) var(--space-control-inline) var(--space-content) var(--space-content);
-  }
-
-  .status-notification-close {
-    width: var(--size-control-primary);
-    height: var(--size-control-primary);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .status-notification {
-    animation: none;
-  }
-}
+.workspace-panel.notification-workspace { display:flex; flex-direction:column; gap:0; min-height:0; overflow:hidden; }
+.notification-content { display:flex; flex:1; flex-direction:column; gap:var(--space-content); width:100%; min-height:0; padding-block:var(--space-content); }
+.notification-list { flex:1; min-height:0; padding-block:0; }
+.notification-card { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:start; column-gap:var(--space-control-inline); min-width:0; }
+.notification-card[data-status="read"] .control-row-title { color:var(--color-foreground-muted); }
+.notification-meta { display:grid; align-self:start; justify-items:end; gap:var(--space-related); }
+.notification-meta time { color:var(--color-foreground-muted); font-size:var(--text-meta); line-height:var(--line-meta); white-space:nowrap; }
+.notification-open { display:block; min-width:0; width:100%; text-align:left; border:0; border-radius:inherit; background:transparent; color:inherit; cursor:pointer; padding:0; }
+.notification-open:disabled { cursor:default; }
+.notification-feedback { width:min(var(--size-content-column), calc(100% - var(--space-content) * 2)); margin:0 auto; }
+.notification-badge { margin-left:auto; font-size:var(--text-meta); }

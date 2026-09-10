@@ -21,7 +21,7 @@ type ConversationMessageBase = {
   message_id: string;
   turn_id: string;
   parent_message_id: string | null;
-  model_id?: string;
+  model_id?: string | null;
   duration_ms?: number;
   turn_duration_ms?: number;
   content: string;
@@ -103,7 +103,7 @@ export type ConversationModelRecord = {
   purpose?: string;
   summary_kind?: "history" | "turn_prefix" | null;
   step?: number;
-  model_id?: string;
+  model_id?: string | null;
   context_window_tokens?: number | null;
   transport_mode?: "native" | "text_tool";
   parent_tool_call_id?: string | null;
@@ -190,7 +190,7 @@ type PendingConversationTurn = {
 
 export type ConversationResourceState = {
   member_id: string;
-  resource_type: "report";
+  resource_type: "report" | "medical_log" | "medication" | "medication_plan" | "medication_batch" | "body_record";
   resource_id: string;
   availability: "available" | "deleted" | "forbidden";
   current_created_at?: string;

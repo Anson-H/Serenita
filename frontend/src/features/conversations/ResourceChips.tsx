@@ -268,33 +268,33 @@ export function MessageReportReference({
   const currentStatus = reportReferenceStatus(resource, resourceState);
   return (
     <ContextInputPreview
-      ariaLabel={`预览报告输入：${name}`}
+      ariaLabel={`预览医疗报告输入：${name}`}
       className="message-file-reference message-report-reference"
       align="end"
-      emptyMessage="没有可显示的报告输入快照。"
+      emptyMessage="没有可显示的医疗报告输入快照。"
       icon={<HealthRecordIcon />}
-      label={`报告输入 · ${name}`}
+      label={`医疗报告输入 · ${name}`}
       previewContent={(
         <div className="message-report-input-preview">
           {modelInputText ? (
             <pre>{displayModelInputText(modelInputText)}</pre>
           ) : (
-            <span className="context-input-status">没有可显示的报告输入快照。</span>
+            <span className="context-input-status">没有可显示的医疗报告输入快照。</span>
           )}
           <div className="message-report-current-resource">
             {currentStatus === "unknown" ? <span className="message-report-current-status">状态待刷新</span> : null}
             {currentStatus === "modified" ? (
-              <span className="message-report-current-status">当前报告已修改</span>
+              <span className="message-report-current-status">当前医疗报告已更新</span>
             ) : null}
             {currentStatus === "deleted" || currentStatus === "forbidden" ? (
-              <span className="message-report-current-status">{currentStatus === "forbidden" ? "无权访问" : "当前报告已删除"}</span>
+              <span className="message-report-current-status">{currentStatus === "forbidden" ? "无权访问" : "当前医疗报告已删除"}</span>
             ) : (
               <button
                 className="message-report-open-current"
                 onClick={() => void onOpen(resource.resource_id)}
                 type="button"
               >
-                打开当前报告
+                打开当前医疗报告
               </button>
             )}
           </div>
@@ -303,7 +303,7 @@ export function MessageReportReference({
       previewInteractive
       trailing={onRemove ? (
         <button
-          aria-label={`移除报告输入：${name}`}
+          aria-label={`移除医疗报告输入：${name}`}
           className="control control--inline-compact control--icon control--ghost control--danger removal-action-control file-context-remove message-file-remove"
           data-interaction-owner="self"
           onClick={() => onRemove(resource.resource_id)}

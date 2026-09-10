@@ -1,3 +1,11 @@
+import {MedicationCatalogSettings} from './MedicationCatalogSettings';
+import { AddedModelList } from "./AddedModelList";
+import { eligibleForDefault, supportedEmbeddingModalities, modalityLabels } from "../modelConfiguration/modelEligibility";
+import { navigationLabels } from "../../components/navigationLabels";
+import { EmptyState } from "../../components/EmptyState";
+import { ThemeSettings } from "./ThemeSettings";
+import { interactionReturnTarget } from "../../utils/interactionFocus";
+import {NotificationSettings} from "./NotificationSettings";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type {
@@ -13,7 +21,6 @@ import {
   ChevronLeftIcon,
   LightningIcon,
   LockIcon,
-  PlusIcon,
   XIcon
 } from "../../components/icons";
 import { SecretInput } from "../../components/SecretInput";
@@ -83,6 +90,7 @@ type SettingsViewProps = {
   showContextWindowUsage: boolean;
   showRelatedContent: boolean;
   showTokenUsage: boolean;
+  showModelIdentity: boolean;
   toolDisplayTypes: ToolExecutionDisplayType[];
   currentPassword: string;
   deleteAddedModel: (modelId: string) => boolean | Promise<boolean>;
@@ -148,10 +156,13 @@ type SettingsViewProps = {
   updateShowRelatedContent: (visible: boolean) => void;
   updateShowContextWindowUsage: (visible: boolean) => void;
   updateShowTokenUsage: (visible: boolean) => void;
+  updateShowModelIdentity: (visible: boolean) => void;
   updateToolDisplayType: (type: ToolExecutionDisplayType, visible: boolean) => void;
   updateDraft: (providerId: string, patch: Partial<ProviderDraft>) => void;
   selectWebRoot: () => void;
   selectMembersRoot: () => void;
+  selectMedicationCatalogRoot: () => void;
+  selectThemeRoot: () => void;
   webAccess: WebAccessSettings | null;
   webApiUrls: Record<string, string>;
   webApiKeys: Record<string, string>;
@@ -206,8 +217,8 @@ function providerConnectionTestButtonLabel(
 }
 
 const modelSettingsPageTitles: Record<Exclude<ModelSettingsPage, "root">, string> = {
-  thinking: "思考档位",
-  format: "输入与输出"
+  thinking: navigationLabels.thinking,
+  inputOutput: navigationLabels.inputOutput
 };
 
 export function SettingsView({
@@ -226,6 +237,7 @@ export function SettingsView({
   showContextWindowUsage,
   showRelatedContent,
   showTokenUsage,
+  showModelIdentity,
   toolDisplayTypes,
   currentPassword,
   deleteAddedModel,
@@ -283,11 +295,14 @@ export function SettingsView({
   updateShowRelatedContent,
   updateShowContextWindowUsage,
   updateShowTokenUsage,
+  updateShowModelIdentity,
   updateToolDisplayType,
   updateDraft,
   updateAddedModel,
   selectWebRoot,
   selectMembersRoot,
+  selectMedicationCatalogRoot,
+  selectThemeRoot,
   webAccess,
   webApiUrls,
   webApiKeys,
@@ -373,38 +388,38 @@ export function SettingsView({
       : "info";
   const conversationDialogTitle = conversationSettingsSections.find(
     (section) => section.key === conversationSection
-  )?.label ?? "聊天设置";
+  )?.label ?? navigationLabels.conversation;
   const isLabCatalogSection = activeSection === "lab-categories"
     || activeSection === "lab-items";
   const activeLabCatalog: LabCatalog = activeSection === "lab-items" ? "items" : "categories";
   const activeLabCatalogTitle = activeLabCatalog === "items"
-    ? "检验指标目录"
-    : "检验分类目录";
-  const detailDialogTitle = activeSection === "members" ? "健康档案" : activeSection === "account"
-    ? accountPanel === "profile" ? "账号资料" : accountPanel === "password" ? "密码安全" : "授权管理"
+    ? navigationLabels.labItems
+    : navigationLabels.labCategories;
+  const detailDialogTitle = activeSection === "theme" ? navigationLabels.theme : activeSection === "members" ? navigationLabels.health : activeSection === "account"
+    ? accountPanel === "profile" ? navigationLabels.accountProfile : accountPanel === "password" ? navigationLabels.accountPassword : accountPanel === "notifications" ? navigationLabels.notifications : navigationLabels.accountGrants
     : activeSection === "providers"
-      ? selectedProvider?.provider_name ?? "模型提供方"
+      ? selectedProvider?.provider_name ?? navigationLabels.providers
       : activeSection === "defaults"
-        ? "默认模型"
+        ? navigationLabels.defaults
         : activeSection === "conversation"
           ? conversationDialogTitle
           : isLabCatalogSection
             ? activeLabCatalogTitle
-            : "联网工具";
+            : navigationLabels.web;
   const hasSecondaryList = activeSection === "providers"
     || activeSection === "conversation"
-    || isLabCatalogSection;
+    || isLabCatalogSection || activeSection === "medication-catalog";
   const secondaryListTitle = activeSection === "providers"
-    ? "模型提供方"
+    ? navigationLabels.providers
     : activeSection === "conversation"
-      ? "聊天设置"
+      ? navigationLabels.conversation
       : activeLabCatalogTitle;
   const editingModelTitle = editingModel
     ? editingModelPage === "root"
       ? editingModel.model_name
       : modelSettingsPageTitles[editingModelPage]
     : "";
-  const toolbarTitle = editingModel
+  const toolbarTitle = activeSection === "medication-catalog" ? "药品目录" : editingModel
     ? editingModelTitle
     : isLabCatalogSection && detailOpen
       ? labDictionaryDetailTitle || activeLabCatalogTitle
@@ -429,8 +444,8 @@ export function SettingsView({
       return;
     }
 
-    if (detailOpen && document.activeElement instanceof HTMLElement) {
-      settingsReturnFocusRef.current = document.activeElement;
+    if (detailOpen) {
+      settingsReturnFocusRef.current = interactionReturnTarget();
     }
 
     const frame = window.requestAnimationFrame(() => {
@@ -459,7 +474,7 @@ export function SettingsView({
     {
       durationMs: 4200,
       id: "settings-account-status",
-      title: "修改失败",
+      title: "更新失败",
       tone: accountTone
     }
   );
@@ -499,12 +514,7 @@ export function SettingsView({
   );
 
   function defaultModelOptionsForUsage(usage: DefaultModelUsage) {
-    if (usage !== "vision_parse") {
-      return defaultModelOptions;
-    }
-    return defaultModelOptions.filter((model) =>
-      model.file_mime_types.some((mimeType) => mimeType.startsWith("image/"))
-    );
+    return defaultModelOptions.filter((model) => eligibleForDefault(model, usage));
   }
 
   async function toggleRemoteModel(model: RemoteModel, addedModel?: AddedModel) {
@@ -533,6 +543,7 @@ export function SettingsView({
       selectAccountPanel("password");
       return;
     }
+    if (target === "account-notifications") {selectAccountPanel("notifications");return;}
     if (target === "account-grants") {
       selectAccountPanel("grants");
       return;
@@ -549,6 +560,11 @@ export function SettingsView({
       selectConversationRoot();
       return;
     }
+    if (target === "theme") {
+      selectThemeRoot();
+      return;
+    }
+    if (target === "medication-catalog") {selectMedicationCatalogRoot();return;}
     if (target === "members") {
       selectMembersRoot();
       return;
@@ -648,7 +664,7 @@ export function SettingsView({
             {activeSection === "providers" ? (
               <SettingsListPanel
                 bodyClassName="provider-list"
-                title="模型提供方"
+                title={navigationLabels.providers}
                 titleId="settings-provider-list-title"
               >
                 {providers.length ? (
@@ -699,11 +715,12 @@ export function SettingsView({
                     })}
                   </GroupedList>
                 ) : (
-                  <p className="status-message">暂无模型提供方。</p>
+                  <EmptyState layout="inline" title="暂无模型提供方。" />
                 )}
               </SettingsListPanel>
             ) : null}
 
+            {activeSection === "medication-catalog"?<MedicationCatalogSettings detailOpen={detailOpen} onOpenDetail={openSettingsDetail} onCloseDetail={closeSettingsDetail}/>:null}
             {isLabCatalogSection ? (
               <LabDictionaryEditor
                 catalog={activeLabCatalog}
@@ -721,7 +738,7 @@ export function SettingsView({
               />
             ) : null}
 
-            {!isLabCatalogSection ? (
+            {!isLabCatalogSection && activeSection !== "medication-catalog" ? (
               <SettingsDetailPanel
                 mobileOpen={detailOpen}
                 onBack={editingModel ? goBackFromModelSettings : closeSettingsDetail}
@@ -756,6 +773,8 @@ export function SettingsView({
                   />
                 ) : (
                   <div className="settings-detail-column">
+                    {activeSection === "account" && accountPanel === "notifications" ? <NotificationSettings/> : null}
+                    {activeSection === "theme" ? <ThemeSettings /> : null}
                     {activeSection === "members" ? <MembersPanel /> : null}
                     {activeSection === "account" && accountPanel === "grants" ? <MemberGrantsPanel /> : null}
                     {activeSection === "account" && accountPanel === "profile" ? (
@@ -885,7 +904,6 @@ export function SettingsView({
                                     selectedProviderConnectionState?.status ?? "idle"
                                   )}
                                   className={`control control--secondary secondary-button control-primary provider-connection-test-action provider-detail-test-button ${selectedProviderConnectionState?.status ?? "idle"}`}
-                                  disabled={selectedProviderConnectionState?.status === "testing"}
                                   onClick={() => void testProviderConnection(
                                     selectedProvider.provider_id,
                                     { notify: true }
@@ -902,66 +920,28 @@ export function SettingsView({
                               </GroupedList>
                             </form>
                           ) : null}
-                          <section
-                            className={`provider-model-section${selectedProviderModels.length ? "" : " empty"}`}
-                            aria-label="模型列表"
-                          >
-                            <div className="provider-model-content">
-                              <div className="model-section-header">
-                                <h2>已添加模型</h2>
-                              </div>
-                              <GroupedList className="model-list added-model-list" density="standard">
-                                <div className="model-item add-model-item" data-grouped-list-item>
-                                  <button
-                                    aria-label="添加模型"
-                                    className="control control--row add-model-button grouped-list-create-button"
-                                    data-interaction-owner="row"
-                                    onClick={() => {
-                                      setModelPickerQuery("");
-                                      void openAddModelModal();
-                                    }}
-                                    type="button"
-                                  >
-                                    <PlusIcon className="settings-action-icon" />
-                                    <span>添加模型</span>
-                                  </button>
-                                </div>
-                                {selectedProviderModels.map((model) => {
-                                  const displayModelId = model.remote_model_id;
-                                  return (
-                                    <div className="model-item" data-grouped-list-item key={model.model_id}>
-                                      <button
-                                        aria-label={`打开模型详情：${displayModelId}`}
-                                        className="model-row model-detail-row"
-                                        data-interaction-owner="row"
-                                        onClick={() => openModelSettings(model.model_id)}
-                                        type="button"
-                                      >
-                                        <span>{displayModelId}</span>
-                                        <span className="model-row-actions">
-                                          <SettingsListForwardIcon className="model-row-chevron" />
-                                        </span>
-                                      </button>
-                                    </div>
-                                  );
-                                })}
-                              </GroupedList>
-                              {!selectedProviderModels.length ? (
-                                <p className="status-message empty-list-status provider-model-empty-status">暂未添加模型</p>
-                              ) : null}
-                            </div>
-                            {selectedProviderModels.length ? (
-                              <p className="object-list-count">共 {selectedProviderModels.length} 个模型</p>
-                            ) : null}
-                          </section>
+                          <AddedModelList
+                            key={selectedProviderId}
+                            providerId={selectedProviderId}
+                            models={selectedProviderModels}
+                            probingModelIds={probingModelIds}
+                            onOpen={openModelSettings}
+                            onDelete={deleteAddedModel}
+                            onAdd={() => {
+                              setModelPickerQuery("");
+                              void openAddModelModal();
+                            }}
+                          />
                         </div>
                       </section>
                     ) : null}
 
                     {activeSection === "defaults" ? (
                       <section className="settings-section default-model-section">
+                        {[{ title: "生成模型", embedding: false }, { title: "向量模型", embedding: true }].map(group => <div className="model-settings-block" key={group.title}>
+                        <h3>{group.title}</h3>
                         <GroupedList layout="fields" className="default-model-list" density="standard">
-                          {defaultModelItems.map((item) => (
+                          {defaultModelItems.filter(item => item.key.endsWith("embedding") === group.embedding).map((item) => (
                             <div className="default-model-row field-row" key={item.key}>
                               <span className="field-label">{item.label}</span>
                               <SelectPopover
@@ -971,7 +951,7 @@ export function SettingsView({
                                 options={[
                                   { label: "不设置", value: "" },
                                   ...defaultModelOptionsForUsage(item.key).map((model) => ({
-                                    label: model.model_name,
+                                    label: item.key === "multimodal_embedding" ? `${model.model_name} · ${supportedEmbeddingModalities(model).map(key => modalityLabels[key]).join("、")}` : model.model_name,
                                     value: model.model_id
                                   }))
                                 ]}
@@ -980,6 +960,7 @@ export function SettingsView({
                             </div>
                           ))}
                         </GroupedList>
+                        </div>)}
                       </section>
                     ) : null}
 
@@ -992,6 +973,7 @@ export function SettingsView({
                         showContextWindowUsage={showContextWindowUsage}
                         showRelatedContent={showRelatedContent}
                         showTokenUsage={showTokenUsage}
+                        showModelIdentity={showModelIdentity}
                         toolDisplayTypes={toolDisplayTypes}
                         updateBaseContextDisplayMode={updateBaseContextDisplayMode}
                         updateComposerSubmitShortcut={updateComposerSubmitShortcut}
@@ -999,6 +981,7 @@ export function SettingsView({
                         updateShowRelatedContent={updateShowRelatedContent}
                         updateShowContextWindowUsage={updateShowContextWindowUsage}
                         updateShowTokenUsage={updateShowTokenUsage}
+                        updateShowModelIdentity={updateShowModelIdentity}
                         updateToolDisplayType={updateToolDisplayType}
                       />
                     ) : null}
@@ -1079,8 +1062,8 @@ export function SettingsView({
                                   activeWebProviderTestStatus
                                 )}
                                 className={`control control--secondary secondary-button control-primary provider-connection-test-action web-provider-test-button ${activeWebProviderTestStatus}`}
-                                disabled={activeWebProviderBusy
-                                  || (!activeWebApiKey.trim() && !activeWebProvider.has_api_key)}
+                                disabled={activeWebProviderTestStatus !== "testing" && (activeWebProviderBusy
+                                  || (!activeWebApiKey.trim() && !activeWebProvider.has_api_key))}
                                 onClick={() => void testWebProvider(activeWebProvider.provider_id)}
                                 type="button"
                               >
@@ -1090,7 +1073,7 @@ export function SettingsView({
                             </GroupedList>
                           </form>
                         ) : (
-                          <p className="status-message">暂无可用联网服务。</p>
+                          <EmptyState layout="inline" title="暂无可用联网服务。" />
                         )}
                       </section>
                     ) : null}

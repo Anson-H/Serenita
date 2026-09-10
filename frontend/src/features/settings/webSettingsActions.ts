@@ -11,7 +11,7 @@ import {
 } from "./settingsTypes";
 
 type Dependencies = {
-  webConnectionTestRequestIdsRef: RefObject<Map<string, number>>;
+  webConnectionTestRequestsRef: RefObject<Map<string, AbortController>>;
   setWebConnectionTestStates: Dispatch<SetStateAction<Record<string, ProviderConnectionTestState>>>;
   setWebProviderFeedback: Dispatch<SetStateAction<Record<string, TestState>>>;
   credentialDraftRevisions: RefObject<Record<string, number>>;
@@ -38,7 +38,7 @@ type Dependencies = {
 };
 
 export function createWebSettingsActions({
-  webConnectionTestRequestIdsRef,
+  webConnectionTestRequestsRef,
   setWebConnectionTestStates,
   setWebProviderFeedback,
   credentialDraftRevisions,
@@ -64,7 +64,7 @@ export function createWebSettingsActions({
   dirtyWebApiUrls
 }: Dependencies) {
   function resetWebConnectionTest(providerId: string) {
-    invalidateConnectionTestRequest(webConnectionTestRequestIdsRef, providerId);
+    invalidateConnectionTestRequest(webConnectionTestRequestsRef, providerId);
     setWebConnectionTestStates((current) => ({
       ...current,
       [providerId]: { status: "idle", message: "" }
@@ -371,12 +371,16 @@ export function createWebSettingsActions({
   }
 
   async function testWebProvider(providerId: string) {
+    if (webConnectionTestRequestsRef.current.has(providerId)) {
+      resetWebConnectionTest(providerId);
+      return;
+    }
     const apiKey = webApiKeys[providerId]?.trim() || undefined;
     if (dirtyWebApiUrls[providerId] && !(await saveWebApiUrl(providerId))) {
       return;
     }
-    const requestId = beginConnectionTestRequest(
-      webConnectionTestRequestIdsRef,
+    const request = beginConnectionTestRequest(
+      webConnectionTestRequestsRef,
       providerId
     );
     setWebConnectionTestStates((current) => ({
@@ -388,11 +392,11 @@ export function createWebSettingsActions({
       [providerId]: { status: "testing", message: "正在测试连接..." }
     }));
     try {
-      const result = await apiClient.testWebProvider(providerId, apiKey);
+      const result = await apiClient.testWebProvider(providerId, apiKey, request.signal);
       if (!connectionTestRequestIsCurrent(
-        webConnectionTestRequestIdsRef,
+        webConnectionTestRequestsRef,
         providerId,
-        requestId
+        request
       )) return;
       setWebConnectionTestStates((current) => ({
         ...current,
@@ -410,9 +414,9 @@ export function createWebSettingsActions({
       }));
     } catch (error) {
       if (!connectionTestRequestIsCurrent(
-        webConnectionTestRequestIdsRef,
+        webConnectionTestRequestsRef,
         providerId,
-        requestId
+        request
       )) return;
       const message = error instanceof Error ? error.message : "连接测试失败。";
       setWebConnectionTestStates((current) => ({
@@ -426,6 +430,10 @@ export function createWebSettingsActions({
           message
         }
       }));
+    } finally {
+      if (connectionTestRequestIsCurrent(webConnectionTestRequestsRef, providerId, request)) {
+        webConnectionTestRequestsRef.current.delete(providerId);
+      }
     }
   }
   return {

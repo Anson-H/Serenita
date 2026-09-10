@@ -20,10 +20,11 @@ import {
   type RoutePath
 } from "../../app/routes";
 import { useActiveScope } from "../../utils/useActiveScope";
-import { emptyModelCatalog, fetchModelCatalog, type ModelCatalog } from "../modelConfiguration/modelCatalog";
+import { emptyModelCatalog, type ModelCatalog } from "../modelConfiguration/modelCatalog";
 import type { UploadingResource } from "./contextResources";
 import { createConversationListActions } from './conversationListActions';
 import type { HomeConversationDraft } from "./useConversationPageState";
+import type { ConversationDraftStore } from "./conversationDraftStore";
 import type {
   ActiveStream,
   AnnotatedContext,
@@ -32,6 +33,7 @@ import type {
 } from "./workspaceTypes";
 
 type ConversationLifecycleOptions = {
+  draftStore: ConversationDraftStore;
   refreshConversations: (isRelevant?: () => boolean) => Promise<void>;
   activeScenario: ScenarioTab;
   activeStreamRef: MutableRefObject<ActiveStream | null>;
@@ -63,6 +65,7 @@ type ConversationLifecycleOptions = {
   setHighlightedMessageRequestId: Dispatch<SetStateAction<number>>;
   setMobileSidebarOpen: Dispatch<SetStateAction<boolean>>;
   setModelCatalog: Dispatch<SetStateAction<ModelCatalog>>;
+  refreshModelCatalog: () => Promise<void>;
   setAnnotatedContexts: Dispatch<SetStateAction<AnnotatedContext[]>>;
   setAnnotationSelection: Dispatch<SetStateAction<AnnotationSelection | null>>;
   setSending: Dispatch<SetStateAction<boolean>>;
@@ -79,7 +82,6 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     refreshConversations,
     activeScenario,
     activeStreamRef,
-    composerText,
     conversationDetail,
     conversationRequestSeqRef,
     currentSessionId,
@@ -87,8 +89,6 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     onNavigate,
     onSignOut,
     prepareConversationMutation,
-    annotatedContexts,
-    annotationSelection,
     resetFavoriteWorkspaceState,
     resetModelControl,
     route,
@@ -113,8 +113,6 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     setSidebarCollapsed,
     setUploadedResources,
     setUploadingResources,
-    uploadedResources,
-    uploadingResources
   } = options;
   const visibleConversationRef = useRef({ currentSessionId, conversationDetail });
   // Starting another draft can leave the URL and session ID unchanged.
@@ -155,11 +153,9 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
   }
 
   function hasHomeConversationDraftContent(draft: HomeConversationDraft) {
+    const value = draft.draft.value;
     return Boolean(
-      draft.composerText.trim() ||
-      draft.uploadedResources.length ||
-      draft.uploadingResources.length ||
-      draft.annotatedContexts.length
+      value.composerText.trim() || value.uploadedResources.length || value.uploadingResources.length || value.annotatedContexts.length
     );
   }
 
@@ -184,11 +180,7 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     const draft: HomeConversationDraft = {
       currentSessionId,
       conversationDetail,
-      composerText,
-      annotatedContexts: [...annotatedContexts],
-      annotationSelection,
-      uploadedResources: [...uploadedResources],
-      uploadingResources: [...uploadingResources]
+      draft: options.draftStore.capture()
     };
     homeConversationDraftRef.current = hasHomeConversationDraftContent(draft) ? draft : null;
   }
@@ -197,14 +189,12 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     homeConversationDraftRef.current = null;
   }
 
-  function clearActiveComposerDraft() {
+  function clearActiveComposerDraft(sessionId?: string) {
     conversationViewRef.current += 1;
     setSending(false);
-    setComposerText("");
-    setUploadingResources([]);
-    setUploadedResources([]);
-    setAnnotatedContexts([]);
-    setAnnotationSelection(null);
+    options.draftStore.remember(currentSessionId);
+    if (sessionId) options.draftStore.openSession(sessionId);
+    else options.draftStore.reset();
     setHighlightedMessageId(null);
     setHighlightedMessageRequestId(0);
     setEditingMessageId(null);
@@ -213,16 +203,12 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
 
   function restoreHomeConversationDraft() {
     const draft = homeConversationDraftRef.current;
-    if (!draft) {
+    if (!draft?.draft.valid) {
       return false;
     }
-    setCurrentSessionId(draft.currentSessionId);
-    setConversationDetail(draft.conversationDetail);
-    setComposerText(draft.composerText);
-    setUploadingResources([...draft.uploadingResources]);
-    setUploadedResources([...draft.uploadedResources]);
-    setAnnotatedContexts([...draft.annotatedContexts]);
-    setAnnotationSelection(draft.annotationSelection);
+    setCurrentSessionId(draft.draft.sessionId ?? draft.currentSessionId);
+    setConversationDetail(draft.draft.detail ?? draft.conversationDetail);
+    options.draftStore.restore(draft.draft);
     setHighlightedMessageId(null);
     setHighlightedMessageRequestId(0);
     setEditingMessageId(null);
@@ -248,7 +234,7 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     await Promise.all([
       refreshConversations(),
       apiClient.fetchFavorites().then((response) => setFavorites(response.favorites)),
-      fetchModelCatalog().then(setModelCatalog).catch(error => {
+      options.refreshModelCatalog().catch(error => {
         const message = error instanceof Error ? error.message : "模型配置读取失败。";
         setModelCatalog(current => ({ ...current, status: "error", error: message }));
         setComposerError(message);
@@ -257,6 +243,7 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
   }
 
   function resetWorkspaceState() {
+    options.draftStore.clear();
     conversationRequestSeqRef.current += 1;
     clearHomeConversationDraft();
     activeStreamRef.current?.abortController.abort();
@@ -333,7 +320,7 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     setConversationDetail(detail);
     setComposerError("");
     if (switchingConversation) {
-      clearActiveComposerDraft();
+      clearActiveComposerDraft(sessionId);
       setActiveScenario("home");
       setHighlightedMessageId(sourceMessageId);
     } else if (sourceMessageId !== null) {
@@ -412,6 +399,11 @@ export function useConversationLifecycle(options: ConversationLifecycleOptions) 
     batchPinConversationsFromSidebar,
     batchDeleteConversationsFromSidebar
   } = createConversationListActions({
+    onDeletedSessions: ids => {
+      options.draftStore.forgetSessions(ids);
+      const home = homeConversationDraftRef.current;
+      if (home && (!home.draft.valid || ids.includes(home.draft.sessionId ?? home.currentSessionId ?? ""))) clearHomeConversationDraft();
+    },
     refreshConversations,
     setConversations,
     setComposerError,

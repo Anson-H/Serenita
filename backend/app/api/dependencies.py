@@ -5,7 +5,7 @@ from backend.app.core.errors import raise_error
 
 from backend.app.application.account_settings_service import AccountSettingsService
 from backend.app.application.auth_service import AuthService, CurrentUser
-from backend.app.application.conversation_service import ConversationService
+from backend.app.application.conversations.service import ConversationService
 from backend.app.application.report_service import ReportService
 from backend.app.plugins.web.service import WebAccessService
 

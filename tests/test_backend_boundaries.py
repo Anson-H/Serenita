@@ -35,7 +35,7 @@ def test_favorite_storage_classifies_only_source_duplicates(
 
     monkeypatch.setattr(repository, "_connection", failing_connection)
     with pytest.raises(expected):
-        repository.create("account", {})
+        repository.create("account", dict(favorite_id="favorite", member_id=None, source_type="report", source_session_id="", source_id="report", title="标题", content_snapshot="内容", tags="[]", created_at="2026-09-10", updated_at="2026-09-10"))
 
 
 def test_two_application_roots_keep_account_report_config_and_authorization_isolated(
@@ -83,7 +83,7 @@ def test_two_application_roots_keep_account_report_config_and_authorization_isol
         )
         assert created.status_code == 201, created.text
         report_id = created.json()["report_id"]
-        assert a.plugin_service(str(identity), member, "report").report_exists(
+        assert a.plugin_service(str(identity), member, "medical_report").report_exists(
             member, report_id
         )
         with a.members.access_guard(str(identity), member):

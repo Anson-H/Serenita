@@ -26,6 +26,7 @@ export type ContextAssemblyDisplaySettings = {
   showContextWindowUsage: boolean;
   showRelatedContent: boolean;
   showTokenUsage: boolean;
+  showModelIdentity: boolean;
   visibleContextTypes: string[];
 };
 
@@ -51,13 +52,13 @@ export const contextAssemblyDisplayOptions: readonly ContextAssemblyDisplayOptio
   {
     contextType: "runtime_context",
     label: "运行时元数据",
-    description: "当前日期、聊天状态等运行时信息；不包含报告附件。",
+    description: "当前日期、聊天状态等运行时信息；不包含医疗报告附件。",
     group: "基础装配"
   },
   {
     contextType: "current_user_message",
     label: "当前用户输入（含附件）",
-    description: "本轮实际发送给模型的用户消息，以及报告、文件等输入片段。",
+    description: "本轮实际发送给模型的用户消息，以及医疗报告、文件等输入片段。",
     group: "输入追溯"
   },
   {
@@ -117,6 +118,7 @@ const defaultContextAssemblyDisplayTypes: readonly string[] = [];
 const defaultShowContextWindowUsage = false;
 const defaultShowRelatedContent = true;
 const defaultShowTokenUsage = true;
+const defaultShowModelIdentity = false;
 
 const baseContextAssemblyTypeSet = new Set<string>(baseContextAssemblyTypes);
 const availableContextTypes = new Set(
@@ -137,6 +139,7 @@ function defaultContextAssemblyDisplaySettings(): ContextAssemblyDisplaySettings
     showContextWindowUsage: defaultShowContextWindowUsage,
     showRelatedContent: defaultShowRelatedContent,
     showTokenUsage: defaultShowTokenUsage,
+    showModelIdentity: defaultShowModelIdentity,
     visibleContextTypes: [...defaultContextAssemblyDisplayTypes]
   };
 }
@@ -181,6 +184,7 @@ function normalizedSettings(value: unknown): ContextAssemblyDisplaySettings {
     showContextWindowUsage: requested.showContextWindowUsage === true,
     showRelatedContent: requested.showRelatedContent !== false,
     showTokenUsage: requested.showTokenUsage !== false,
+    showModelIdentity: requested.showModelIdentity === true,
     visibleContextTypes: normalizedContextTypes(requested.visibleContextTypes)
   };
 }
@@ -193,6 +197,7 @@ function contextSettingsFromPreferences(
     showContextWindowUsage: preferences.is_context_window_usage_visible,
     showRelatedContent: preferences.is_related_content_visible,
     showTokenUsage: preferences.is_token_usage_visible,
+    showModelIdentity: preferences.is_model_identity_visible,
     visibleContextTypes: preferences.visible_context_types
   };
 }
@@ -214,6 +219,7 @@ export function writeContextAssemblyDisplaySettings(
     is_context_window_usage_visible: normalized.showContextWindowUsage,
     is_related_content_visible: normalized.showRelatedContent,
     is_token_usage_visible: normalized.showTokenUsage,
+    is_model_identity_visible: normalized.showModelIdentity,
     visible_context_types: normalized.visibleContextTypes as ConversationPreferences["visible_context_types"]
   });
   return normalized;

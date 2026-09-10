@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from backend.app.model_capabilities import (
+from backend.app.domain.model_capabilities import (
     ModelCapabilityProfiles,
     ModelCapabilityProfile,
 )
@@ -12,6 +12,8 @@ class ProviderModel:
     remote_model_id: str
     model_name: str
     created_at: Optional[int] = None
+    model_type: str = "unknown"
+    embedding_dimensions: list[int] = field(default_factory=list)
     supports_text: bool = True
     file_mime_types: list[str] = field(default_factory=list)
     thinking_modes: list[str] = field(default_factory=lambda: ["default"])
@@ -30,11 +32,15 @@ class ProviderModel:
         profile: ModelCapabilityProfile,
         capability_declarations: Optional[dict[str, bool]] = None,
         created_at: Optional[int] = None,
+        model_type: str = "unknown",
+        embedding_dimensions: list[int] | None = None,
     ) -> "ProviderModel":
         return cls(
             remote_model_id=remote_model_id,
             model_name=model_name,
             created_at=created_at,
+            model_type=model_type,
+            embedding_dimensions=embedding_dimensions or [],
             supports_text=profile.supports_text,
             file_mime_types=list(profile.file_mime_types),
             thinking_modes=list(profile.thinking_modes),

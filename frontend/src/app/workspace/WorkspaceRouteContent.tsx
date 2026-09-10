@@ -1,3 +1,4 @@
+import { useAttachmentTask } from "../../features/conversations/useAttachmentTask";
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { apiClient } from "../../api/client";
 import type { Member } from "../../api/memberApi";
@@ -5,41 +6,39 @@ import { HealthMemberNav } from "../../features/members/HealthMemberNav";
 import { useMembers } from "../../features/members/MemberProvider";
 import { useReportUpload } from "../../features/reports/useReportUpload";
 
-import type {
-  AuthenticatedSession,
-  AuthSession,
-  ConversationMessage,
-  Favorite
-} from "../../api/client";
+import type { AuthenticatedSession } from "../../api/client";
+import type { useConversationController } from "../../features/conversations/useConversationController";
 import {
   DeferredContentBoundary,
   DeferredLoadingState
 } from "../../components/DeferredContentBoundary";
-import { ConversationWorkspaceSurface } from "../../features/conversations/ConversationWorkspaceSurface";
-import type { useConversationAttachments } from "../../features/conversations/useConversationAttachments";
-import type { useConversationLayout } from "../../features/conversations/useConversationLayout";
-import type { useConversationLifecycle } from "../../features/conversations/useConversationLifecycle";
-import type { useConversationMessageActions } from "../../features/conversations/useConversationMessageActions";
-import type { useConversationModelControl } from "../../features/conversations/useConversationModelControl";
-import type { useConversationPageState } from "../../features/conversations/useConversationPageState";
-import type { useConversationViewState } from "../../features/conversations/useConversationViewState";
-import type { useConversationWorkspace } from "../../features/conversations/useConversationWorkspace";
-import type { FavoriteWorkspaceState } from "../../features/favorites/useFavoriteWorkspace";
-import type { ReportWorkspaceState } from "../../features/reports/useReportWorkspace";
 import { PatientShell } from "../PatientShell";
 import {
+  bodyMetricPath,
+  isBodyMetricRoute,
   APP_PATH,
   FAVORITES_PATH,
+  NOTIFICATIONS_PATH,
   healthPathForMember,
+  medicalLogPath,
+  medicationPath,
+  medicationRoute,
+  isMedicalLogRoute,
   isReportRoute,
   memberIdFromHealthPath,
-  SETTING_PATH,
-  type RoutePath
+  SETTING_PATH
 } from "../routes";
 import {
-  WorkspaceRouteShell,
-  type WorkspaceRouteShellControls
+  WorkspaceRouteShell
 } from "../WorkspaceRouteShell";
+
+const NotificationWorkspace = lazy(() => import("../../features/notifications/NotificationWorkspace").then(({NotificationWorkspace}) => ({default:NotificationWorkspace})));
+
+const BodyMetricWorkspace = lazy(() => import("../../features/bodyMetrics/BodyMetricWorkspace").then(({BodyMetricWorkspace}) => ({default:BodyMetricWorkspace})));
+
+const MedicationWorkspace = lazy(() => import("../../features/medications/MedicationWorkspace").then(({MedicationWorkspace}) => ({default:MedicationWorkspace})));
+
+const MedicalLogWorkspace = lazy(() => import("../../features/medicalLogs/MedicalLogWorkspace").then(({ MedicalLogWorkspace }) => ({ default: MedicalLogWorkspace })));
 
 const CreateMemberDialog = lazy(() => import("../../features/members/CreateMemberDialog").then(
   ({ CreateMemberDialog: Component }) => ({ default: Component })
@@ -54,52 +53,41 @@ const SettingsWorkspacePanel = lazy(() => import("../../features/settings/Settin
   ({ SettingsWorkspacePanel: Component }) => ({ default: Component })
 ));
 
-type WorkspaceRouteContentProps = {
-  attachments: ReturnType<typeof useConversationAttachments>;
-  favoriteWorkspace: FavoriteWorkspaceState;
-  favorites: Favorite[];
-  layout: ReturnType<typeof useConversationLayout>;
-  lifecycle: ReturnType<typeof useConversationLifecycle>;
-  messageActions: ReturnType<typeof useConversationMessageActions>;
-  modelControl: ReturnType<typeof useConversationModelControl>;
-  onToggleFavorite: (message: ConversationMessage) => void | Promise<void>;
+type WorkspaceRouteContentProps = ReturnType<typeof useConversationController> & {
   onAccountProfileChange: (session: AuthenticatedSession) => void;
-  pageState: ReturnType<typeof useConversationPageState>;
-  reportWorkspace: ReportWorkspaceState;
-  route: RoutePath;
-  session: Extract<AuthSession, { authenticated: true }>;
   ShellComponent?: typeof PatientShell;
-  viewState: ReturnType<typeof useConversationViewState>;
-  workspaceActions: ReturnType<typeof useConversationWorkspace>;
-  workspaceShell: WorkspaceRouteShellControls;
 };
 
 export function WorkspaceRouteContent({
   attachments,
+  renderConversation,
+  catalogActions,
+  reportError,
+  enterReports,
   favoriteWorkspace,
-  favorites,
-  layout,
   lifecycle,
-  messageActions,
-  modelControl,
-  onToggleFavorite,
   onAccountProfileChange,
   pageState,
   reportWorkspace,
   route,
   session,
   ShellComponent = PatientShell,
-  viewState,
   workspaceActions,
   workspaceShell
 }: WorkspaceRouteContentProps) {
-  const { reportUploading, uploadedReportNames, startReportUpload, remainingReportFiles } = useReportUpload({
+  const { reportUploading, uploadedReportNames, startReportUpload, remainingReportFiles, canRetryReportUpload, retryReportUpload } = useReportUpload({
     accountId: session.account_id, route, memberId: reportWorkspace.memberId, currentSessionId: pageState.currentSessionId,
     canEdit: reportWorkspace.canEdit, unavailableReason: reportWorkspace.reportUploadUnavailableReason,
     mimeTypes: reportWorkspace.reportImportMimeTypes, setUploadErrors: reportWorkspace.setUploadErrors,
     uploadFiles: attachments.uploadFiles, submitMessage: workspaceActions.submitConversationMessage
   });
+  const [createMemberBack, setCreateMemberBack] = useState<(() => void) | null>(null);
   const [createMemberOpen, setCreateMemberOpen] = useState(false);
+  const submitAttachmentTask = useAttachmentTask({
+    scopeKey: `${session.account_id}:${route}`,
+    uploadFiles: attachments.uploadFiles,
+    submitMessage: workspaceActions.submitConversationMessage
+  });
   function renderDeferredWorkspace(content: ReactNode, label: string) {
     return (
       <DeferredContentBoundary key={route}>
@@ -117,9 +105,10 @@ export function WorkspaceRouteContent({
           activeMemberId={memberIdFromHealthPath(route) ?? members.activeMemberId ?? undefined}
           current={Boolean(memberIdFromHealthPath(route)) || isReportRoute(route)}
           onSelect={id => members.selectMember(id, { type: "health" })}
-          onCreate={() => setCreateMemberOpen(true)} />}
+          onCreate={onBack => { setCreateMemberBack(() => onBack ?? null); setCreateMemberOpen(true); }} />}
         activeScenario={pageState.activeScenario}
         conversations={pageState.conversations}
+        conversationPagination={pageState.conversationPagination}
         currentSession={session}
         currentSessionId={pageState.currentSessionId}
         onBatchDeleteConversations={lifecycle.batchDeleteConversationsFromSidebar}
@@ -145,39 +134,21 @@ export function WorkspaceRouteContent({
     conversationEnabled?: boolean;
     surfaceMode?: "workspace" | "composer";
   } = {}) {
-    return (
-      <ConversationWorkspaceSurface
-        accountId={session.account_id}
-        attachments={attachments}
-        favorites={favorites}
-        layout={layout}
-        messageActions={messageActions}
-        modelControl={modelControl}
-        onOpenReport={(reportId) => openStandaloneReport(reportId,
-          pageState.conversationDetail ? pageState.conversationDetail.member_id : reportWorkspace.memberId || null)}
-        onToggleFavorite={onToggleFavorite}
-        pageState={pageState}
-        composerPlaceholder={options.composerPlaceholder}
-        conversationEnabled={pageState.conversationDetail?.access_state !== "history_only" && options.conversationEnabled !== false}
-        sidebarToggle={() => workspaceShell.renderSidebarToggle()}
-        surfaceMode={options.surfaceMode}
-        viewState={viewState}
-        workspaceActions={workspaceActions}
-      />
-    );
+    return renderConversation({ ...options, onOpenReport: reportId => openStandaloneReport(reportId,
+      pageState.conversationDetail ? pageState.conversationDetail.member_id : reportWorkspace.memberId || null) });
   }
 
   const members = useMembers();
   async function openStandaloneReport(reportId: string, memberId: string | null = reportWorkspace.memberId || null) {
     if (!memberId) {
-      pageState.setComposerError("该报告的所属成员当前不可访问。");
+      reportError("该医疗报告的所属成员当前不可访问。");
       return;
     }
     if (memberId !== reportWorkspace.memberId) {
       try {
         await apiClient.getReport(memberId, reportId);
         await members.selectMember(memberId, { type: "reports", reportId });
-      } catch (error) { pageState.setComposerError(error instanceof Error ? error.message : "报告无法打开。"); }
+      } catch (error) { reportError(error instanceof Error ? error.message : "医疗报告无法打开。"); }
       return;
     }
     const opened = await reportWorkspace.openReport(reportId, true);
@@ -187,17 +158,20 @@ export function WorkspaceRouteContent({
       }
       return;
     }
-    pageState.setActiveScenario("reports");
+    enterReports();
   }
 
   function renderReportsPage(healthMember: Member) {
     return renderWorkspaceShell(
       renderDeferredWorkspace(
         <ReportWorkspacePanel
+          onOpenBodyMetrics={() => lifecycle.navigateTo(bodyMetricPath(healthMember.member_id))}
+          onOpenMedicalLogs={() => lifecycle.navigateTo(medicalLogPath(healthMember.member_id))}
+          onOpenMedications={() => lifecycle.navigateTo(medicationPath(healthMember.member_id))}
           healthMember={healthMember}
           reportRoute={isReportRoute(route)}
           detailComposer={renderConversationPanel({
-            composerPlaceholder: "询问这份报告",
+            composerPlaceholder: "询问这份医疗报告",
             conversationEnabled: true,
             surfaceMode: "composer"
           })}
@@ -205,16 +179,16 @@ export function WorkspaceRouteContent({
           onUploadReports={startReportUpload}
           uploadBusy={reportUploading}
           uploadStatus={<div aria-live="polite">
-            {reportUploading ? <p>正在上传报告…</p> : null}
+            {reportUploading ? <p>正在上传医疗报告…</p> : null}
             {uploadedReportNames.length ? <p>已上传：{uploadedReportNames.join("、")}</p> : null}
             {reportWorkspace.uploadErrors.map((error, index) => <p role="alert" key={index}>{error}</p>)}
-            {!reportUploading && uploadedReportNames.length && remainingReportFiles.length ?
-              <button type="button" onClick={() => void startReportUpload(remainingReportFiles)}>继续上传剩余文件</button> : null}
+            {!reportUploading && canRetryReportUpload ?
+              <button type="button" onClick={() => void retryReportUpload()}>{remainingReportFiles.length ? "继续上传剩余文件" : "重新提交已上传医疗报告"}</button> : null}
           </div>}
           sidebarToggle={workspaceShell.renderSidebarToggle("reports-sidebar-toggle")}
           workspace={reportWorkspace}
         />,
-        "正在载入报告工作区…"
+        "正在载入医疗报告工作区…"
       )
     );
   }
@@ -227,8 +201,30 @@ export function WorkspaceRouteContent({
     const healthMemberId = memberIdFromHealthPath(route);
     if (healthMemberId) {
       const member = members.collection.members.find(item => item.member_id === healthMemberId);
+      if (member && isBodyMetricRoute(route)) return renderWorkspaceShell(
+        <DeferredContentBoundary key={`body-metrics-${member.member_id}`}><Suspense fallback={<DeferredLoadingState label="正在载入身体指标…" />}>
+          <BodyMetricWorkspace member={member} route={route} navigate={lifecycle.navigateTo}
+            sidebarToggle={workspaceShell.renderSidebarToggle("reports-sidebar-toggle")}
+            onAsk={async text=>{const sent=await workspaceActions.submitConversationMessage({rawText:text,contextResources:[],memberId:member.member_id,startNewConversation:true});if(!sent)throw new Error('任务未发送，请重试。');}}
+            onRecognize={files => submitAttachmentTask(files, member.member_id, "请识别这些食物或营养标签图片，整理食物、份量和摄入能量、碳水、蛋白质、脂肪。需要明确进食日期时间和餐次，缺少时询问我；有足够依据后将饮食记录和图片保存到当前成员的身体指标，照片推算须标明估算依据，给出可编辑记录的链接。")} />
+        </Suspense></DeferredContentBoundary>
+      );
+      if (member && medicationRoute(route)) return renderWorkspaceShell(
+        <DeferredContentBoundary key={`medications-${member.member_id}`}><Suspense fallback={<DeferredLoadingState label="正在载入用药记录…" />}>
+          <MedicationWorkspace member={member} route={route} navigate={lifecycle.navigateTo}
+            sidebarToggle={workspaceShell.renderSidebarToggle("reports-sidebar-toggle")}
+            />
+        </Suspense></DeferredContentBoundary>
+      );
+      if (member && isMedicalLogRoute(route)) return renderWorkspaceShell(
+        <DeferredContentBoundary key={`medical-logs-${member.member_id}`}><Suspense fallback={<DeferredLoadingState label="正在载入健康日记…" />}>
+          <MedicalLogWorkspace member={member} route={route} navigate={lifecycle.navigateTo}
+            sidebarToggle={workspaceShell.renderSidebarToggle("reports-sidebar-toggle")} />
+        </Suspense></DeferredContentBoundary>
+      );
       return member ? renderReportsPage(member) : null;
     }
+    if (route === NOTIFICATIONS_PATH) return renderWorkspaceShell(renderDeferredWorkspace(<NotificationWorkspace onNavigate={lifecycle.navigateTo} sidebarToggle={workspaceShell.renderSidebarToggle("notifications-sidebar-toggle")}/>, "正在载入通知…"));
     if (route === FAVORITES_PATH) {
       return renderWorkspaceShell(
         renderDeferredWorkspace(
@@ -253,7 +249,8 @@ export function WorkspaceRouteContent({
             accountId={session.account_id}
             account={session.account}
             modelCatalog={pageState.modelCatalog}
-            onModelsChanged={pageState.setModelCatalog}
+            onModelsChanged={catalogActions.update}
+            refreshModels={catalogActions.refresh}
             onReportsChanged={reportWorkspace.invalidateReportData}
             onSignOut={() => void lifecycle.signOut()}
             onAccountProfileChange={onAccountProfileChange}
@@ -275,7 +272,7 @@ export function WorkspaceRouteContent({
     {createMemberOpen ? (
       <DeferredContentBoundary surface="dialog">
         <Suspense fallback={<DeferredLoadingState label="正在载入添加成员…" surface="dialog" />}>
-          <CreateMemberDialog onClose={() => setCreateMemberOpen(false)} onCreated={async member => {
+          <CreateMemberDialog onBack={createMemberBack ? () => { setCreateMemberOpen(false); createMemberBack(); } : undefined} onClose={() => setCreateMemberOpen(false)} onCreated={async member => {
             await members.selectMember(member.member_id, { type: "health" });
             setCreateMemberOpen(false);
           }} />

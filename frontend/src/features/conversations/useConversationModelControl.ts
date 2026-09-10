@@ -1,3 +1,4 @@
+import { isGenerationModel } from "../modelConfiguration/generationModels";
 import {
   type Dispatch,
   type MutableRefObject,
@@ -11,13 +12,14 @@ import { captureAuthContext, isAuthContextCurrent } from "../../api/authLifecycl
 import {
   apiClient
 } from "../../api/client";
-import { fetchModelCatalog, type ModelCatalog } from "../modelConfiguration/modelCatalog";
+import { type ModelCatalog } from "../modelConfiguration/modelCatalog";
 
 type ConversationModelControlOptions = {
   composerModelControlRef: MutableRefObject<HTMLDivElement | null>;
   modelCatalog: ModelCatalog;
   setComposerError: Dispatch<SetStateAction<string>>;
   setModelCatalog: Dispatch<SetStateAction<ModelCatalog>>;
+  refreshModelCatalog: (isRelevant?: () => boolean) => Promise<void>;
 };
 
 export function useConversationModelControl(options: ConversationModelControlOptions) {
@@ -27,29 +29,25 @@ export function useConversationModelControl(options: ConversationModelControlOpt
     setComposerError,
     setModelCatalog
   } = options;
-  const models = modelCatalog.models;
+  const models = modelCatalog.models.filter(isGenerationModel);
   const requestSequence = useRef(0);
   const saveSequence = useRef(0);
-  const [selectedModelId, setSelectedModelId] = useState("");
   const [preferredThinkingMode, setPreferredThinkingMode] = useState("default");
   const [effectiveThinkingMode, setEffectiveThinkingMode] = useState<string | null>(null);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const defaultModel = modelCatalog.defaults.chat ?? undefined;
-  const selectedModel = models.find((model) => model.model_id === selectedModelId) ?? defaultModel;
+  const defaultModel = modelCatalog.defaults.chat && isGenerationModel(modelCatalog.defaults.chat) ? modelCatalog.defaults.chat : undefined;
+  const selectedModel = defaultModel;
+  const selectedModelId = selectedModel?.model_id ?? "";
   const selectedThinkingModes = selectedModel?.thinking_modes.length
     ? selectedModel.thinking_modes
     : ["default"];
 
   useEffect(() => {
     if (!defaultModel) {
-      if (selectedModelId) {
-        setSelectedModelId("");
-      }
       setPreferredThinkingMode("default");
       setEffectiveThinkingMode(null);
       return;
     }
-    setSelectedModelId(defaultModel.model_id);
   }, [defaultModel?.model_id]);
 
   useEffect(() => {
@@ -97,8 +95,7 @@ export function useConversationModelControl(options: ConversationModelControlOpt
     const sequence = ++requestSequence.current;
     const context = captureAuthContext();
     try {
-      const catalog = await fetchModelCatalog();
-      if (isAuthContextCurrent(context) && sequence === requestSequence.current) setModelCatalog(catalog);
+      await options.refreshModelCatalog(() => isAuthContextCurrent(context) && sequence === requestSequence.current);
     } catch (error) {
       if (!isAuthContextCurrent(context) || sequence !== requestSequence.current) return;
       const message = error instanceof Error ? error.message : "模型列表刷新失败。";
@@ -115,7 +112,6 @@ export function useConversationModelControl(options: ConversationModelControlOpt
     const sequence = ++saveSequence.current;
     const context = captureAuthContext();
     requestSequence.current += 1;
-    setSelectedModelId(modelId);
     setPreferredThinkingMode((currentMode) =>
       nextModel.thinking_modes.includes(currentMode)
         ? currentMode
@@ -124,11 +120,14 @@ export function useConversationModelControl(options: ConversationModelControlOpt
     setEffectiveThinkingMode(null);
     setModelPickerOpen(false);
     setComposerError("");
+    setModelCatalog(current => ({ ...current, defaults: { ...current.defaults, chat: nextModel } }));
     try {
       const defaultsResponse = await apiClient.updateModelDefaults({ chat: modelId });
       if (!isAuthContextCurrent(context) || sequence !== saveSequence.current) return;
-      setModelCatalog(current => ({ ...current, defaults: defaultsResponse.defaults, status: "ready", error: "" }));
+      setModelCatalog(current => ({ ...current, defaults: { ...current.defaults, chat: defaultsResponse.defaults.chat }, status: "ready", error: "" }));
     } catch (error) {
+      if (!isAuthContextCurrent(context) || sequence !== saveSequence.current) return;
+      await options.refreshModelCatalog(() => isAuthContextCurrent(context) && sequence === saveSequence.current).catch(() => undefined);
       if (!isAuthContextCurrent(context) || sequence !== saveSequence.current) return;
       setComposerError(error instanceof Error ? error.message : "聊天模型更新失败。");
     }
@@ -147,7 +146,6 @@ export function useConversationModelControl(options: ConversationModelControlOpt
   }
 
   function resetModelControl() {
-    setSelectedModelId("");
     setPreferredThinkingMode("default");
     setEffectiveThinkingMode(null);
     setModelPickerOpen(false);

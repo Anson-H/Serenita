@@ -8,7 +8,7 @@ from urllib import error
 from backend.app.agent_runtime.model_types import AssistantModelOutput, ModelRequest, ModelStreamChunk, ToolCall, ToolSchema
 from backend.app.application.model_provider_service import ModelProviderService
 from backend.app.core.cancellation import CancellationToken, OperationCancelledError
-from backend.app.model_capabilities import ModelCapabilityProfile, profiles_from_profile
+from backend.app.domain.model_capabilities import ModelCapabilityProfile, profiles_from_profile
 from backend.app.providers.aliyun_bailian import AliyunBailianProvider
 from backend.app.providers.base import ModelProvider
 from backend.app.providers.capability_probe import _CAPABILITY_PROBE_ASSET_ROOT
@@ -241,6 +241,9 @@ class ProviderTransportTests(unittest.TestCase):
                     raise ProviderChatCompletionError(
                         "upstream does not support this input", capability_rejected=True
                     )
+                content = model_request.messages[0].get("content")
+                if isinstance(content, list):
+                    return AssistantModelOutput(content={"image": "purple", "file": "PDF"}.get(content[1]["type"], "ok"))
                 return AssistantModelOutput(content="ok")
 
         provider = ProbeDeepSeekProvider()
@@ -260,11 +263,11 @@ class ProviderTransportTests(unittest.TestCase):
         self.assertEqual(result.checks["aggregate"]["video_input"], "unsupported")
         self.assertEqual(
             result.profiles.non_thinking.file_mime_types,
-            ["image/gif", "image/jpeg", "image/png", "image/webp"],
+            ["image/png"],
         )
         self.assertEqual(
             result.profiles.thinking.file_mime_types,
-            ["image/gif", "image/jpeg", "image/png", "image/webp"],
+            ["image/png"],
         )
         self.assertEqual(len(provider.requests), 19)
         self.assertEqual(
@@ -347,11 +350,9 @@ class ProviderTransportTests(unittest.TestCase):
             def native_attachment_mime_types(self):
                 return {
                     "image/png",
-                    "image/jpeg",
-                    "application/pdf",
+                            "application/pdf",
                     "audio/wav",
-                    "audio/mpeg",
-                    "video/mp4",
+                            "video/mp4",
                 }
 
             def complete_chat(
@@ -370,6 +371,9 @@ class ProviderTransportTests(unittest.TestCase):
                             ToolCall(id="probe-call", name="capability_probe", arguments={}),
                         )
                     )
+                content = model_request.messages[0].get("content")
+                if isinstance(content, list):
+                    return AssistantModelOutput(content={"image": "purple", "file": "PDF"}.get(content[1]["type"], "ok"))
                 return AssistantModelOutput(content="ok")
 
         provider = ScriptedProbeProvider()
@@ -398,10 +402,8 @@ class ProviderTransportTests(unittest.TestCase):
         self.assertEqual(result.checks["non_thinking"], expected_checks)
         self.assertEqual(result.checks["thinking"], expected_checks)
         expected_mime_types = [
-            "image/jpeg",
             "image/png",
             "application/pdf",
-            "audio/mpeg",
             "audio/wav",
             "video/mp4",
         ]
@@ -495,6 +497,9 @@ class ProviderTransportTests(unittest.TestCase):
                             ),
                         )
                     )
+                content = model_request.messages[0].get("content")
+                if isinstance(content, list):
+                    return AssistantModelOutput(content={"image": "purple", "file": "PDF"}.get(content[1]["type"], "ok"))
                 return AssistantModelOutput(content="ok")
 
             def assert_capabilities_start_after_thinking_modes(self):
@@ -796,6 +801,7 @@ class ProviderTransportTests(unittest.TestCase):
         catalog = Catalog(provider)
         model = {
             "provider_id": "counting",
+            "model_type": "generation",
             "remote_model_id": "remote-model",
             "supports_tool_calling": True,
         }

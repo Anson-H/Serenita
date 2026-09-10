@@ -1,46 +1,295 @@
+/* 明暗主题 × 色彩风格；全部组合复用相同的颜色 Token。 */
+
+/* 暖杏 · 浅色 */
+:root,
+[data-theme-preview] {
+  --color-surface: oklch(98.5% 0.004 65);
+  --color-rail: oklch(93% 0.014 65);
+  --color-header-surface: oklch(90% 0.02 65);
+  --color-control-surface: oklch(95.5% 0.009 65);
+  --color-content-inset: oklch(95.5% 0.009 65);
+  --color-foreground: oklch(0% 0 0);
+  --color-foreground-muted: oklch(38% 0 0);
+  --color-divider: oklch(77% 0.01 65);
+  --color-danger: oklch(48% 0.11 25);
+  --color-danger-soft: oklch(93% 0.023 25);
+  --color-accent: oklch(46% 0.065 65);
+  --color-primary-surface: oklch(82% 0.065 65);
+  --color-primary-hover: oklch(77% 0.0715 65);
+  --color-item-hover: oklch(90% 0.025 65);
+  --color-item-current: oklch(86% 0.039 65);
+  --color-danger-hover: oklch(88% 0.035 25);
+  --color-warning: oklch(47% 0.075 85);
+  --color-warning-soft: oklch(94% 0.034 85);
+  --color-success: oklch(45% 0.073 155);
+  --color-surface-error: oklch(96.5% 0.006 65);
+  --color-surface-raised: oklch(100% 0 0);
+  --color-inverse-surface: oklch(24% 0.01 65);
+  --color-inverse-text: oklch(100% 0 0);
+  --color-inverse-divider: oklch(39% 0.01 65);
+  --color-scrollbar-thumb: oklch(55% 0.008 65 / 0.6);
+  --color-scrollbar-thumb-hover: oklch(43% 0.008 65 / 0.72);
+  --color-upload-progress: oklch(64% 0.07 155);
+  --focus-outline: 2px solid var(--color-accent);
+  --shadow-overlay: 0 18px 44px oklch(25% 0.008 65 / 0.15);
+}
+
+/* 暖杏 · 深色 */
+:root[data-color-style="apricot"][data-theme="dark"],
+[data-theme-preview][data-color-style="apricot"][data-theme="dark"] {
+  --color-surface: oklch(22% 0.008 65);
+  --color-rail: oklch(25% 0.012 65);
+  --color-header-surface: oklch(29% 0.016 65);
+  --color-control-surface: oklch(28% 0.012 65);
+  --color-content-inset: oklch(28% 0.012 65);
+  --color-foreground: oklch(100% 0 0);
+  --color-foreground-muted: oklch(83% 0 0);
+  --color-divider: oklch(43% 0.01 65);
+  --color-danger: oklch(76% 0.095 25);
+  --color-danger-soft: oklch(30% 0.03 25);
+  --color-accent: oklch(77% 0.065 65);
+  --color-primary-surface: oklch(39% 0.052 65);
+  --color-primary-hover: oklch(43% 0.0585 65);
+  --color-item-hover: oklch(33% 0.022 65);
+  --color-item-current: oklch(37% 0.033 65);
+  --color-danger-hover: oklch(36% 0.044 25);
+  --color-warning: oklch(80% 0.07 85);
+  --color-warning-soft: oklch(31% 0.027 85);
+  --color-success: oklch(77% 0.07 155);
+  --color-surface-error: oklch(25% 0.008 65);
+  --color-surface-raised: oklch(30% 0.01 65);
+  --color-inverse-surface: oklch(16% 0.008 65);
+  --color-inverse-divider: oklch(37% 0.01 65);
+  --color-scrollbar-thumb: oklch(66% 0.008 65 / 0.66);
+  --color-scrollbar-thumb-hover: oklch(78% 0.008 65 / 0.8);
+  --color-upload-progress: oklch(73% 0.065 155);
+  --shadow-overlay: 0 18px 44px oklch(8% 0.005 65 / 0.4);
+}
+
+/* 鼠尾草 · 浅色 */
+:root[data-color-style="sage"][data-theme="light"],
+[data-theme-preview][data-color-style="sage"][data-theme="light"] {
+  --color-surface: oklch(98.5% 0.004 150);
+  --color-rail: oklch(93% 0.014 150);
+  --color-header-surface: oklch(90% 0.02 150);
+  --color-control-surface: oklch(95.5% 0.009 150);
+  --color-content-inset: oklch(95.5% 0.009 150);
+  --color-divider: oklch(77% 0.01 150);
+  --color-accent: oklch(46% 0.05 150);
+  --color-primary-surface: oklch(82% 0.05 150);
+  --color-primary-hover: oklch(77% 0.055 150);
+  --color-item-hover: oklch(90% 0.025 150);
+  --color-item-current: oklch(86% 0.039 150);
+  --color-surface-error: oklch(96.5% 0.006 150);
+  --color-inverse-surface: oklch(24% 0.01 150);
+  --color-inverse-divider: oklch(39% 0.01 150);
+  --color-scrollbar-thumb: oklch(55% 0.008 150 / 0.6);
+  --color-scrollbar-thumb-hover: oklch(43% 0.008 150 / 0.72);
+  --shadow-overlay: 0 18px 44px oklch(25% 0.008 150 / 0.15);
+}
+
+/* 鼠尾草 · 深色 */
+:root[data-color-style="sage"][data-theme="dark"],
+[data-theme-preview][data-color-style="sage"][data-theme="dark"] {
+  --color-surface: oklch(22% 0.008 150);
+  --color-rail: oklch(25% 0.012 150);
+  --color-header-surface: oklch(29% 0.016 150);
+  --color-control-surface: oklch(28% 0.012 150);
+  --color-content-inset: oklch(28% 0.012 150);
+  --color-foreground: oklch(100% 0 0);
+  --color-foreground-muted: oklch(83% 0 0);
+  --color-divider: oklch(43% 0.01 150);
+  --color-danger: oklch(76% 0.095 25);
+  --color-danger-soft: oklch(30% 0.03 25);
+  --color-accent: oklch(77% 0.05 150);
+  --color-primary-surface: oklch(39% 0.04 150);
+  --color-primary-hover: oklch(43% 0.045 150);
+  --color-item-hover: oklch(33% 0.022 150);
+  --color-item-current: oklch(37% 0.033 150);
+  --color-danger-hover: oklch(36% 0.044 25);
+  --color-warning: oklch(80% 0.07 85);
+  --color-warning-soft: oklch(31% 0.027 85);
+  --color-success: oklch(77% 0.07 155);
+  --color-surface-error: oklch(25% 0.008 150);
+  --color-surface-raised: oklch(30% 0.01 150);
+  --color-inverse-surface: oklch(16% 0.008 150);
+  --color-inverse-divider: oklch(37% 0.01 150);
+  --color-scrollbar-thumb: oklch(66% 0.008 150 / 0.66);
+  --color-scrollbar-thumb-hover: oklch(78% 0.008 150 / 0.8);
+  --color-upload-progress: oklch(73% 0.065 155);
+  --shadow-overlay: 0 18px 44px oklch(8% 0.005 150 / 0.4);
+}
+
+/* 雾蓝 · 浅色 */
+:root[data-color-style="blue"][data-theme="light"],
+[data-theme-preview][data-color-style="blue"][data-theme="light"] {
+  --color-surface: oklch(98.5% 0.004 240);
+  --color-rail: oklch(93% 0.014 240);
+  --color-header-surface: oklch(90% 0.02 240);
+  --color-control-surface: oklch(95.5% 0.009 240);
+  --color-content-inset: oklch(95.5% 0.009 240);
+  --color-divider: oklch(77% 0.01 240);
+  --color-accent: oklch(46% 0.052 240);
+  --color-primary-surface: oklch(82% 0.052 240);
+  --color-primary-hover: oklch(77% 0.0572 240);
+  --color-item-hover: oklch(90% 0.025 240);
+  --color-item-current: oklch(86% 0.039 240);
+  --color-surface-error: oklch(96.5% 0.006 240);
+  --color-inverse-surface: oklch(24% 0.01 240);
+  --color-inverse-divider: oklch(39% 0.01 240);
+  --color-scrollbar-thumb: oklch(55% 0.008 240 / 0.6);
+  --color-scrollbar-thumb-hover: oklch(43% 0.008 240 / 0.72);
+  --shadow-overlay: 0 18px 44px oklch(25% 0.008 240 / 0.15);
+}
+
+/* 雾蓝 · 深色 */
+:root[data-color-style="blue"][data-theme="dark"],
+[data-theme-preview][data-color-style="blue"][data-theme="dark"] {
+  --color-surface: oklch(22% 0.008 240);
+  --color-rail: oklch(25% 0.012 240);
+  --color-header-surface: oklch(29% 0.016 240);
+  --color-control-surface: oklch(28% 0.012 240);
+  --color-content-inset: oklch(28% 0.012 240);
+  --color-foreground: oklch(100% 0 0);
+  --color-foreground-muted: oklch(83% 0 0);
+  --color-divider: oklch(43% 0.01 240);
+  --color-danger: oklch(76% 0.095 25);
+  --color-danger-soft: oklch(30% 0.03 25);
+  --color-accent: oklch(77% 0.052 240);
+  --color-primary-surface: oklch(39% 0.0416 240);
+  --color-primary-hover: oklch(43% 0.0468 240);
+  --color-item-hover: oklch(33% 0.022 240);
+  --color-item-current: oklch(37% 0.033 240);
+  --color-danger-hover: oklch(36% 0.044 25);
+  --color-warning: oklch(80% 0.07 85);
+  --color-warning-soft: oklch(31% 0.027 85);
+  --color-success: oklch(77% 0.07 155);
+  --color-surface-error: oklch(25% 0.008 240);
+  --color-surface-raised: oklch(30% 0.01 240);
+  --color-inverse-surface: oklch(16% 0.008 240);
+  --color-inverse-divider: oklch(37% 0.01 240);
+  --color-scrollbar-thumb: oklch(66% 0.008 240 / 0.66);
+  --color-scrollbar-thumb-hover: oklch(78% 0.008 240 / 0.8);
+  --color-upload-progress: oklch(73% 0.065 155);
+  --shadow-overlay: 0 18px 44px oklch(8% 0.005 240 / 0.4);
+}
+
+/* 藕紫 · 浅色 */
+:root[data-color-style="mauve"][data-theme="light"],
+[data-theme-preview][data-color-style="mauve"][data-theme="light"] {
+  --color-surface: oklch(98.5% 0.004 325);
+  --color-rail: oklch(93% 0.014 325);
+  --color-header-surface: oklch(90% 0.02 325);
+  --color-control-surface: oklch(95.5% 0.009 325);
+  --color-content-inset: oklch(95.5% 0.009 325);
+  --color-divider: oklch(77% 0.01 325);
+  --color-accent: oklch(46% 0.042 325);
+  --color-primary-surface: oklch(82% 0.042 325);
+  --color-primary-hover: oklch(77% 0.0462 325);
+  --color-item-hover: oklch(90% 0.025 325);
+  --color-item-current: oklch(86% 0.039 325);
+  --color-surface-error: oklch(96.5% 0.006 325);
+  --color-inverse-surface: oklch(24% 0.01 325);
+  --color-inverse-divider: oklch(39% 0.01 325);
+  --color-scrollbar-thumb: oklch(55% 0.008 325 / 0.6);
+  --color-scrollbar-thumb-hover: oklch(43% 0.008 325 / 0.72);
+  --shadow-overlay: 0 18px 44px oklch(25% 0.008 325 / 0.15);
+}
+
+/* 藕紫 · 深色 */
+:root[data-color-style="mauve"][data-theme="dark"],
+[data-theme-preview][data-color-style="mauve"][data-theme="dark"] {
+  --color-surface: oklch(22% 0.008 325);
+  --color-rail: oklch(25% 0.012 325);
+  --color-header-surface: oklch(29% 0.016 325);
+  --color-control-surface: oklch(28% 0.012 325);
+  --color-content-inset: oklch(28% 0.012 325);
+  --color-foreground: oklch(100% 0 0);
+  --color-foreground-muted: oklch(83% 0 0);
+  --color-divider: oklch(43% 0.01 325);
+  --color-danger: oklch(76% 0.095 25);
+  --color-danger-soft: oklch(30% 0.03 25);
+  --color-accent: oklch(77% 0.042 325);
+  --color-primary-surface: oklch(39% 0.0336 325);
+  --color-primary-hover: oklch(43% 0.0378 325);
+  --color-item-hover: oklch(33% 0.022 325);
+  --color-item-current: oklch(37% 0.033 325);
+  --color-danger-hover: oklch(36% 0.044 25);
+  --color-warning: oklch(80% 0.07 85);
+  --color-warning-soft: oklch(31% 0.027 85);
+  --color-success: oklch(77% 0.07 155);
+  --color-surface-error: oklch(25% 0.008 325);
+  --color-surface-raised: oklch(30% 0.01 325);
+  --color-inverse-surface: oklch(16% 0.008 325);
+  --color-inverse-divider: oklch(37% 0.01 325);
+  --color-scrollbar-thumb: oklch(66% 0.008 325 / 0.66);
+  --color-scrollbar-thumb-hover: oklch(78% 0.008 325 / 0.8);
+  --color-upload-progress: oklch(73% 0.065 155);
+  --shadow-overlay: 0 18px 44px oklch(8% 0.005 325 / 0.4);
+}
+
+/* 燕麦 · 浅色 */
+:root[data-color-style="oat"][data-theme="light"],
+[data-theme-preview][data-color-style="oat"][data-theme="light"] {
+  --color-surface: oklch(98.5% 0.004 85);
+  --color-rail: oklch(93% 0.014 85);
+  --color-header-surface: oklch(90% 0.02 85);
+  --color-control-surface: oklch(95.5% 0.009 85);
+  --color-content-inset: oklch(95.5% 0.009 85);
+  --color-divider: oklch(77% 0.01 85);
+  --color-accent: oklch(46% 0.036 85);
+  --color-primary-surface: oklch(82% 0.036 85);
+  --color-primary-hover: oklch(77% 0.0396 85);
+  --color-item-hover: oklch(90% 0.025 85);
+  --color-item-current: oklch(86% 0.039 85);
+  --color-surface-error: oklch(96.5% 0.006 85);
+  --color-inverse-surface: oklch(24% 0.01 85);
+  --color-inverse-divider: oklch(39% 0.01 85);
+  --color-scrollbar-thumb: oklch(55% 0.008 85 / 0.6);
+  --color-scrollbar-thumb-hover: oklch(43% 0.008 85 / 0.72);
+  --shadow-overlay: 0 18px 44px oklch(25% 0.008 85 / 0.15);
+}
+
+/* 燕麦 · 深色 */
+:root[data-color-style="oat"][data-theme="dark"],
+[data-theme-preview][data-color-style="oat"][data-theme="dark"] {
+  --color-surface: oklch(22% 0.008 85);
+  --color-rail: oklch(25% 0.012 85);
+  --color-header-surface: oklch(29% 0.016 85);
+  --color-control-surface: oklch(28% 0.012 85);
+  --color-content-inset: oklch(28% 0.012 85);
+  --color-foreground: oklch(100% 0 0);
+  --color-foreground-muted: oklch(83% 0 0);
+  --color-divider: oklch(43% 0.01 85);
+  --color-danger: oklch(76% 0.095 25);
+  --color-danger-soft: oklch(30% 0.03 25);
+  --color-accent: oklch(77% 0.036 85);
+  --color-primary-surface: oklch(39% 0.0288 85);
+  --color-primary-hover: oklch(43% 0.0324 85);
+  --color-item-hover: oklch(33% 0.022 85);
+  --color-item-current: oklch(37% 0.033 85);
+  --color-danger-hover: oklch(36% 0.044 25);
+  --color-warning: oklch(80% 0.07 85);
+  --color-warning-soft: oklch(31% 0.027 85);
+  --color-success: oklch(77% 0.07 155);
+  --color-surface-error: oklch(25% 0.008 85);
+  --color-surface-raised: oklch(30% 0.01 85);
+  --color-inverse-surface: oklch(16% 0.008 85);
+  --color-inverse-divider: oklch(37% 0.01 85);
+  --color-scrollbar-thumb: oklch(66% 0.008 85 / 0.66);
+  --color-scrollbar-thumb-hover: oklch(78% 0.008 85 / 0.8);
+  --color-upload-progress: oklch(73% 0.065 155);
+  --shadow-overlay: 0 18px 44px oklch(8% 0.005 85 / 0.4);
+}
+
 /* Tokens surface styles. */
 
 :root {
-  /* 表面、前景、文字与分隔 */
-  --color-surface: oklch(99% 0.004 75);
-  --color-rail: oklch(94% 0.026 70);
-  --color-header-surface: oklch(92% 0.034 70);
-  --color-control-surface: oklch(97.022% 0.01432 70.7);
-  --color-content-inset: oklch(97.022% 0.01432 70.7);
-  --color-foreground: oklch(0% 0 0);
-  --color-foreground-muted: oklch(48.5% 0.022 65);
-  --color-divider: oklch(84% 0.012 70);
-  --color-danger: oklch(51% 0.18 25);
-  --color-danger-soft: oklch(94% 0.024 25);
-
-  /* 强调、交互与状态 */
-  --color-accent: oklch(57% 0.15 50);
-  --color-primary-surface: oklch(76% 0.16 58);
-  --color-primary-hover: oklch(71% 0.17 53);
-  --color-item-hover: oklch(91% 0.047 65);
-  --color-item-current: oklch(89% 0.07 60);
-  --color-danger-hover: oklch(90% 0.045 25);
-  --color-warning: oklch(49% 0.095 82);
-  --color-warning-soft: oklch(95.5% 0.045 88);
-  --color-success: oklch(47% 0.105 155);
-
-  /* 补充表面、前景与分隔 */
-  --color-surface-error: oklch(97.7% 0.012 70);
-  --color-surface-raised: oklch(100% 0 0);
-
-  /* 反色表面、前景与边框 */
-  --color-inverse-surface: oklch(24% 0.018 70);
-  --color-inverse-text: oklch(96.5% 0.009 70);
-  --color-inverse-divider: oklch(32% 0.018 70);
-
-  /* 滚动条、引用与进度 */
-  --color-scrollbar-thumb: oklch(70% 0.018 70 / 0.42);
-  --color-scrollbar-thumb-hover: oklch(60% 0.018 70 / 0.55);
-  --color-upload-progress: oklch(82% 0.105 155);
-
-  /* 焦点与阴影 */
-  --focus-outline: 2px solid var(--color-accent);
-  --shadow-overlay: 0 18px 44px oklch(31% 0.018 70 / 0.13);
+  --size-date-picker-width: 300px;
+  /* 悬浮操作区背后的模糊与渐隐范围 */
+  --floating-backdrop-blur: 16px;
+  --floating-backdrop-fade: 48px;
+  --floating-backdrop-tint-opacity: 88%;
 
   --radius-message-bubble: 10px;
   --radius-dialog: 12.5px;
@@ -78,7 +327,6 @@
   --size-switch-thumb: 12px;
   --size-brand-mark-width: 11px;
   --size-brand-mark-height: 30px;
-  --size-notification-mark: 28px;
   --size-citation: 1.2rem;
   --size-progress-track-height: 6px;
   --size-account-avatar: 30px;
@@ -88,9 +336,10 @@
   --size-message-bubble-reference: 40px;
   --size-scrollbar: 10px;
   --size-scrollbar-thumb-inset: 1px;
-  --scrollbar-layout-width: var(--size-scrollbar);
+  --scrollbar-layout-width: 0px;
   --size-page-min-width: 300px;
   --size-conversation-content: 750px;
+  --size-content-column: var(--size-conversation-content);
   --icon-button-size: var(--size-titlebar-control);
   --back-button-size: var(--size-titlebar-control);
   --size-icon-control: 16px;
@@ -98,6 +347,8 @@
   --size-inline-icon: 16px;
   --size-inline-icon-compact: 14px;
   --size-titlebar-icon: 22px;
+  --size-creation-dialog-width: 760px;
+  --size-creation-dialog-height: 780px;
   --workspace-titlebar-height: 50px;
   --workspace-titlebar-side: var(--size-titlebar-control);
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -112,6 +363,10 @@
   --line-subtitle: 21px;
   --text-page-title: 18px;
   --line-page-title: 24px;
+  --text-metric-value: 24px;
+  --line-metric-value: 30px;
+  --text-metric-hero: 36px;
+  --line-metric-hero: 44px;
   --text-brand: 22px;
   --line-brand: 30px;
   --line-copy: 1.55;

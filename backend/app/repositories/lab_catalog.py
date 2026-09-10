@@ -191,12 +191,14 @@ class LabCatalog:
         aliases: list[str],
         primary_category_name: str,
         exclude_item_id: str | None = None,
+        exclude_item_ids: Iterable[str] = (),
     ) -> None:
         connection = transaction.connection
         requested = {
             _lab_name_key(item_name_zh),
             *(_lab_name_key(alias) for alias in aliases),
         }
+        excluded = {*exclude_item_ids, exclude_item_id}
         for row in connection.execute(
             """
             SELECT i.item_id, i.item_name_zh, i.aliases
@@ -207,7 +209,7 @@ class LabCatalog:
             """,
             (primary_category_name,),
         ).fetchall():
-            if exclude_item_id and row["item_id"] == exclude_item_id:
+            if row["item_id"] in excluded:
                 continue
             existing = {
                 _lab_name_key(row["item_name_zh"]),
@@ -531,6 +533,13 @@ class LabCatalog:
                     str(source["item_name_zh"]),
                     *_json_loads(source["aliases"], []),
                 ],
+            )
+            self.assert_dictionary_names_available(
+                transaction,
+                item_name_zh=str(target["item_name_zh"]),
+                aliases=merged_aliases,
+                primary_category_name=target_primary,
+                exclude_item_ids=(source_item_id, target_item_id),
             )
             connection.execute(
                 "UPDATE lab_items SET aliases = ? WHERE item_id = ?",

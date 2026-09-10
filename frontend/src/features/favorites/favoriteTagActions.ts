@@ -13,6 +13,7 @@ import {
 import { sameFavoriteTags } from './favoriteTagEquality';
 
 type Dependencies = {
+  getFavorite?: (id: string) => Favorite | undefined;
   favorites: Favorite[];
   favoriteDetail: Favorite | null;
   pendingFavoriteTagsRef: React.RefObject<Map<string, string[]>>;
@@ -33,6 +34,7 @@ type Dependencies = {
 };
 
 export function createFavoriteTagActions({
+  getFavorite,
   favorites,
   favoriteDetail,
   pendingFavoriteTagsRef,
@@ -52,7 +54,7 @@ export function createFavoriteTagActions({
   favoriteTagInput
 }: Dependencies) {
   function favoriteTagsFor(favoriteId: string) {
-    return favoriteTagsForState(favorites, favoriteDetail, favoriteId);
+    return pendingFavoriteTagsRef.current.get(favoriteId) ?? getFavorite?.(favoriteId)?.tags ?? favoriteTagsForState(favorites, favoriteDetail, favoriteId);
   }
 
   function updateFavoriteTagsLocally(favoriteId: string, tags: string[]) {
@@ -167,8 +169,10 @@ export function createFavoriteTagActions({
 
   function beginFavoriteTagAdd(favoriteId: string, surface: "list" | "detail") {
     if (surface === "detail") {
+      setEditingFavoriteTagIds(current=>current.filter(id=>id!==favoriteId));
       setEditingFavoriteDetailTagId(favoriteId);
     } else {
+      setEditingFavoriteDetailTagId(current=>current===favoriteId?null:current);
       setEditingFavoriteTagIds((current) => (current.includes(favoriteId) ? current : [...current, favoriteId]));
     }
     setAddingFavoriteTagId(favoriteId);
@@ -190,6 +194,7 @@ export function createFavoriteTagActions({
       return;
     }
     appendFavoriteTag(addingFavoriteTagId, submittedTag);
+    if(submittedTag.trim())void flushFavoriteTags(addingFavoriteTagId);
   }
 
   function removeFavoriteTag(favoriteId: string, tagToRemove: string) {

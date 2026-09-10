@@ -1,21 +1,21 @@
-from backend.app.application.conversation_compaction import ConversationCompaction
-from backend.app.application.model_request_audit import ModelRequestAudit
-from backend.app.application.conversation_sse import ConversationSSESubscriber
+from backend.app.application.conversations.compaction import ConversationCompaction
+from backend.app.application.conversations.request_audit import ModelRequestAudit
+from backend.app.application.conversations.sse import ConversationSSESubscriber
 from tests.model_support import CompactCatalog
-from backend.app.application.conversation_presenter import record_response
+from backend.app.application.conversations.presenter import record_response
 from member_support import account_id as account_id_for, member_id
 import base64
 import json
 import pytest
 from backend.app.agent_runtime.model_types import ModelRequest, PromptContextSection, ToolSchema
-from backend.app.application.conversation_service import ConversationService
+from backend.app.application.conversations.service import ConversationService
 from backend.app.application.model_provider_service import ModelProviderService, PreparedProviderRequest
-from backend.app.conversation_timeline import ConversationTimelineProjector, active_records, records_from_events
-from backend.app.model_history import derive_model_messages, visible_loaded_skill_names
-from backend.app.session_event_queries import messages_from_events
+from backend.app.domain.conversations.timeline import ConversationTimelineProjector, active_records, records_from_events
+from backend.app.domain.conversations.model_history import derive_model_messages, visible_loaded_skill_names
+from backend.app.domain.conversations.queries import messages_from_events
 from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.providers.base import ModelProvider
-from backend.app.session_events import SessionEvent, SessionEventCorruptionError, SessionHeader
+from backend.app.domain.conversations.events import SessionEvent, SessionEventCorruptionError, SessionHeader
 from backend.app.storage.session_recovery import interrupted_turn_closers
 from backend.app.storage.session_persistence import JsonlSessionPersistence
 
@@ -117,7 +117,7 @@ def test_turn_mode_temporarily_switches_only_when_the_other_state_fully_matches(
         },
     }
 
-    assert service._effective_thinking_mode_for_turn(
+    assert service.inputs.effective_thinking_mode_for_turn(
         model,
         "max",
         has_tools=True,
@@ -125,7 +125,7 @@ def test_turn_mode_temporarily_switches_only_when_the_other_state_fully_matches(
     ) == ("off", ["tool_calling"])
 
     model["capability_profiles"]["non_thinking"]["file_mime_types"] = []
-    assert service._effective_thinking_mode_for_turn(
+    assert service.inputs.effective_thinking_mode_for_turn(
         model,
         "max",
         has_tools=True,
@@ -154,7 +154,7 @@ def test_turn_mode_switches_from_fast_to_the_models_default_thinking_state():
         },
     }
 
-    assert service._effective_thinking_mode_for_turn(
+    assert service.inputs.effective_thinking_mode_for_turn(
         model,
         "off",
         has_tools=True,
@@ -214,7 +214,7 @@ def test_loaded_skill_message_is_a_historical_tool_result_context_record(
         repository=ConversationRepository(JsonlSessionPersistence()),
         model_catalog=object(),
     )
-    skill_text = "# 报告导入\n\n完整 report-import 指令"
+    skill_text = "# 医疗报告导入\n\n完整 report-import 指令"
     model_request = ModelRequest.build(
         system="system\n\nSKILL_CATALOG\nreport-query",
         messages=[
@@ -348,7 +348,7 @@ def test_loaded_skill_message_is_a_historical_tool_result_context_record(
 
 
 def test_text_tool_payload_places_tools_before_skill_and_projects_only_wire_values():
-    skill_text = "# 报告导入\n\n完整指令"
+    skill_text = "# 医疗报告导入\n\n完整指令"
     model_request = ModelRequest.build(
         system=(
             "# 系统提示词\n主系统"
@@ -356,7 +356,7 @@ def test_text_tool_payload_places_tools_before_skill_and_projects_only_wire_valu
             "\n\nRUNTIME_CONTEXT\n{\"visible_attachments\":[]}"
         ),
         messages=[
-            {"role": "user", "content": "导入报告"},
+            {"role": "user", "content": "导入医疗报告"},
             {
                 "role": "assistant",
                 "content": None,
@@ -759,7 +759,7 @@ def test_regenerated_turn_tool_result_enters_the_next_model_request():
         event(
             "turn/start",
             0,
-            {"turn_id": "original-turn", "user_message_id": "u"},
+            {"turn_id": "original-turn", "user_message_id": "u", "stream_id": "stream"},
         ),
         event(
             "user/message",
@@ -783,7 +783,7 @@ def test_regenerated_turn_tool_result_enters_the_next_model_request():
                 "turn_id": "regenerated-turn",
                 "user_message_id": "u",
                 "supersedes_turn_id": "original-turn",
-            },
+             "stream_id": "stream"},
         ),
         event(
             "assistant/message",
@@ -1212,7 +1212,7 @@ def test_incremental_timeline_projection_matches_every_full_prefix():
                 "turn_id": "turn-1",
                 "user_message_id": "user-1",
                 "final_assistant_message_id": "assistant-1",
-            },
+             "stream_id": "stream"},
         ),
         event(
             "user/message",
@@ -1545,7 +1545,7 @@ def test_incomplete_active_path_keeps_ordered_model_reasoning_tools_and_answer()
                 "status": "completed",
                 "result": {
                     "reasoning": "先判断需要读取什么证据。",
-                    "content": "我先读取报告。",
+                    "content": "我先读取医疗报告。",
                     "tool_calls": [{"id": "c1", "name": "read_report_information"}],
                 },
             },
@@ -1811,7 +1811,7 @@ def test_compaction_checkpoint_replaces_old_surface_at_original_position():
 
 def test_recovery_pairs_unknown_outcome_with_original_tool_call_id():
     open_events = [
-        event("turn/start", 0, {"turn_id": "t"}),
+        event("turn/start", 0, {"turn_id": "t", "user_message_id": "user", "stream_id": "stream"}),
         event("step/start", 1, {"turn_id": "t", "step": 2, "purpose": "agent_action"}),
         event(
             "tool/call",
@@ -1875,17 +1875,17 @@ def test_recovery_pairs_unknown_outcome_with_original_tool_call_id():
     )
 
 
-def test_compaction_retains_exact_unwritten_parse_observations():
-    parsed_reports = [
-        {"report_index": 0, "report": {"report_name": "已写入"}},
-        {"report_index": 1, "report": {"report_name": "仍待判断"}},
+def test_compaction_retains_unresolved_collection_observations():
+    pending_items = [
+        {"item_index": 0, "item": {"label": "已写入"}},
+        {"item_index": 1, "item": {"label": "仍待判断"}},
     ]
     # Persisted tool results store output in the columnar $keys/$rows form.
-    encoded_reports = {
-        "$keys": ["report_index", "report"],
+    encoded_items = {
+        "$keys": ["item_index", "item"],
         "$rows": [
-            [0, {"report_name": "已写入"}],
-            [1, {"report_name": "仍待判断"}],
+            [0, {"label": "已写入"}],
+            [1, {"label": "仍待判断"}],
         ],
     }
     events = [
@@ -1893,27 +1893,27 @@ def test_compaction_retains_exact_unwritten_parse_observations():
             "tool/result",
             0,
             {
-                "turn_id": "parse-turn",
-                "call_id": "parse-call",
-                "name": "validate_parsed_reports",
+                "turn_id": "read-turn",
+                "call_id": "read-call",
+                "name": "validate_pending_items",
                 "status": "completed",
                 "result": {
                     "type": "tool_result",
-                    "name": "validate_parsed_reports",
+                    "name": "validate_pending_items",
                     "output": {
                         "sources": [
                             {
                                 "source_index": 0,
-                                "source_type": "conversation_attachment",
+                                "source_type": "attachment",
                                 "resource_id": "r1",
                             }
                         ],
-                        "reports": encoded_reports,
+                        "items": encoded_items,
                     },
                     "effects": {
                         "context_retention": {
-                            "collection_field": "reports",
-                            "index_field": "report_index",
+                            "collection_field": "items",
+                            "index_field": "item_index",
                         }
                     },
                 },
@@ -1925,8 +1925,8 @@ def test_compaction_retains_exact_unwritten_parse_observations():
             {
                 "turn_id": "write-turn",
                 "call_id": "write-call",
-                "name": "create_report",
-                "arguments": {"parse_call_id": "parse-call", "report_index": 0},
+                "name": "save_item",
+                "arguments": {"read_call_id": "read-call", "item_index": 0},
             },
         ),
         event(
@@ -1935,14 +1935,14 @@ def test_compaction_retains_exact_unwritten_parse_observations():
             {
                 "turn_id": "write-turn",
                 "call_id": "write-call",
-                "name": "create_report",
+                "name": "save_item",
                 "status": "completed",
                 "result": {
                     "type": "tool_result",
-                    "output": {"report_id": "LAB-1"},
+                    "output": {"entity_id": "LAB-1"},
                     "effects": {
                         "resolved_context_items": [
-                            {"call_id": "parse-call", "index": 0}
+                            {"call_id": "read-call", "index": 0}
                         ]
                     },
                 },
@@ -1952,33 +1952,33 @@ def test_compaction_retains_exact_unwritten_parse_observations():
 
     retained = ConversationCompaction.unresolved_context_observations(
         events,
-        compact_turns={"parse-turn"},
-        active_turns={"parse-turn", "write-turn"},
+        compact_turns={"read-turn"},
+        active_turns={"read-turn", "write-turn"},
     )
 
     assert retained == [
         {
-            "call_id": "parse-call",
-            "tool_name": "validate_parsed_reports",
+            "call_id": "read-call",
+            "tool_name": "validate_pending_items",
             "output": {
                 "sources": [
                     {
                         "source_index": 0,
-                        "source_type": "conversation_attachment",
+                        "source_type": "attachment",
                         "resource_id": "r1",
                     }
                 ],
-                "reports": [parsed_reports[1]],
+                "items": [pending_items[1]],
             },
         }
     ]
 
     retained_all = ConversationCompaction.unresolved_context_observations(
         events[:1],
-        compact_turns={"parse-turn"},
-        active_turns={"parse-turn"},
+        compact_turns={"read-turn"},
+        active_turns={"read-turn"},
     )
-    assert retained_all[0]["output"]["reports"] == encoded_reports
+    assert retained_all[0]["output"]["items"] == encoded_items
 
 
 def _append_message(repository, session_id, *, turn_id, message_id, parent, role, content):
@@ -2006,7 +2006,7 @@ def test_context_compaction_keeps_current_and_budgeted_recent_history(monkeypatc
         user_id = f"u{index}"
         assistant_id = f"a{index}"
         repository.append_session_event(
-            account_id_for("alice"), session_id, "turn/start", {"turn_id": turn_id}
+            account_id_for("alice"), session_id, "turn/start", {"turn_id": turn_id, "user_message_id": "user", "stream_id": "stream"}
         )
         text = "非常长的早期医学证据" * 1200 if index == 0 else f"recent {index}"
         _append_message(
@@ -2036,7 +2036,7 @@ def test_context_compaction_keeps_current_and_budgeted_recent_history(monkeypatc
         parent = assistant_id
 
     repository.append_session_event(
-        account_id_for("alice"), session_id, "turn/start", {"turn_id": "current"}
+        account_id_for("alice"), session_id, "turn/start", {"turn_id": "current", "user_message_id": "user", "stream_id": "stream"}
     )
     _append_message(
         repository,
@@ -2058,6 +2058,7 @@ def test_context_compaction_keeps_current_and_budgeted_recent_history(monkeypatc
     }
     catalog = CompactCatalog(model)
     service = ConversationService(repository=repository, model_catalog=catalog)
+    repository.insert_turn(account_id_for("alice"), session_id, "current", "current-user", "final", "stream", "streaming", None, None, "2026-09-09", "2026-09-09")
     turn = {"session_id": session_id, "turn_id": "current"}
     user_message = {
         "message_id": "current-user",

@@ -138,7 +138,7 @@ export function createLabCategoryEditorActions({
           setDictionary(latestDictionary);
           const target = resolveSavedCategoryTarget(job.targetKey) || job.targetKey;
           if (!latestDictionary.categories.some((category) => category.category_name === target)) {
-            throw new Error("该分类已被删除或重命名，当前修改无法继续。请重新选择分类后再操作。");
+            throw new Error("该分类已被删除或重命名，当前编辑无法继续。请重新选择分类后再操作。");
           }
           response = await writeCategoryAutoSaveJob(job, latestDictionary);
         }

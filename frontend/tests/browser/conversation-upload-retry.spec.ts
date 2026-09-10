@@ -14,7 +14,7 @@ const model = {
   model_name: "测试模型",
   supports_text: true,
   file_mime_types: ["image/png"],
-  thinking_modes: ["default"],
+  model_type: "generation", embedding_capabilities: null, embedding_dimensions: null, max_input_tokens: null, max_batch_size: null, thinking_modes: ["default"],
   supports_tool_calling: true,
   capability_profiles: {
     default_state: "non_thinking" as const,

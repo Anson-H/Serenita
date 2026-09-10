@@ -7,12 +7,12 @@ import { request } from "./request";
 import {
   AddedModel,
   CredentialRevealResponse,
-  ModelCapabilityProbeResponse,
   ModelDefaultsResponse,
   ModelUpdatePayload,
   ProviderListResponse,
   ProviderSummary,
   ProviderTestResponse,
+  ModelCapabilityProbeResponse,
   RemoteModel
 } from "./types";
 
@@ -52,12 +52,13 @@ export function saveModelProvider(
   });
 }
 
-export function testModelProvider(providerId: string, apiUrl: string, apiKey: string) {
+export function testModelProvider(providerId: string, apiUrl: string, apiKey: string, signal?: AbortSignal) {
   const payload: { api_url: string; api_key?: string } = { api_url: apiUrl };
   if (apiKey.trim()) {
     payload.api_key = apiKey.trim();
   }
   return request<ProviderTestResponse>(`/model-providers/${providerId}/test`, {
+    signal,
     method: "POST",
     body: JSON.stringify(payload)
   });
@@ -72,17 +73,13 @@ export function fetchProviderModels(providerId: string) {
 export function addModel(
   providerId: string,
   remoteModelId: string,
-  model: RemoteModel
+  _model: RemoteModel
 ) {
   return request<AddedModel>("/models", {
     method: "POST",
     body: JSON.stringify({
       provider_id: providerId,
-      remote_model_id: remoteModelId,
-      thinking_modes: model.thinking_modes,
-      capability_profiles: model.capability_profiles,
-      context_window_tokens: model.context_window_tokens,
-      max_output_tokens: model.max_output_tokens
+      remote_model_id: remoteModelId
     })
   });
 }
@@ -98,11 +95,27 @@ export function updateModel(modelId: string, payload: ModelUpdatePayload) {
   });
 }
 
-export function probeModelCapabilities(modelId: string, signal?: AbortSignal) {
-  return request<ModelCapabilityProbeResponse>(
-    `/models/capability-probe/${encodeURIComponent(modelId)}`,
-    { method: "POST", signal }
-  );
+const activeProbeIds = new Map<string, string>();
+
+export async function probeModelCapabilities(modelId: string, signal?: AbortSignal) {
+  if (signal?.aborted) throw new DOMException("检测已取消", "AbortError");
+  const probeId = crypto.randomUUID();
+  activeProbeIds.set(modelId, probeId);
+  const cancel = () => { void cancelModelCapabilityProbe(modelId, probeId).catch(() => {}); };
+  signal?.addEventListener("abort", cancel, { once: true });
+  try {
+    return await request<ModelCapabilityProbeResponse>(
+      `/models/capability-probe/${encodeURIComponent(modelId)}`,
+      { method: "POST", signal, body: JSON.stringify({ probe_id: probeId }) }
+    );
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+    if (activeProbeIds.get(modelId) === probeId) activeProbeIds.delete(modelId);
+  }
+}
+
+export function cancelModelCapabilityProbe(modelId: string, probeId = activeProbeIds.get(modelId)) {
+  return request(`/models/capability-probe-cancel/${encodeURIComponent(modelId)}`, { method: "POST", body: JSON.stringify({ probe_id: probeId }) });
 }
 
 export function fetchModelDefaults() {

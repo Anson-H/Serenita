@@ -14,6 +14,7 @@ dependencies = [
     "python-multipart",
     "cryptography",
     "pyyaml",
+    "jsonschema>=4.26,<5",
     "markdown-it-py>=4.2,<5",
 ]
 
@@ -24,3 +25,6 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["backend"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -113,8 +113,8 @@
 }
 
 @media (min-width: 651px) {
-.settings-two-column:is([data-active-section="providers"], [data-active-section="conversation"], [data-active-section="lab-categories"], [data-active-section="lab-items"])[data-detail-open="false"] .settings-content-body > .settings-detail-panel,
-.settings-two-column:is([data-active-section="providers"], [data-active-section="conversation"], [data-active-section="lab-categories"], [data-active-section="lab-items"])[data-detail-open="true"] .settings-content-body > .settings-list-column {
+.settings-two-column:is([data-active-section="providers"], [data-active-section="conversation"], [data-active-section="lab-categories"], [data-active-section="lab-items"], [data-active-section="medication-catalog"])[data-detail-open="false"] .settings-content-body > .settings-detail-panel,
+.settings-two-column:is([data-active-section="providers"], [data-active-section="conversation"], [data-active-section="lab-categories"], [data-active-section="lab-items"], [data-active-section="medication-catalog"])[data-detail-open="true"] .settings-content-body > .settings-list-column {
     display: none;
   }
 
@@ -456,23 +456,6 @@ svg.settings-nav-icon[viewBox] {
   margin-block-end: 0;
 }
 
-.settings-detail-panel .settings-section,
-.settings-detail-panel .provider-panel,
-.settings-detail-panel .default-model-section,
-.settings-detail-panel .web-access-section,
-.settings-detail-panel .settings-detail-column,
-.settings-detail-panel .dictionary-detail-column {
-  width: 100%;
-  max-width: none;
-}
-
-.settings-detail-panel.wide .settings-section,
-.settings-detail-panel.wide .provider-panel,
-.settings-detail-panel.wide .web-access-section,
-.settings-detail-panel.wide .settings-detail-column {
-  width: 100%;
-}
-
 .settings-section {
   display: grid;
   align-content: start;
@@ -578,11 +561,6 @@ svg.settings-nav-icon[viewBox] {
   grid-template-rows: auto auto minmax(0, 1fr);
 }
 
-.provider-model-empty-status {
-  place-self: center;
-  text-align: center;
-}
-
 .provider-model-content {
   display: grid;
   gap: var(--space-related);
@@ -639,6 +617,7 @@ svg.settings-nav-icon[viewBox] {
 }
 
 .model-row > span:first-child,
+.model-row > .model-row-name,
 .model-row > strong {
   overflow: hidden;
   font-size: var(--text-body);
@@ -658,6 +637,14 @@ svg.settings-nav-icon[viewBox] {
   width: 100%;
   font-family: var(--font-ui);
   text-align: left;
+}
+
+.added-model-list-area > .list-selection-heading {
+  margin-bottom: var(--space-item);
+}
+
+.model-detail-row.selection-mode {
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
 .model-row-chevron {
@@ -730,7 +717,7 @@ svg.settings-nav-icon[viewBox] {
 
 .model-picker-body {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: var(--space-content);
   min-height: 0;
   padding: var(--space-content) 0;
@@ -753,10 +740,13 @@ svg.settings-nav-icon[viewBox] {
   line-height: var(--line-body);
 }
 
+.model-picker-modal.creation-dialog { grid-template-rows: var(--workspace-titlebar-height) minmax(0, 1fr) auto; }
+
 .model-picker-modal .model-picker-list {
+  grid-auto-rows: max-content;
+  align-content: start;
   gap: var(--space-content);
   min-height: 0;
-  max-height: min(520px, calc(100dvh - 218px));
   overflow-x: hidden;
   border-radius: 0;
   background: transparent;
@@ -857,7 +847,7 @@ svg.settings-nav-icon[viewBox] {
 .settings-workspace .status-message.saving,
 .model-picker-modal .status-message.testing,
 .model-picker-modal .status-message.saving {
-  color: var(--color-content-inset);
+  color: var(--color-foreground-muted);
 }
 
 @keyframes settings-capability-pulse {
@@ -909,4 +899,16 @@ svg.settings-nav-icon[viewBox] {
 
 .provider-form > .grouped-object-list[data-layout="fields"] + .api-credential-fields {
   margin-top: var(--space-content);
+}
+
+.model-type-label { flex: 0 0 auto; white-space: nowrap; }
+.model-type-selector { grid-column: 1 / -1; }
+.model-type-error { grid-column: 1 / -1; }
+.model-type-selector .select-popover { width: fit-content; max-width: 100%; justify-self: end; }
+
+.model-settings-panel-body .field-row > span:last-child:not(:first-child) { text-align: right; overflow-wrap: anywhere; }
+
+.settings-list-column > .list-bulk-actions[data-inset="true"] {
+  width: min(100%, calc(var(--size-content-column) + var(--space-content) * 2));
+  margin-inline: auto;
 }

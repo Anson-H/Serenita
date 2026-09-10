@@ -1,8 +1,9 @@
+from tests.member_support import create_stored_report
 import pytest
 from member_support import account_id as account_id_for, member_access, member_id
 from pathlib import Path
 from backend.app.application.report_service import ReportService
-from backend.app.plugins.report.tools.mutation_tools import DeleteReportTool
+from backend.app.plugins.medical_report.tools.mutation_tools import DeleteReportTool
 from backend.app.repositories.report_repository import ReportRepository
 from backend.app.storage.paths import AppPaths
 
@@ -48,12 +49,12 @@ def _report(
     minute: int = 0,
 ) -> str:
     candidate = {
-        "report_type": "其它报告",
-        "report_name": "清理测试报告",
+        "report_type": "其它医疗报告",
+        "report_name": "清理测试医疗报告",
         "report_time": f"2026-08-08T08:{minute:02d}:00+08:00",
         "other_report": {"report_body": "仅用于源文件清理测试"},
     }
-    return repository.create_report(
+    return create_stored_report(repository, 
         member_id(account),
         candidate,
         resource_id=resource_id,

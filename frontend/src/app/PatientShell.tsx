@@ -10,6 +10,7 @@ type PatientShellProps = {
   activeScenario: ScenarioTab;
   children: ReactNode;
   conversations: ConversationSummary[];
+  conversationPagination?: { hasMore: boolean; loading: boolean; error: string; loadMore: () => Promise<void> };
   currentSession: Extract<AuthSession, { authenticated: true }>;
   currentSessionId: string | null;
   mobileSidebarOpen: boolean;
@@ -33,6 +34,7 @@ export function PatientShell({
   activeScenario,
   children,
   conversations,
+  conversationPagination,
   currentSession,
   currentSessionId,
   mobileSidebarOpen,
@@ -127,6 +129,7 @@ export function PatientShell({
         healthNavigation={healthNavigation}
         activeScenario={activeScenario}
         conversations={conversations}
+      conversationPagination={conversationPagination}
         currentSession={currentSession}
         currentSessionId={currentSessionId}
         mobileCollapseButtonRef={mobileSidebarCollapseRef}

@@ -10,9 +10,9 @@ from member_support import account_id as account_id_for
 from backend.app.agent_runtime.compaction import CompactionError
 from backend.app.agent_runtime.model_types import AssistantModelOutput, ToolCall
 from backend.app.agent_runtime.tools.base import Tool, ToolResult
-from backend.app.application.conversation_service import ConversationService
-from backend.app.conversation_timeline import records_from_events
-from backend.app.model_history import derive_model_messages
+from backend.app.application.conversations.service import ConversationService
+from backend.app.domain.conversations.timeline import records_from_events
+from backend.app.domain.conversations.model_history import derive_model_messages
 from backend.app.core.cancellation import CancellationToken, OperationCancelledError
 from backend.app.core.time import local_now_iso
 from backend.app.repositories.conversation_repository import ConversationRepository
@@ -27,18 +27,18 @@ def session(monkeypatch):
     turn = {"session_id": session_id, "turn_id": "turn", "stream_id": "stream"}
     user = {"message_id": "user", "parent_message_id": None, "content": "save", "context_resources": []}
     repository.append_session_events(account, session_id, [
-        {"type": "turn/start", "data": {"turn_id": "turn", "user_message_id": "user"}},
+        {"type": "turn/start", "data": {"turn_id": "turn", "user_message_id": "user", "stream_id": "stream"}},
         {"type": "user/message", "data": {**user, "turn_id": "turn"}, "surface_op": "append"},
     ])
     now = local_now_iso()
     repository.insert_turn(account, session_id, "turn", "user", "final", "stream", "streaming", None, None, now, now)
     service = ConversationService(repository=repository)
     model = {"model_id": "fake", "supports_tool_calling": True, "thinking_modes": ["default"], "context_window_tokens": 10000, "max_output_tokens": 100}
-    monkeypatch.setattr(service, "_validate_model", lambda *args: model)
+    monkeypatch.setattr(service.inputs, "validate_model", lambda *args: model)
     token = CancellationToken()
     value = SimpleNamespace(account=account, repository=repository, service=service, turn=turn, user=user, token=token)
     value.events = lambda: repository.session_events(account, session_id, repair=False)
-    value.persist = lambda payload, failed=False: service._persist_runtime_tool_result(account, turn, payload, failed=failed)
+    value.persist = lambda payload, failed=False: service.tool_results.persist(account, turn, payload, failed=failed)
     return value
 
 
@@ -66,7 +66,7 @@ class SaveTool(Tool):
 def run_harness(session, monkeypatch, tool, complete):
     monkeypatch.setattr("backend.app.plugins.build_available_tools", lambda **kwargs: [tool])
     monkeypatch.setattr(session.service.model_calls, "complete_chat_with_events", complete)
-    return session.service._execute_agent_harness(
+    return session.service.execution.run(
         session.account, session.turn, session.user,
         on_workflow_event=lambda event: None, cancellation_token=session.token,
     )
@@ -174,7 +174,7 @@ def test_oversized_result_keeps_full_audit_but_only_error_in_model_context(sessi
 @pytest.mark.parametrize("cancel_turn", [False, True])
 def test_unexecuted_argument_error_is_not_saved_after_cancellation(session, monkeypatch, cancel_turn):
     tool = SaveTool()
-    original = session.service._persist_runtime_tool_result
+    original = session.service.tool_results.persist
 
     def cancel_before_error(account, turn, payload, **kwargs):
         assert payload["error"]["code"] == "TOOL_ARGUMENTS_INVALID"
@@ -183,7 +183,7 @@ def test_unexecuted_argument_error_is_not_saved_after_cancellation(session, monk
             session.service.cancel_turn(account, turn["session_id"], turn["turn_id"])
         return original(account, turn, payload, **kwargs)
 
-    monkeypatch.setattr(session.service, "_persist_runtime_tool_result", cancel_before_error)
+    monkeypatch.setattr(session.service.tool_results, "persist", cancel_before_error)
     monkeypatch.setattr(session.service.compaction, "compact_model_request_if_needed", lambda **kwargs: kwargs["model_request"])
     with pytest.raises(OperationCancelledError):
         run_harness(
@@ -230,7 +230,7 @@ def test_next_tool_can_resolve_completed_failed_result_from_durable_audit(sessio
     monkeypatch.setattr("backend.app.plugins.build_available_tools", tools)
     monkeypatch.setattr(session.service.model_calls, "complete_chat_with_events", complete)
     monkeypatch.setattr(session.service.compaction, "compact_model_request_if_needed", lambda **kwargs: kwargs["model_request"])
-    session.service._execute_agent_harness(
+    session.service.execution.run(
         session.account, session.turn, session.user, on_workflow_event=lambda event: None,
     )
     assert observed[0]["output"]["report_id"] == "report-1"
@@ -284,7 +284,7 @@ def test_finalization_requires_session_ownership_and_exact_existing_call(session
         payload[field] = "wrong"
     before = session.events()
     with pytest.raises(SerenitaError):
-        session.service._persist_runtime_tool_result(account, turn, payload, failed=False)
+        session.service.tool_results.persist(account, turn, payload, failed=False)
     assert session.events() == before
 
 

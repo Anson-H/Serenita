@@ -5,6 +5,9 @@ import { loadModule } from "./helpers/load-module.mjs";
 describe("attachment-batch", () => {
   for (const partialFailure of [false, true]) test(`uploaded files retain their session when detail refresh fails; partial failure=${partialFailure}`, async () => {
     let session = null, resources = [], progress = [], message = '', uploads = 0;
+    const { ConversationDraftStore } = loadModule('features/conversations/conversationDraftStore.ts');
+    const draftStore = new ConversationDraftStore();
+    draftStore.subscribe(() => { resources = draftStore.snapshot().uploadedResources; progress = draftStore.snapshot().uploadingResources; });
     const { useConversationAttachments } = loadModule('features/conversations/useConversationAttachments.ts', {}, {
       react: { useEffect() {} }, '../../utils/useActiveScope': { useActiveScope: () => () => true },
       '../members/MemberProvider': { useMembers: () => ({ activeMemberId: 'm' }) },
@@ -14,7 +17,7 @@ describe("attachment-batch", () => {
         getConversation: async () => { throw new Error('refresh failed'); }
       } }
     });
-    const hook = useConversationAttachments({ conversationDetail: null, currentSessionId: null,
+    const hook = useConversationAttachments({ draftStore, conversationDetail: null, currentSessionId: null,
       selectedModelId: 'model', selectedModelFileMimeTypes: ['image/png'], attachmentCapabilitiesReady: true,
       setComposerError: value => { message = value; }, setConversationDetail() {},
       setCurrentSessionId: value => { session = value; }, setUploadedResources: next => { resources = next(resources); },

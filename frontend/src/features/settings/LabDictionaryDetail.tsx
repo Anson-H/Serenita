@@ -1,3 +1,5 @@
+import { navigationLabels } from "../../components/navigationLabels";
+import { EmptyState } from "../../components/EmptyState";
 import type { LabDictionaryCategory, LabDictionaryItem } from "../../api/client";
 import {
   type LabDictionaryResponse
@@ -84,7 +86,7 @@ export function LabDictionaryDetail({
         <div aria-busy={saving ? "true" : "false"} className="dictionary-category-choice-page">
           {dictionary.categories.length ? (
             <GroupedList
-              aria-label="主分类"
+              aria-label={navigationLabels.primaryCategory}
               className="dictionary-category-choice-list single-choice"
               role="radiogroup"
               density="standard"
@@ -111,7 +113,7 @@ export function LabDictionaryDetail({
                 );
               })}
             </GroupedList>
-          ) : <p className="dictionary-inline-empty">请先在“检验分类目录”创建分类。</p>}
+          ) : <EmptyState layout="inline" title="请先在“检验分类目录”创建分类。" />}
         </div>
       ) : null}
 
@@ -151,7 +153,7 @@ export function LabDictionaryDetail({
                   );
                 })}
             </GroupedList>
-          ) : <p className="dictionary-inline-empty">暂无可关联的其他分类。</p>}
+          ) : <EmptyState layout="inline" title="暂无可关联的其他分类。" />}
         </div>
       ) : null}
 

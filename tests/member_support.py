@@ -64,8 +64,8 @@ def create_member(client, name="家人"):
 
 
 def report_payload():
-    return {"report_type": "其它报告", "report_name": "随访", "report_time": "2026-08-01T12:00:00+08:00",
-            "institution_name": "测试机构", "other_report": {"report_body": "测试报告事实"}}
+    return {"report_type": "其它医疗报告", "report_name": "随访", "report_time": "2026-08-01T12:00:00+08:00",
+            "institution_name": "测试机构", "other_report": {"report_body": "测试医疗报告事实"}}
 
 
 def grant(client, member, account, permission):
@@ -82,8 +82,10 @@ def import_report(actor, member, *, payload=None, attachment=None):
         "original_filename": "report.jpg", "path": str(attachment), "mime_type": "image/jpeg",
         "sha256": hashlib.sha256(attachment.read_bytes()).hexdigest(),
     }}
-    parsed = service.validate_parsed_reports(member, reports=[{"sources": [source], "report": payload or report_payload()}],
-        source_text="同一份报告原文", session_id="same-session", source_message_id="same-message",
+    return service.create_report_from_parsed(member, report=payload or report_payload(), sources=[source],
+        source_text="同一份医疗报告原文", session_id="same-session", source_message_id="same-message",
         visible_attachments=visible, authorized_report_sources={})
-    sources = [{**parsed["sources"][0], **({"source_text": "同一份报告原文"} if attachment is None else {"path": str(attachment)})}]
-    return service.create_report_from_parsed(member, parsed_report=parsed["reports"][0]["report"], parsed_sources=sources, session_id="same-session")
+
+
+def create_stored_report(repository, member, report, *, resource_id):
+    return repository.create_report_from_parsed(member, report, resource_ids=[resource_id])["report_id"]

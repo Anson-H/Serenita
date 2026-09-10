@@ -15,6 +15,7 @@ DEFAULT_PREFERENCES = {
     "is_context_window_usage_visible": False,
     "is_related_content_visible": True,
     "is_token_usage_visible": False,
+    "is_model_identity_visible": False,
     "visible_context_types": [],
     "tool_display_types": ["model_tool_request", "tool_call"],
 }
@@ -54,6 +55,7 @@ def test_conversation_preferences_persist_in_config_db_across_clients():
         "is_context_window_usage_visible": True,
         "is_related_content_visible": False,
         "is_token_usage_visible": True,
+        "is_model_identity_visible": True,
         "visible_context_types": [
             "tool_observation",
             "current_user_message",
@@ -85,13 +87,13 @@ def test_conversation_preferences_persist_in_config_db_across_clients():
         row = connection.execute(
             """
             SELECT composer_submit_shortcut, is_context_window_usage_visible,
-                   is_related_content_visible, is_token_usage_visible,
+                   is_related_content_visible, is_token_usage_visible, is_model_identity_visible,
                    is_current_user_message_visible, is_tool_observation_visible,
                    is_execution_model_tool_request_visible, is_tool_call_visible
             FROM conversation_preferences WHERE singleton_id = 1
             """
         ).fetchone()
-    assert row == ("modifier_enter", 1, 0, 1, 1, 1, 0, 1)
+    assert row == ("modifier_enter", 1, 0, 1, 1, 1, 1, 0, 1)
 
 
 def test_conversation_preferences_are_account_isolated_and_strictly_validated():
@@ -104,6 +106,7 @@ def test_conversation_preferences_are_account_isolated_and_strictly_validated():
     alice_preferences = {
         **DEFAULT_PREFERENCES,
         "is_related_content_visible": False,
+        "is_model_identity_visible": True,
     }
     assert alice.put(
         "/api/account-settings/conversation-preferences",

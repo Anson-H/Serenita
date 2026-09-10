@@ -2,7 +2,7 @@ from types import SimpleNamespace
 import pytest
 from backend.app.core.errors import SerenitaError
 from tests.api_client import TestClient
-from backend.app.application.conversation_service import ConversationService
+from backend.app.application.conversations.service import ConversationService
 from backend.app.api.dependencies import get_conversation_service, require_current_user
 from backend.app.main import create_app
 from backend.app.application.report_file_validation import REPORT_SIGNATURE_ERROR, validate_report_signature
@@ -39,14 +39,14 @@ def service(chat, vision, native):
 ])
 def test_attachment_advertisement_matches_upload_and_send_acceptance(chat, vision, native, expected):
     instance = service(chat, vision, native)
-    capabilities = instance.attachment_capabilities("test-account")
+    capabilities = instance.inputs.attachment_capabilities("test-account")
     assert set(capabilities["file_mime_types"]) == expected
     for mime in {"image/jpeg", "image/png", "image/heic", "application/pdf", "audio/wav", "video/mp4"}:
         if mime in expected:
-            instance._validate_attachment_supported_for_conversation("test-account", instance.model_catalog.chat, mime)
+            instance.inputs.validate_attachment_supported_for_conversation("test-account", instance.model_catalog.chat, mime)
         else:
             with pytest.raises(SerenitaError):
-                instance._validate_attachment_supported_for_conversation("test-account", instance.model_catalog.chat, mime)
+                instance.inputs.validate_attachment_supported_for_conversation("test-account", instance.model_catalog.chat, mime)
 
 
 def test_attachment_endpoint_authentication_unknown_model_and_empty_default():

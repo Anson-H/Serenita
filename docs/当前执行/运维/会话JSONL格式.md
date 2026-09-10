@@ -20,7 +20,7 @@ JSONL 是唯一的会话事件持久化格式。它不是数据库，也不是�
 
 JSONL 是会话事件的唯一可信源，`conversations.db` 不保存同一批事件。准确物理位置以[本地存储](本地存储.md)为准。
 
-进程内可以复用已校验的会话快照，最多保留 64 份，按原始文件大小合计不超过 8 MiB。每次读取都在文件锁内核对文件身份、大小、修改时间和状态变更时间；其它进程写入、替换或截断文件后重新读取并校验。追加内容在持久化完成后更新快照，包含替换来源引用的事件仍校验此前的来源。返回值与缓存中的可变内容隔离，缓存不替代 JSONL、文件锁、追加校验或持久化刷新。
+进程内可以复用已校验的会话快照，最多保留 64 份，按原始文件大小合计不超过 8 MiB。每次读取都在文件锁内核对文件身份、大小、更新时间和状态变更时间；其它进程写入、替换或截断文件后重新读取并校验。追加内容在持久化完成后更新快照，包含替换来源引用的事件仍校验此前的来源。返回值与缓存中的可变内容隔离，缓存不替代 JSONL、文件锁、追加校验或持久化刷新。
 
 ## 文件级格式
 
@@ -37,7 +37,7 @@ JSONL 是会话事件的唯一可信源，`conversations.db` 不保存同一批�
 
 ```jsonl
 {"type":"session","version":2,"id":"session-id","accountId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","createdAt":1786665600000}
-{"type":"turn/start","seq":0,"time":1786665600100,"data":{"turn_id":"turn-id"}}
+{"type":"turn/start","seq":0,"time":1786665600100,"data":{"turn_id":"turn-id","user_message_id":"user-message-id","stream_id":"stream-id"}}
 {"type":"user/message","seq":1,"time":1786665600200,"data":{"turn_id":"turn-id","message_id":"message-id","parent_message_id":null,"content":"你好"},"surfaceOp":"append"}
 ```
 
@@ -81,7 +81,7 @@ JSONL 是会话事件的唯一可信源，`conversations.db` 不保存同一批�
 }
 ```
 
-`parentSession` 必须是非空字符串，`seedEventCount` 必须是正整数，并等于创建子会话时复制的 seed 事件数量。根会话必须省略这两个字段，不能写成 `seedEventCount: 0`。Header 是封闭结构，以上 7 个字段之外的字段都会被拒绝。Header 不包含 `member_id` 或成员名称；成员删除只清空私有数据库中的关联，既有 JSONL 事件中出现过的成员身份、名称及报告引用保持原样，不用于恢复当前关联或授权。
+`parentSession` 必须是非空字符串，`seedEventCount` 必须是正整数，并等于创建子会话时复制的 seed 事件数量。根会话必须省略这两个字段，不能写成 `seedEventCount: 0`。Header 是封闭结构，以上 7 个字段之外的字段都会被拒绝。Header 不包含 `member_id` 或成员名称；成员删除只清空私有数据库中的关联，既有 JSONL 事件中出现过的成员身份、名称及医疗报告引用保持原样，不用于恢复当前关联或授权。
 
 版本 2 是当前 header 的完整读取与写入契约；其它版本返回格式错误并保持文件原样。
 
@@ -143,7 +143,7 @@ JSONL 是会话事件的唯一可信源，`conversations.db` 不保存同一批�
 
 | `type` | 最低必填字段 | 额外结构规则与常见扩展 |
 | --- | --- | --- |
-| `turn/start` | `turn_id` | 常见扩展：`user_message_id, final_assistant_message_id, stream_id, model_id`；编辑或重新生成还可记录被替代轮次和消息 ID |
+| `turn/start` | `turn_id, user_message_id, stream_id` | 三个标识均为非空白文本；常见扩展：`final_assistant_message_id, model_id`；编辑或重新生成还可记录被替代轮次和消息 ID |
 | `turn/thinking_mode_changed` | `turn_id, requested_mode, effective_mode, reasons` | 当前写入路径把 `reasons` 写成字符串数组，并带 `created_at` |
 | `turn/end` | `turn_id, reason` | `reason` 支持字符串或带 `kind` 的对象；标准写入使用对象，并可携带错误码、消息和部分正文保留信息 |
 | `step/start` | `turn_id, step, purpose` | `step` 必须是正整数 |
@@ -159,7 +159,7 @@ JSONL 是会话事件的唯一可信源，`conversations.db` 不保存同一批�
 | `assistant/message` | `turn_id, message_id, parent_message_id, content` | `content` 只能为 `null`、字符串或内容数组；可选 `tool_calls` 必须是数组，每项必须有非空 `id` 和 `function.name`；可选 `branch_addressable` 必须为布尔值 |
 | `assistant/message-update` | `message_id, patch` | 投影只会应用对象型 `patch`；当前主写入链没有常规使用点 |
 
-### 模型请求、结果与工具观测
+### 模型请求、结果与 Observation
 
 | `type` | 最低必填字段 | 额外结构规则与常见扩展 |
 | --- | --- | --- |
@@ -271,11 +271,11 @@ checkpoint 的三个估算词元字段全部必填；status 的压缩前估算�
 }
 ```
 
-模型请求的工具调用、实际 `tool/call` 和 `tool/result` 通过 `tool_call_id` 对应；持久化层只检查 ID 非空，跨事件对应关系由运行时保证。
+模型请求的工具调用、实际 `tool/call` 和 `tool/result` 通过 `tool_call_id` 对应；持久化层只检查 ID 非空，跨事件对应关系由运行时保证。自动续读生成的 `assistant/message` 和 `tool/call` 额外保存 `origin="harness_pagination"`、`pagination={"root_call_id": 原查询调用标识, "page": 页次}`，每页使用独立调用标识；该来源表示 Harness 机械续读，不对应添加行动模型请求。每页 `tool/result.result.output.pagination` 保存 `page` 与 `complete`，后者表示整个查询是否已读完。
 
 工具已经执行、但完整工具结果超预算或结果准备期间取消时，`tool/result` 的 `status="failed"`，`result` 保存完整实际工具结果用于审计，`error.details` 中的 `execution_completed=true` 和 `effects` 记录已完成操作。失败结果的模型投影只包含 `error`，不包含审计用的完整 `result`。
 
-取消可能先追加 `interrupted / TOOL_OUTCOME_UNKNOWN` 占位结果。实际结果晚到时，Service 在账号、会话及资源权限校验后，核对既有调用的 `turn_id, call_id, tool_call_id, name`，在会话操作锁内幂等保存。更正事件仍使用 `tool/result`，`sourceEventSeqs` 只引用该占位事件，`surfaceOp` 为其单条位置的 `replace`。原事件保留用于审计，模型在原位置仅保留更正后的一个工具回复；依赖未知结果的摘要及其后继摘要失效。结果保存后继续传播取消，停止后续行动。已经确定的结果不能由不同结果覆盖。
+取消可能先追加 `interrupted / TOOL_OUTCOME_UNKNOWN` 占位结果。实际结果晚到时，Service 在账号、会话及资源权限校验后，核对既有调用的 `turn_id, call_id, tool_call_id, name`，在会话操作锁内幂等保存。修正事件仍使用 `tool/result`，`sourceEventSeqs` 只引用该占位事件，`surfaceOp` 为其单条位置的 `replace`。原事件保留用于审计，模型在原位置仅保留修正后的一个工具回复；依赖未知结果的摘要及其后继摘要失效。结果保存后继续传播取消，停止后续行动。已经确定的结果不能由不同结果覆盖。
 
 工具业务结果中两个及以上键集合相同的对象数组，会递归编码为：
 
@@ -297,8 +297,8 @@ JSONL 会保存执行和审计所需的真实内容，包括：
 
 - 用户消息、等候输入和助手正式回答。
 - 模型 reasoning、正文增量、文本协议原始输出、最终结果、usage、停止原因、错误与耗时。
-- 去除凭证和附件二进制后的最终 `provider_payload`，其中可能包含系统提示词、消息历史、工具参数结构和当前健康资料。
-- 模型请求工具调用、工具参数、完整工具业务结果、工具观测和安全错误。
+- 去除凭证和附件二进制后的最终 `provider_payload`，其中可能包含系统提示词、消息历史、工具参数 Schema 和当前健康资料。
+- 模型请求工具调用、工具参数、完整工具业务结果、Observation 和安全错误。
 - 附件元数据与资源引用；当模型实际读取文本内容时，相应安全 payload 仍可能包含该文本。
 
 以下内容不得进入事件：
@@ -311,15 +311,15 @@ JSONL 会保存执行和审计所需的真实内容，包括：
 
 ## 写入、锁与耐久性
 
-### 新建
+### 创建
 
 创建会话时先校验 header、连续 seed 和 `seedEventCount`。随后在锁内一次编码 header 与全部 seed，写入私有隐藏临时文件并 `fsync`，再以 hard link 原子发布最终文件，最后 `fsync` 会话目录。若最终文件已存在，只有 durable 内容完全相同时才按幂等成功处理。
 
-因此正常新建不会让读取方看到半个 header 或半个 seed 文件。
+因此正常创建不会让读取方看到半个 header 或半个 seed 文件。
 
 ### 追加
 
-追加前在同名 `.jsonl.lock` 上取得独占锁，读取并校验现有文件，再检查新批次从当前事件数继续编号。可选 `expected_seq` 提供 CAS；竞争写入不满足时重试或返回冲突。
+追加前在同名 `.jsonl.lock` 上持有独占锁，读取并校验现有文件，再检查新批次从当前事件数继续编号。可选 `expected_seq` 提供 CAS；竞争写入不满足时重试或返回冲突。
 
 新事件以 `O_APPEND` 写入，正常返回前执行 `flush + fsync`。一个调用可以追加多条事件，但整批不是数据库事务；进程异常时可能留下若干完整行和最后一个无换行片段。恢复保留完整前缀并按下一节处理最后片段。
 

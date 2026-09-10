@@ -1,21 +1,20 @@
-from backend.app.plugins.report.registry import build_tools
+from backend.app.plugins.medical_report.registry import build_tools
 import json
 from types import SimpleNamespace
 import pytest
 from backend.app.agent_runtime.runtime import AgentHarnessRuntime
 from backend.app.plugins import PluginRuntimeContext, resolve_plugin_resource_states
-from backend.app.plugins.report.registry import build_skills
-from backend.app.plugins.report.tools.import_tools import CreateReportTool, ValidateParsedReportsTool
-from backend.app.plugins.report.tools.mutation_tools import AddLabReportItemsTool, DeleteLabReportItemsTool, DeleteReportTool, UpdateReportFieldsTool
-from backend.app.plugins.report.tools.query_tools import ReadLabDictionaryTool, ReadReportAnalysisTool, ReadReportCatalogTool, ReadReportInformationTool
-from backend.app.plugins.report.tools.write_report_analysis import WriteReportAnalysisTool
+from backend.app.plugins.medical_report.registry import build_skills
+from backend.app.plugins.medical_report.tools.import_tools import CreateReportTool
+from backend.app.plugins.medical_report.tools.mutation_tools import AddLabReportItemsTool, DeleteLabReportItemsTool, DeleteReportTool, UpdateReportFieldsTool
+from backend.app.plugins.medical_report.tools.query_tools import ReadLabDictionaryTool, ReadReportAnalysisTool, ReadReportCatalogTool, ReadReportInformationTool
+from backend.app.plugins.medical_report.tools.write_report_analysis import WriteReportAnalysisTool
 
 
 REPORT_TOOLS = {
     "read_report_catalog",
     "read_report_information",
     "read_report_analysis",
-    "validate_parsed_reports",
     "read_lab_dictionary",
     "create_report",
     "link_duplicate_sources",
@@ -34,6 +33,7 @@ def context(**memory):
         member_id="demo-member",
         model_id="chat",
         session_id="session",
+        turn_id="turn",
         input_text="2026-08-01 肌酐 70 μmol/L",
         memory={
             "current_message_id": "message",
@@ -84,7 +84,7 @@ def test_report_plugin_exposes_only_registered_model_tools():
     runtime_context = PluginRuntimeContext(
         account_id="demo",
         event_recorder=lambda _event: None,
-        services={"report": object()}, member_id="demo-member")
+        services={"medical_report": object()}, member_id="demo-member")
     tools = build_tools( runtime_context=runtime_context)
     assert {tool.name for tool in tools} == REPORT_TOOLS
     serialized = json.dumps([tool.input_schema for tool in tools], ensure_ascii=False)
@@ -113,7 +113,7 @@ def test_report_plugin_resolves_current_resource_state_once_per_report():
         runtime_context=PluginRuntimeContext(
             account_id="demo",
             event_recorder=lambda _event: None,
-            services={"report:demo-member": FakeStateService()}, member_id="demo-member"),
+            services={"medical_report:demo-member": FakeStateService()}, member_id="demo-member"),
         resource_refs=[
             {"resource_type": "report", "resource_id": "LAB-1", "member_id": "demo-member"},
             {"resource_type": "report", "resource_id": "LAB-1", "member_id": "demo-member"},
@@ -134,16 +134,18 @@ def test_report_plugin_resolves_current_resource_state_once_per_report():
 
 def test_all_model_tools_use_required_descriptions_and_describe_every_parameter():
     from backend.app.agent_runtime.prompts import assemble_serenita_prompt
-    from backend.app.plugins.web.tools import WebReadTool, WebSearchTool
+    from backend.app.plugins.registry import build_available_tools
+
+    class InMemoryService:
+        def for_runtime(self, *args, **kwargs):
+            return self
 
     runtime_context = PluginRuntimeContext(
         account_id="demo", event_recorder=lambda _event: None,
-        services={"report": object()}, member_id="demo-member",
+        service_factory=lambda _name: InMemoryService(), member_id="demo-member",
     )
-    tools = build_tools(runtime_context=runtime_context) + [
-        WebReadTool(service=object()), WebSearchTool(service=object())
-    ]
-    control = assemble_serenita_prompt(available_skills=[{"name": "report-query", "description": "报告查询"}], application_tools=[]).tools
+    tools = build_available_tools(runtime_context=runtime_context)
+    control = assemble_serenita_prompt(available_skills=[{"name": "report-query", "description": "医疗报告查询"}], application_tools=[]).tools
     descriptions = {tool.name: tool.description for tool in [*control, *tools]}
     # These exact sentences are the model-visible contract required by AGENTS.md.
     assert descriptions == {
@@ -151,20 +153,46 @@ def test_all_model_tools_use_required_descriptions_and_describe_every_parameter(
         "update_plan": "创建或调整当前轮次的非强制任务计划，并返回计划内容。",
         "web_search": "搜索公开互联网，返回搜索结果摘要和引用标识。",
         "web_read": "读取一条既有搜索结果的网页正文，并保留其引用标识。",
+        "read_log": "读取当前成员中匹配的健康日记，返回日记内容。",
+        "create_log": "为当前成员创建健康日记，返回创建结果。",
+        "update_log": "更新当前成员的一条健康日记，返回更新后的健康日记。",
+        "delete_log": "删除当前成员的一条健康日记，返回删除结果。",
+        "read_history": "读取当前成员的既往史，返回已保存内容。",
+        "update_history": "更新当前成员的既往史，返回保存结果。",
         "read_report_catalog": "读取当前账号中匹配的医疗报告目录，返回用于定位医疗报告的目录信息。",
-        "read_report_information": "读取匹配医疗报告的报告事实。",
+        "read_report_information": "读取匹配医疗报告的医疗报告事实。",
         "read_report_analysis": "读取匹配医疗报告的既有解读结果。",
         "read_lab_dictionary": "读取当前账号的完整检验指标分类目录。",
-        "validate_parsed_reports": "校验一批最终医疗报告并返回完整解析校验结果。",
-        "create_report": "将完整解析校验结果中的一份医疗报告写入报告档案库，返回创建结果。",
-        "link_duplicate_sources": "将已验证来源关联到一份既有医疗报告，返回关联结果。",
-        "merge_report": "将新增报告事实和来源合并到一份既有医疗报告，返回合并结果。",
-        "write_report_analysis": "将解读结果写入报告档案库中的目标医疗报告，返回保存结果。",
+        "create_report": "将一份医疗报告写入医疗报告档案库，返回创建结果。",
+        "link_duplicate_sources": "将来源关联到一份既有医疗报告，返回关联结果。",
+        "merge_report": "将补充的医疗报告事实和来源合并到一份既有医疗报告，返回合并结果。",
+        "write_report_analysis": "将解读结果写入医疗报告档案库中的目标医疗报告，返回保存结果。",
         "update_report_fields": "更新一份医疗报告的基础信息或结构化内容，返回更新后的医疗报告。",
         "add_lab_report_items": "向一份检验报告添加检验指标记录，返回更新后的医疗报告。",
         "delete_lab_report_items": "从一份检验报告删除检验指标记录，返回更新后的医疗报告。",
         "reclassify_report": "使用经过校验的新结构重分类一份医疗报告，返回重分类后的医疗报告。",
         "delete_report": "删除一份医疗报告及其已保存内容，返回删除结果。",
+        "read_medication_information": "读取当前成员中匹配的药品信息，返回已保存的药品资料。",
+        "create_medication": "向药品目录添加一项药品，返回创建结果。",
+        "add_medication_sources": "向药品目录中的一项药品补充原件，返回保存结果。",
+        "read_medication_inventory": "读取当前成员的药品库存，返回库存批次、数量和有效期。",
+        "read_medication_plan": "读取当前成员的用药计划，返回已保存内容。",
+        "create_medication_plan": "为当前成员创建用药计划，返回创建结果。",
+        "update_medication_plan": "更新当前成员的用药计划，返回更新后的内容。",
+        "delete_medication_plan": "删除当前成员的用药计划，返回删除结果。",
+        "read_medication_batch": "读取当前成员的药品批次，返回已保存内容。",
+        "create_medication_batch": "为当前成员创建药品批次，返回创建结果。",
+        "update_medication_batch": "更新当前成员的药品批次，返回更新后的内容。",
+        "delete_medication_batch": "删除当前成员的药品批次，返回删除结果。",
+        "read_body_metric_catalog": "读取身体指标分类目录，返回支持的指标和记录类型。",
+        "read_body_record_catalog": "读取当前成员中匹配的身体指标记录目录，返回用于定位记录的目录信息。",
+        "read_body_record": "读取当前成员的身体指标记录，返回记录内容和图片关联信息。",
+        "read_body_statistics": "读取当前成员的身体指标统计，返回趋势、统计口径和数据覆盖信息。",
+        "create_body_record": "为当前成员创建身体指标记录，返回创建结果。",
+        "update_body_record": "更新当前成员的身体指标记录，返回更新后的内容。",
+        "delete_body_record": "删除当前成员的一条身体指标记录及其图片关联，返回删除结果。",
+        "attach_body_record_file": "将会话图片保存为饮食记录附件，返回保存结果。",
+        "detach_body_record_file": "解除饮食记录的图片关联，返回解除结果。",
     }
     schemas = {tool.name: tool.input_schema for tool in tools}
     schemas.update({tool.name: tool.parameters for tool in control})
@@ -310,7 +338,7 @@ def test_report_read_tools_emit_ordered_resource_refs_for_returned_reports():
     ]
 
 
-def test_report_read_tools_hide_pagination_and_keep_fixed_logical_page_widths():
+def test_report_read_tools_keep_logical_messages_and_automatic_catalog_pages():
     def reports(count):
         return [
             {
@@ -322,9 +350,10 @@ def test_report_read_tools_hide_pagination_and_keep_fixed_logical_page_widths():
 
     class CompleteSnapshotService:
         def read_report_catalog(self, account, **arguments):
-            values = reports(25)
+            values = reports(25)[24:] if arguments.get("cursor") else reports(24)
             return {
-                "total": len(values),
+                "total": 25,
+                "next_cursor": None if arguments.get("cursor") else "following-page",
                 "reports": values,
                 "report_ids": [item["report_id"] for item in values],
             }
@@ -346,7 +375,7 @@ def test_report_read_tools_hide_pagination_and_keep_fixed_logical_page_widths():
 
     service = CompleteSnapshotService()
     tools = [
-        (ReadReportCatalogTool(account_id="demo", service=service, member_id="demo-member"), "reports", [24, 1]),
+        (ReadReportCatalogTool(account_id="demo", service=service, member_id="demo-member"), "reports", [24]),
         (ReadReportInformationTool(account_id="demo", service=service, member_id="demo-member"), "reports", [12, 1]),
         (ReadLabDictionaryTool(account_id="demo", service=service, member_id="demo-member"), "items", [100, 1]),
         (ReadReportAnalysisTool(account_id="demo", service=service, member_id="demo-member"), "analyses", [24, 1]),
@@ -361,8 +390,17 @@ def test_report_read_tools_hide_pagination_and_keep_fixed_logical_page_widths():
         ] == expected_page_lengths
         assembled = AgentHarnessRuntime._assemble_tool_output(result)
         assert len(assembled[collection_field]) == sum(expected_page_lengths)
-        assert assembled["total"] == sum(expected_page_lengths)
-        assert "next_cursor" not in assembled
+        if tool.name == "read_report_catalog":
+            assert assembled["total"] == 25
+            assert assembled["pagination"] == {"page": 1, "complete": False}
+            following = result.next_page()
+            last = AgentHarnessRuntime._assemble_tool_output(following)
+            assert last["reports"] == reports(25)[24:]
+            assert last["pagination"] == {"page": 2, "complete": True}
+            assert following.next_page is None
+        else:
+            assert assembled["total"] == sum(expected_page_lengths)
+            assert "next_cursor" not in assembled
 
 
 def test_delete_report_preserves_the_pre_delete_resource_snapshot():
@@ -396,7 +434,7 @@ def test_delete_report_preserves_the_pre_delete_resource_snapshot():
 
 
 def test_validate_schema_enumerates_visible_attachment_ids():
-    tool = ValidateParsedReportsTool(account_id="demo", service=object(), member_id="demo-member")
+    tool = CreateReportTool(account_id="demo", service=object(), member_id="demo-member")
     schema = tool.input_schema_for_context(
         context(
             visible_attachments={
@@ -405,19 +443,17 @@ def test_validate_schema_enumerates_visible_attachment_ids():
             }
         )
     )
-    source_union = schema["properties"]["reports"]["items"]["properties"][
-        "sources"
-    ]["items"]["oneOf"]
+    source_union = schema["properties"]["sources"]["items"]["oneOf"]
     assert source_union[1]["properties"]["resource_id"]["enum"] == [
         "resource-one",
         "resource-two",
     ]
 
 
-def test_validate_binds_exact_text_and_visible_read_source_observations():
-    tool = ValidateParsedReportsTool(account_id="demo", service=object(), member_id="demo-member")
+def test_write_binds_exact_text_and_visible_read_source_observations():
+    tool = CreateReportTool(account_id="demo", service=object(), member_id="demo-member")
     bound = tool.bind_runtime_arguments(
-        {"reports": []},
+        {"report": {}, "sources": []},
         context=context(),
         observations=[
             {
@@ -462,7 +498,7 @@ def test_import_write_tools_do_not_bind_corpus_context():
     fake = FakeWriteService()
     tool = CreateReportTool(account_id="demo", service=fake, member_id="demo-member")
     bound = tool.bind_runtime_arguments(
-        {"parse_call_id": "parse-one", "report_index": 0},
+        {"report": {"report_name": "肝功能"}, "sources": [{"source_type": "conversation_text"}]},
         context=context(),
         observations=[],
     )
@@ -512,10 +548,8 @@ def test_analysis_write_uses_only_model_arguments_and_conversation_binding():
     assert result.output["report_id"] == "LAB-1"
 
 
-def test_validate_parsed_reports_requires_item_id_for_each_lab_result():
-    report_schema = ValidateParsedReportsTool.input_schema["properties"]["reports"][
-        "items"
-    ]["properties"]["report"]
+def test_create_report_requires_item_id_for_each_lab_result():
+    report_schema = CreateReportTool.input_schema["properties"]["report"]
     assert "lab_results" not in report_schema["properties"]
     assert "examination_result" not in report_schema["properties"]
     assert "examination_report" in report_schema["properties"]
@@ -535,7 +569,6 @@ def test_report_skills_reference_only_current_capabilities():
         "read_lab_dictionary",
     }
     assert contracts["report-import"] == {
-        "validate_parsed_reports",
         "create_report",
         "link_duplicate_sources",
         "merge_report",
@@ -544,7 +577,6 @@ def test_report_skills_reference_only_current_capabilities():
         "write_report_analysis",
     }
     assert contracts["report-update"] == {
-        "validate_parsed_reports",
         "update_report_fields",
         "add_lab_report_items",
         "delete_lab_report_items",

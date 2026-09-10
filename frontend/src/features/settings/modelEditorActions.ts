@@ -148,7 +148,8 @@ export function createModelEditorActions({
   }
 
   async function probeModel() {
-    if (probing || deletingRef.current) return;
+    if (deletingRef.current) return;
+    if (probing) { await onProbe(); return; }
     flushScheduledModelSave();
     while (saveRunningRef.current || saveQueueRef.current.length) {
       await new Promise<void>((resolve) => window.setTimeout(resolve, 20));

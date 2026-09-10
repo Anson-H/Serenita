@@ -115,7 +115,7 @@
 }
 
 .composer-model-option small {
-  color: var(--color-content-inset);
+  color: var(--color-foreground-muted);
   font-size: var(--text-meta);
   font-weight: var(--weight-strong);
 }
@@ -269,7 +269,8 @@ input::placeholder {
 }
 
 .context-input-preview {
-  --context-preview-padding: var(--space-content) var(--space-control-inline);
+  --context-preview-padding: var(--space-content);
+  --context-preview-inline: var(--space-control-inline);
   position: absolute;
   left: 0;
   bottom: calc(100% + var(--space-related));
@@ -305,6 +306,7 @@ input::placeholder {
 }
 
 .context-input-preview-content {
+  --scroll-content-inset: var(--context-preview-inline);
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -364,6 +366,7 @@ input::placeholder {
 
 .message-context-list .context-input-preview {
   --context-preview-padding: var(--radius-compact-bar);
+  --context-preview-inline: var(--radius-compact-bar);
   border-color: var(--color-divider);
   border-radius: var(--radius-compact-bar);
   background: var(--color-item-hover);
@@ -433,6 +436,7 @@ input::placeholder {
 
 .context-input-preview:has(.annotation-preview-list) {
   --context-preview-padding: 0;
+  --context-preview-inline: 0px;
   border: 0;
   border-radius: var(--radius-compact-bar);
   background: transparent;
@@ -941,7 +945,7 @@ input::placeholder {
   max-height: min(320px, calc(100dvh - 240px));
   overflow-y: auto;
   background: transparent;
-  padding: 0;
+  padding-block: 0;
   overscroll-behavior: contain;
 }
 
@@ -1485,7 +1489,8 @@ input::placeholder {
     240px,
     max(0px, var(--composer-tray-max-height, 0px))
   );
-  padding: var(--space-control-block) var(--space-control-inline);
+  --scroll-content-inset: var(--space-control-inline);
+  padding-block: var(--space-control-block);
   border: 1px solid var(--color-divider);
   border-radius: var(--radius-control);
   background: var(--color-rail);
@@ -1578,4 +1583,8 @@ input::placeholder {
   font-weight: var(--weight-regular);
   line-height: var(--line-body);
   white-space: nowrap;
+}
+
+.context-window-usage-tooltip.scroll-balanced {
+  --scroll-content-inset: var(--space-content);
 }

@@ -11,12 +11,13 @@ from member_support import create_member, grant, report_payload, import_report
 from tests.report_support import report_payload as lab_payload
 from tests.model_support import ConversationModelCatalog, BlockingConversationModelCatalog
 from backend.app.agent_runtime.model_types import ModelStreamChunk, ToolCallDelta
-from backend.app.application.conversation_service import ConversationService
+from backend.app.agent_runtime.prompts import SYSTEM_PROMPT
+from backend.app.application.conversations.service import ConversationService
 from backend.app.application.model_provider_service import ModelProviderService, PreparedProviderRequest
 from backend.app.application.report_service import ReportService
-from backend.app.plugins.report.tools.mutation_tools import UpdateReportFieldsTool, DeleteReportTool
-from backend.app.plugins.report.tools.query_tools import ReadReportCatalogTool
-from backend.app.plugins.report.tools.write_report_analysis import WriteReportAnalysisTool
+from backend.app.plugins.medical_report.tools.mutation_tools import UpdateReportFieldsTool, DeleteReportTool
+from backend.app.plugins.medical_report.tools.query_tools import ReadReportCatalogTool
+from backend.app.plugins.medical_report.tools.write_report_analysis import WriteReportAnalysisTool
 from backend.app.plugins import PluginRuntimeContext, build_available_tools, build_builtin_skills
 from backend.app.repositories.member_repository import MemberRepository
 from backend.app.core.report_errors import ReportImportWriteConflictError
@@ -124,7 +125,7 @@ def test_memberless_chat_supports_attachments_actions_and_favorites(accounts):
     assert detail["fork_available"] is True
     assert catalog.agent_requests
     assert "report-query" in catalog.agent_requests[0].system
-    assert "没有可操作的报告档案库目标" in catalog.agent_requests[0].system
+    assert catalog.agent_requests[0].system.startswith(SYSTEM_PROMPT + "\n\n")
 
     runtime_context = PluginRuntimeContext(
         account_id=account_id_for("reader"), member_id=None, event_recorder=lambda _event: None
@@ -161,7 +162,7 @@ def test_memberless_chat_supports_attachments_actions_and_favorites(accounts):
         account_id_for("reader"),
         started["session_id"],
         user["message_id"],
-        "修改后的问题",
+        "更新后的问题",
         "model_1",
         "default",
         [],
@@ -325,11 +326,11 @@ def test_revoke_during_model_generation_stops_followups_and_queue(accounts):
     grants = grant(owner, target, "editor", "edit")
     catalog = BlockingConversationModelCatalog()
     service = ConversationService(model_catalog=catalog)
-    first = service.send_message(account_id_for("editor"), None, "先读取报告", "model_1", "default", [], member_id=target)
+    first = service.send_message(account_id_for("editor"), None, "先读取医疗报告", "model_1", "default", [], member_id=target)
     service.start_turn_job(account_id_for("editor"), first["session_id"], first["stream_id"])
     try:
         assert catalog.first_chunk_persisted.wait(2)
-        queued = service.send_message(account_id_for("editor"), first["session_id"], "再更新报告", "model_1", "default", [], member_id=target)
+        queued = service.send_message(account_id_for("editor"), first["session_id"], "再更新医疗报告", "model_1", "default", [], member_id=target)
         owner.delete(f"/api/account-settings/member-grants/{target}/{grants[0]['account_id']}")
     finally:
         catalog.release.set()
@@ -452,7 +453,7 @@ def test_names_are_live_and_deleted_member_detaches_previously_revoked_history(a
     assert reader.get(f"/api/members/{member}").status_code == 403
     assert MemberRepository().historical_member_name(account_id_for("owner"), "conversation", session) is None
     records = [{"kind": "user", "context_resources": [reference]}]
-    assert service._conversation_resource_states(actor, member, records)[0]["availability"] == "forbidden"
+    assert service.queries._conversation_resource_states(actor, member, records)[0]["availability"] == "forbidden"
     grant(owner, member, "reader", "read")
     assert service.get_conversation(actor, session)["access_state"] == "available"
     owner.delete(f"/api/account-settings/member-grants/{member}/{grants[0]['account_id']}")
@@ -464,7 +465,7 @@ def test_names_are_live_and_deleted_member_detaches_previously_revoked_history(a
     assert detail["access_state"] == "available"
     assert detail["records"] == historical["records"] or any(r.get("content") == answer["content"] for r in detail["records"])
     assert service.repository.session_events(actor, session) == before
-    assert service._conversation_resource_states(actor, None, records)[0]["availability"] == "deleted"
+    assert service.queries._conversation_resource_states(actor, None, records)[0]["availability"] == "deleted"
     for saved in (favorite, report_favorite):
         retained = reader.get(f"/api/favorites/{saved['favorite_id']}").json()
         assert retained["member_id"] is None and retained["member_name"] is None

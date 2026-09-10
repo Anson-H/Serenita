@@ -96,7 +96,7 @@ def _parse_chat_stream_chunk(payload: Any) -> Optional[ModelStreamChunk]:
     )
 
 
-def _parse_tool_calls(value: Any) -> tuple[ToolCall, ...]:
+def parse_tool_calls(value: Any) -> tuple[ToolCall, ...]:
     if value is None:
         return ()
     if not isinstance(value, list):
@@ -215,7 +215,7 @@ class ProviderResponseParser:
             raise ProviderChatCompletionError("模型服务未返回助手消息")
 
         content = _content_text(message.get("content"))
-        tool_calls = _parse_tool_calls(message.get("tool_calls"))
+        tool_calls = parse_tool_calls(message.get("tool_calls"))
         if not content and not tool_calls:
             raise ProviderChatCompletionError("模型服务返回了空回复")
 

@@ -29,6 +29,7 @@ REPORT_DATABASE_SCHEMA = Database(
                     ColumnGroup.DATA,
                     nullable=False,
                     default="''",
+                    non_blank=False,
                 ),
                 Column(
                     "analysis_outdated",
@@ -50,11 +51,12 @@ REPORT_DATABASE_SCHEMA = Database(
             checks=(
                 CheckConstraint(
                     "report_type IN ('检验报告', '检查报告', '病理报告', "
-                    "'手术报告', '其它报告')",
+                    "'手术报告', '门诊病历', '急诊病历', '其它医疗报告')",
                 ),
                 CheckConstraint(
                     "analysis_outdated IN (0, 1)",
                 ),
+                CheckConstraint("length(trim(analysis_content)) = 0 OR analysis_updated_at IS NOT NULL"),
             ),
             indexes=(
                 Index(
@@ -188,7 +190,7 @@ REPORT_DATABASE_SCHEMA = Database(
                 Column("item_id", "TEXT", ColumnGroup.PRIMARY_KEY, nullable=False),
                 Column("item_name_zh", "TEXT", ColumnGroup.DATA, nullable=False),
                 Column(
-                    "aliases", "TEXT", ColumnGroup.DATA, nullable=False, default="'[]'"
+                    "aliases", "TEXT", ColumnGroup.DATA, nullable=False, default="'[]'", json_kind="array"
                 ),
                 Column("description", "TEXT", ColumnGroup.DATA),
             ),
@@ -345,8 +347,8 @@ REPORT_DATABASE_SCHEMA = Database(
                 Column("preoperative_diagnosis", "TEXT", ColumnGroup.DATA),
                 Column("intraoperative_diagnosis", "TEXT", ColumnGroup.DATA),
                 Column("anesthesia_method", "TEXT", ColumnGroup.DATA),
-                Column("started_at", "TEXT", ColumnGroup.DATA),
-                Column("ended_at", "TEXT", ColumnGroup.DATA),
+                Column("started_at", "TEXT", ColumnGroup.DATA, non_blank=True),
+                Column("ended_at", "TEXT", ColumnGroup.DATA, non_blank=True),
                 Column("blood_transfusion", "TEXT", ColumnGroup.DATA),
                 Column("intraoperative_blood_loss", "TEXT", ColumnGroup.DATA),
                 Column("intraoperative_urine_output", "TEXT", ColumnGroup.DATA),
@@ -371,6 +373,44 @@ REPORT_DATABASE_SCHEMA = Database(
                     ("member_id", "started_at", "ended_at"),
                 ),
             ),
+        ),
+        Table(
+            name="outpatient_report",
+            columns=(
+                Column("report_id", "TEXT", ColumnGroup.PRIMARY_KEY, nullable=False),
+                Column("member_id", "TEXT", ColumnGroup.SCOPE, nullable=False),
+                Column("chief_complaint", "TEXT", ColumnGroup.DATA),
+                Column("present_illness", "TEXT", ColumnGroup.DATA),
+                Column("physical_examination", "TEXT", ColumnGroup.DATA),
+                Column("auxiliary_examinations", "TEXT", ColumnGroup.DATA),
+                Column("diagnosis", "TEXT", ColumnGroup.DATA),
+                Column("treatment_plan", "TEXT", ColumnGroup.DATA),
+                Column("additional_content", "TEXT", ColumnGroup.DATA),
+            ),
+            primary_key=("report_id",),
+            foreign_keys=(ForeignKey(("report_id", "member_id"), "reports", ("report_id", "member_id"), on_delete="CASCADE"),),
+            indexes=(Index("idx_outpatient_report__member_report", ("member_id", "report_id")),),
+        ),
+        Table(
+            name="emergency_report",
+            columns=(
+                Column("report_id", "TEXT", ColumnGroup.PRIMARY_KEY, nullable=False),
+                Column("member_id", "TEXT", ColumnGroup.SCOPE, nullable=False),
+                Column("chief_complaint", "TEXT", ColumnGroup.DATA),
+                Column("present_illness", "TEXT", ColumnGroup.DATA),
+                Column("physical_examination", "TEXT", ColumnGroup.DATA),
+                Column("auxiliary_examinations", "TEXT", ColumnGroup.DATA),
+                Column("diagnosis", "TEXT", ColumnGroup.DATA),
+                Column("treatment_plan", "TEXT", ColumnGroup.DATA),
+                Column("rescue_course", "TEXT", ColumnGroup.DATA),
+                Column("observation_details", "TEXT", ColumnGroup.DATA),
+                Column("discharge_diagnosis", "TEXT", ColumnGroup.DATA),
+                Column("discharge_instructions", "TEXT", ColumnGroup.DATA),
+                Column("additional_content", "TEXT", ColumnGroup.DATA),
+            ),
+            primary_key=("report_id",),
+            foreign_keys=(ForeignKey(("report_id", "member_id"), "reports", ("report_id", "member_id"), on_delete="CASCADE"),),
+            indexes=(Index("idx_emergency_report__member_report", ("member_id", "report_id")),),
         ),
         Table(
             name="other_report",

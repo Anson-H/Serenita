@@ -61,6 +61,7 @@ export function ConversationTurnExecution({
   onRegisterMessageElement,
   records,
   turnRecords,
+  showModelIdentity,
   visibleBaseContextRecordIds,
   visibleContextTypes,
   visibleToolTypes
@@ -71,6 +72,7 @@ export function ConversationTurnExecution({
   onRegisterMessageElement: (messageId: string, node: HTMLElement | null) => void;
   records: ConversationExecutionRecord[];
   turnRecords: ConversationRecord[];
+  showModelIdentity: boolean;
   visibleBaseContextRecordIds: ReadonlySet<string>;
   visibleContextTypes: ReadonlySet<string>;
   visibleToolTypes: ReadonlySet<ToolExecutionDisplayType>;
@@ -170,6 +172,7 @@ export function ConversationTurnExecution({
                 if (record.channel === "content") {
                   return (
                     <ModelContentRecord
+                      showModelIdentity={showModelIdentity}
                       highlighted={highlightedMessageId === record.record_id}
                       key={record.record_id}
                       onRegister={onRegisterMessageElement}
@@ -179,6 +182,7 @@ export function ConversationTurnExecution({
                 }
                 return (
                   <ModelRecordDetails
+                      showModelIdentity={showModelIdentity}
                     highlighted={highlightedMessageId === record.record_id}
                     key={record.record_id}
                     onRegister={onRegisterMessageElement}

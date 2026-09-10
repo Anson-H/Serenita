@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from tests.api_client import TestClient
 from backend.app.core.time import local_now_iso as now_iso
 from backend.app.api.conversations import PatchConversationRequest
-from backend.app.application.conversation_service import ConversationService
+from backend.app.application.conversations.service import ConversationService
 from backend.app.core.cancellation import CancellationToken, OperationCancelledError
 from backend.app.repositories.conversation_repository import ConversationRepository
 from backend.app.storage.paths import app_paths
@@ -359,3 +359,23 @@ def test_conversation_list_does_not_wait_for_a_generating_sessions_write_lock(mo
     assert not failures
     assert results[0]["session_id"] == session
     assert results[0]["pending_turn_status"] == "streaming"
+
+
+def test_conversation_catalog_pages_only_read_requested_sessions(monkeypatch, tmp_path):
+    repository = _repository(monkeypatch, tmp_path)
+    actor = account_id_for('paged')
+    expected = set()
+    for index in range(29):
+        session = repository.ensure_session(actor, None, member_id=None)
+        _insert_indexed_turn(repository, actor, session, turn_id=f'turn-{index}', status='completed')
+        expected.add(session)
+    service = ConversationService(repository=repository)
+    first = service.list_conversations(actor)
+    assert len(first['sessions']) == 24 and first['has_more']
+    seen = {item['session_id'] for item in first['sessions']}
+    second = service.list_conversations(actor, cursor=first['next_cursor'])
+    assert len(second['sessions']) == 5 and not second['has_more'] and second['next_cursor'] is None
+    assert seen.isdisjoint(item['session_id'] for item in second['sessions'])
+    assert seen | {item['session_id'] for item in second['sessions']} == expected
+    with pytest.raises(ValueError):
+        service.list_conversations(actor, limit=101)

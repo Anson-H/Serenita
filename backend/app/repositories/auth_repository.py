@@ -19,6 +19,10 @@ class AccountNotFoundError(RuntimeError):
     pass
 
 
+class CredentialsChangedError(RuntimeError):
+    pass
+
+
 def _is_account_conflict(exc: sqlite3.IntegrityError) -> bool:
     message = str(exc)
     return "accounts.account" in message or "accounts.account_id" in message
@@ -119,10 +123,17 @@ class AuthRepository:
         *,
         session_token_hash: str,
         account_id: str,
+        verified_password_hash: str,
         expires_at: str,
         timestamp: str,
     ) -> None:
         with connect(self.paths.auth_db) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                "SELECT password_hash FROM accounts WHERE account_id = ?", (account_id,)
+            ).fetchone()
+            if current is None or current["password_hash"] != verified_password_hash:
+                raise CredentialsChangedError
             self._insert_session(
                 connection,
                 session_token_hash=session_token_hash,
@@ -187,6 +198,7 @@ class AuthRepository:
         *,
         account_id: str,
         password_hash: str,
+        verified_password_hash: str,
         current_session_token_hash: str,
         timestamp: str,
     ) -> None:
@@ -196,12 +208,12 @@ class AuthRepository:
                 """
                 UPDATE accounts
                 SET password_hash = ?, updated_at = ?
-                WHERE account_id = ?
+                WHERE account_id = ? AND password_hash = ?
                 """,
-                (password_hash, timestamp, account_id),
+                (password_hash, timestamp, account_id, verified_password_hash),
             )
             if not updated.rowcount:
-                raise AccountNotFoundError
+                raise CredentialsChangedError
             connection.execute(
                 """
                 UPDATE login_sessions

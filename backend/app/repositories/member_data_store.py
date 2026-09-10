@@ -82,7 +82,52 @@ def report_member_data_store_participant(
     )
 
 
+def medical_log_member_data_store_participant(paths=None):
+    from backend.app.storage.medical_log_database import MEDICAL_LOG_DATABASE_SCHEMA
+    resolved_paths = paths or app_paths()
+
+    def validate_existing(owner_account_id):
+        if not MEDICAL_LOG_DATABASE_SCHEMA.validate_existing(resolved_paths.medical_logs_db(owner_account_id)):
+            raise UnsupportedSchemaError("UNSUPPORTED_SCHEMA: medical log database is missing its current schema.")
+
+    def delete_member_data(connection, schema_alias, owner_account_id, member_id):
+        connection.execute(f'DELETE FROM "{schema_alias}".medical_logs WHERE member_id = ?', (member_id,))
+
+    return MemberDataStoreParticipant(
+        name="medical_logs", schema_alias="medical_log_data",
+        path_for_owner=resolved_paths.medical_logs_db,
+        validate_existing=validate_existing, delete_member_data=delete_member_data,
+    )
+
+
+def medication_member_data_store_participant(paths=None):
+    from backend.app.storage.medication_database import MEDICATION_DATABASE_SCHEMA
+    resolved = paths or app_paths()
+    def validate(owner):
+        if not MEDICATION_DATABASE_SCHEMA.validate_existing(resolved.medications_db(owner)):
+            raise UnsupportedSchemaError("UNSUPPORTED_SCHEMA: medication database is missing its current schema.")
+    def delete(db, alias, owner, member):
+        db.execute(f'DELETE FROM "{alias}".medication_plans WHERE member_id=?', (member,))
+        db.execute(f'DELETE FROM "{alias}".medication_inventory WHERE member_id=?', (member,))
+        db.execute(f'DELETE FROM "{alias}".medication_requests WHERE member_id=?', (member,))
+    return MemberDataStoreParticipant(name="medications", schema_alias="medication_data",
+        path_for_owner=resolved.medications_db, validate_existing=validate, delete_member_data=delete)
+
+
+def body_metric_member_data_store_participant(paths=None):
+    from backend.app.storage.body_metric_database import BODY_METRIC_DATABASE_SCHEMA
+    resolved = paths or app_paths()
+    def validate(owner):
+        if not BODY_METRIC_DATABASE_SCHEMA.validate_existing(resolved.body_metrics_db(owner)):
+            raise UnsupportedSchemaError("身体指标数据库结构缺失。")
+    def delete(db, alias, owner, member):
+        for table in ('body_imports', 'body_records', 'body_exclusions'):
+            db.execute(f'DELETE FROM "{alias}".{table} WHERE member_id=?', (member,))
+    return MemberDataStoreParticipant(name="body_metrics", schema_alias="body_metric_data",
+        path_for_owner=resolved.body_metrics_db, validate_existing=validate, delete_member_data=delete)
+
+
 def default_member_data_store_participants(
     paths: AppPaths | None = None,
 ) -> tuple[MemberDataStoreParticipant, ...]:
-    return (report_member_data_store_participant(paths),)
+    return (report_member_data_store_participant(paths), medical_log_member_data_store_participant(paths), medication_member_data_store_participant(paths), body_metric_member_data_store_participant(paths))

@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 class AgentContext:
     account_id: str
     task_type: str
+    turn_id: Optional[str] = None
     member_id: Optional[str] = None
     input_text: str = ""
     session_id: Optional[str] = None

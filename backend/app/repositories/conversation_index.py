@@ -6,19 +6,18 @@ from backend.app.core.errors import raise_error
 from backend.app.core.time import (
     local_now_iso,
 )
-from backend.app.session_title import (
+from backend.app.domain.conversations.titles import (
     SESSION_TITLE_INITIAL_CHARS,
     SESSION_TITLE_MAX_CHARS,
     TITLE_LEADING_LABELS,
     TITLE_PREFIXES,
     TITLE_TAIL_REPLACEMENTS,
+    UNTITLED_CONVERSATION,
 )
 from backend.app.storage.sqlite import (
     connect,
 )
 
-
-from backend.app.session_title import UNTITLED_CONVERSATION
 
 now_iso = local_now_iso
 
@@ -267,28 +266,34 @@ class ConversationIndex:
 
         return self.clean_generated_session_title(title or text)
 
-    def list_sessions(self, account_id: str):
+    def list_sessions(self, account_id: str, *, cursor=None, limit=24):
+        from backend.app.core.pagination import seek_position, seek_cursor
+
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("聊天目录每页数量须为 1 至 100。")
+        scope = [account_id, "conversations"]
+        position = seek_position(cursor, scope=scope, size=3)
+        clauses = ["EXISTS (SELECT 1 FROM conversation_turns WHERE conversation_turns.session_id = conversations.session_id)"]
+        parameters = []
+        if position:
+            if position[0] not in ("0", "1"):
+                raise ValueError("聊天分页游标无效。")
+            clauses.append("(is_pinned, last_active_at, session_id) < (?, ?, ?)")
+            parameters.extend([int(position[0]), *position[1:]])
         self.init_db(account_id)
         with connect(self.paths.conversations_db(account_id)) as connection:
-            return connection.execute(
-                """
-                SELECT conversations.*,
-                       (
-                           SELECT status FROM conversation_turns
-                           WHERE conversation_turns.session_id = conversations.session_id
-                             AND conversation_turns.status IN ('queued', 'streaming')
-                           ORDER BY conversation_turns.created_at DESC,
-                                    conversation_turns.turn_id DESC
-                           LIMIT 1
-                       ) AS pending_turn_status
-                FROM conversations
-                WHERE EXISTS (
-                      SELECT 1 FROM conversation_turns
-                      WHERE conversation_turns.session_id = conversations.session_id
-                  )
-                ORDER BY is_pinned DESC, last_active_at DESC
-                """
+            rows = connection.execute(
+                """SELECT conversations.*,
+                       (SELECT status FROM conversation_turns
+                        WHERE conversation_turns.session_id = conversations.session_id
+                          AND status IN ('queued', 'streaming')
+                        ORDER BY created_at DESC, turn_id DESC LIMIT 1) AS pending_turn_status
+                   FROM conversations WHERE """ + " AND ".join(clauses)
+                + " ORDER BY is_pinned DESC, last_active_at DESC, session_id DESC LIMIT ?",
+                [*parameters, limit + 1],
             ).fetchall()
+        following = seek_cursor(scope, [str(rows[limit - 1][key]) for key in ("is_pinned", "last_active_at", "session_id")]) if len(rows) > limit else None
+        return rows[:limit], following
 
     def conversation_exists(self, account_id: str, session_id: str) -> bool:
         return self.session_row(account_id, session_id) is not None

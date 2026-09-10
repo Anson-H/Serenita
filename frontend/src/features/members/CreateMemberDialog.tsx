@@ -1,8 +1,10 @@
+import { navigationLabels } from "../../components/navigationLabels";
+import { DialogTitlebar } from "../../components/DialogTitlebar";
 import { useRef, useState, type FormEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { createMember, type Member } from "../../api/memberApi";
 import { GroupedList } from "../../components/GroupedList";
-import { CheckIcon, XIcon } from "../../components/icons";
+import { CheckIcon } from "../../components/icons";
 import { useModalDialog } from "../../components/useModalDialog";
 import { useActiveScope } from "../../utils/useActiveScope";
 import { DefaultMemberField } from "./DefaultMemberField";
@@ -10,8 +12,9 @@ import { MemberFieldsEditor, emptyMemberFields } from "./MemberFieldsEditor";
 import { useMembers } from "./MemberProvider";
 
 // Mount only while open so cancelling discards this form, not the workspace draft.
-export function CreateMemberDialog({ onClose, onCreated, restoreFocusRef }: {
+export function CreateMemberDialog({ onClose, onBack, onCreated, restoreFocusRef }: {
   onClose: () => void;
+  onBack?: () => void;
   onCreated: (member: Member) => void | Promise<void>;
   restoreFocusRef?: RefObject<HTMLElement | null>;
 }) {
@@ -42,11 +45,8 @@ export function CreateMemberDialog({ onClose, onCreated, restoreFocusRef }: {
   return createPortal(<div className="content-dialog-backdrop dialog-viewport-backdrop" onMouseDown={event => {
     if (event.target === event.currentTarget && !busy) onClose();
   }}>
-    <form className="content-dialog dialog-viewport-surface dialog-title-ellipsis" aria-labelledby="create-member-title" aria-modal="true" role="dialog" ref={dialogRef} onSubmit={save}>
-      <header className="dialog-titlebar">
-        <h2 id="create-member-title" data-modal-initial-focus tabIndex={-1}>添加成员</h2>
-        <button aria-label="关闭添加成员" className="control control--titlebar control--icon control--ghost titlebar-icon-control" disabled={busy} onClick={onClose} type="button"><XIcon /></button>
-      </header>
+    <form className="content-dialog creation-dialog dialog-viewport-surface dialog-title-ellipsis" aria-labelledby="create-member-title" aria-modal="true" role="dialog" ref={dialogRef} onSubmit={save}>
+      <DialogTitlebar id="create-member-title" title={navigationLabels.createMember} busy={busy} onClose={onClose} onBack={onBack} />
       <div className="dialog-body member-dialog-body scroll-content">
         <GroupedList layout="fields" density="standard">
           <MemberFieldsEditor value={draft} disabled={busy || Boolean(created)} onChange={setDraft} />
@@ -55,9 +55,8 @@ export function CreateMemberDialog({ onClose, onCreated, restoreFocusRef }: {
         {error ? <p role="alert">{error}</p> : null}
       </div>
       <footer className="dialog-action-bar">
-        <button className="control control--secondary" disabled={busy} onClick={onClose} type="button"><XIcon /><span>取消</span></button>
         <button className="control control--primary" disabled={busy || !draft.member_name.trim()} type="submit">
-          <CheckIcon /><span>{busy ? "保存中…" : created ? "继续打开成员" : "保存成员"}</span>
+          <CheckIcon /><span>{busy ? "保存中…" : "完成"}</span>
         </button>
       </footer>
     </form>

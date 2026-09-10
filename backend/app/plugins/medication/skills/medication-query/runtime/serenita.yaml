@@ -1,0 +1,5 @@
+allowed_tools:
+  - read_medication_information
+  - read_medication_inventory
+  - read_medication_batch
+  - read_medication_plan

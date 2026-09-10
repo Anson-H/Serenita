@@ -211,7 +211,7 @@ class StoragePathTests(unittest.TestCase):
     def test_session_persistence_uses_private_permissions(self):
         from backend.app.storage.session_persistence import JsonlSessionPersistence
         from backend.app.storage.paths import AppPaths
-        from backend.app.session_events import SessionHeader, make_event
+        from backend.app.domain.conversations.events import SessionHeader, make_event
 
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"DATA_ROOT": directory}):
             paths = AppPaths(Path(directory))
@@ -265,8 +265,8 @@ class ConversationStoragePathTests(unittest.TestCase):
         )
         self.assertEqual(normalize_attachment_name("../..", ".pdf"), "upload.pdf")
         self.assertEqual(
-            normalize_attachment_name("e\u0301报告\x00.pdf", ".pdf"),
-            "é报告.pdf",
+            normalize_attachment_name("e\u0301医疗报告\x00.pdf", ".pdf"),
+            "é医疗报告.pdf",
         )
         self.assertLessEqual(
             len(normalize_attachment_name("检" * 200 + ".pdf", ".pdf").encode("utf-8")),
@@ -325,7 +325,7 @@ class ConversationStoragePathTests(unittest.TestCase):
 
     def test_index_path_mismatch_is_rejected_without_rewriting_data(self):
         from backend.app.repositories.conversation_repository import ConversationRepository
-        from backend.app.session_events import SessionEventCorruptionError
+        from backend.app.domain.conversations.events import SessionEventCorruptionError
         from backend.app.storage.paths import app_paths
         from backend.app.storage.sqlite import connect
 

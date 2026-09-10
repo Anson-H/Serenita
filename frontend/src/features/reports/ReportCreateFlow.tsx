@@ -1,3 +1,5 @@
+import { navigationLabels } from "../../components/navigationLabels";
+import { DialogTitlebar } from "../../components/DialogTitlebar";
 import {
   useEffect,
   useMemo,
@@ -19,7 +21,7 @@ import {
 import type { LabDictionaryResponse } from "../../api/labDictionaryApi";
 import { DateTimePicker } from "../../components/DateTimePicker";
 import { GroupedList, ReadonlyField } from "../../components/GroupedList";
-import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, TextFormatIcon, UploadIcon, XIcon } from "../../components/icons";
+import { CheckIcon, ChevronRightIcon, TextFormatIcon, UploadIcon } from "../../components/icons";
 import { SelectPopover } from "../../components/SelectPopover";
 import { useStatusNotification } from "../../components/StatusNotificationCenter";
 import { useModalDialog } from "../../components/useModalDialog";
@@ -42,7 +44,9 @@ const TYPE_DESCRIPTIONS: Record<ReportType, string> = {
   "检查报告": "填写检查项目、所见和结论",
   "病理报告": "填写标本、巨检和病理诊断",
   "手术报告": "填写诊断、麻醉和手术经过",
-  "其它报告": "填写无法归入上述类型的报告正文"
+  "门诊病历": "填写主诉、现病史、检查、诊断与处理意见",
+  "急诊病历": "填写就诊、抢救、留观与出院情况",
+  "其它医疗报告": "填写无法归入上述类型的医疗报告正文"
 };
 
 function initialDraft(): DraftValues {
@@ -92,6 +96,7 @@ function ReportDateEntry({ field, value, onChange, disabled }: {
           ariaLabel={field.label}
           disabled={disabled}
           mode="date-time"
+          emptyOptionLabel={field.required ? undefined : "未知"}
           onCancel={() => close(true)}
           onChange={setDateDraft}
           onCommit={(nextValue, reason) => { onChange(nextValue); close(reason === "done"); }}
@@ -101,7 +106,7 @@ function ReportDateEntry({ field, value, onChange, disabled }: {
           className="report-inline-edit-trigger"
           data-interaction-owner="row"
           disabled={disabled}
-          onClick={() => { setDateDraft(value || localDateTimeInputValue(new Date())); setEditing(true); }}
+          onClick={() => { setDateDraft(value); setEditing(true); }}
           ref={triggerRef}
           type="button"
         ><span>{value ? <time dateTime={value}>{formatReportDate(value, true)}</time> : "未记录"}</span></button>}
@@ -157,7 +162,7 @@ export function ReportCreateFlow({
 
   useStatusNotification(error, {
     id: "report-create-error",
-    title: "报告未保存",
+    title: "医疗报告未保存",
     tone: "error"
   });
 
@@ -253,13 +258,13 @@ export function ReportCreateFlow({
     submittedDraft: DraftValues = draft,
     submittedLabValues: Record<string, LabValueDraft> = labValues
   ): CreateReportInput {
-    if (!selectedType) throw new Error("请选择报告类型。");
+    if (!selectedType) throw new Error("请选择医疗报告类型。");
     const reportTime = requiredDateTime(submittedDraft.report_time, "就诊时间");
     const reportName = selectedType === "检验报告"
       ? labCategory
       : submittedDraft.report_name.trim();
     if (!reportName) {
-      throw new Error(selectedType === "检验报告" ? "请选择报告名称。" : "请填写报告名称。");
+      throw new Error(selectedType === "检验报告" ? "请选择医疗报告名称。" : "请填写医疗报告名称。");
     }
     const common = {
       report_type: selectedType,
@@ -309,30 +314,28 @@ export function ReportCreateFlow({
       }));
       const created = await workspace.createManualReport(buildPayload(submittedDraft, submittedLabValues));
       if (created) onClose();
-      else setError("报告未能保存，请检查后重试。");
+      else setError("医疗报告未能保存，请检查后重试。");
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "报告未能保存。");
+      setError(submitError instanceof Error ? submitError.message : "医疗报告未能保存。");
     }
   }
 
   if (!open || typeof document === "undefined") return null;
 
-  const dialogDescription = phase === "method" ? "报告库" : phase === "type" ? "文字录入" : selectedType;
-  const header = (
-    <header className="dialog-titlebar report-create-header">
-      <h2 data-modal-initial-focus id="report-create-title" tabIndex={-1}>
-        {phase === "method" ? "新增报告" : phase === "type" ? "选择报告类型" : "填写报告信息"}
-      </h2>
-      <button aria-label="关闭新增报告" className="control control--titlebar control--icon control--ghost report-create-close titlebar-icon-control" onClick={onClose} type="button"><XIcon /></button>
-    </header>
-  );
+  const header = <DialogTitlebar id="report-create-title"
+    title={phase === "method" ? navigationLabels.createReport : phase === "type" ? navigationLabels.reportManual : selectedType ?? navigationLabels.reportManual}
+    busy={workspace.creating} onClose={onClose} closeLabel="关闭创建医疗报告"
+    onBack={phase === "method" ? undefined : () => {
+      setPhase(phase === "type" ? "method" : "type");
+      if (phase === "editor") { setSelectedType(null); setError(""); }
+    }} />;
 
   return createPortal(
-    <div className="report-create-backdrop dialog-viewport-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}>
+    <div className="report-create-backdrop dialog-viewport-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target && !workspace.creating) onClose(); }}>
       <section
         aria-labelledby="report-create-title"
         aria-modal="true"
-        className="report-create-dialog dialog-viewport-surface dialog-title-ellipsis"
+        className="report-create-dialog creation-dialog dialog-viewport-surface dialog-title-ellipsis"
         data-phase={phase}
         ref={dialogRef}
         role="dialog"
@@ -341,16 +344,15 @@ export function ReportCreateFlow({
         {header}
         {phase === "method" ? (
           <div className="dialog-body report-create-choices scroll-content">
-            <p className="content-description">{dialogDescription}</p>
             <GroupedList className="report-create-choice-list" density="standard">
               <ChoiceRow
-                description="手动填写结构化报告信息，保存后仍可继续修改"
+                description="手动填写结构化医疗报告信息，保存后仍可继续编辑"
                 icon="text"
-                label="文字录入"
+                label={navigationLabels.reportManual}
                 onClick={() => setPhase("type")}
               />
               <ChoiceRow
-                description={workspace.reportUploadUnavailableReason || "上传 PDF 或报告图片，由 Serenita 识别整理"}
+                description={workspace.reportUploadUnavailableReason || "上传 PDF 或医疗报告图片，由 Serenita 识别整理"}
                 disabled={workspace.uploadBlocked}
                 icon="upload"
                 label="上传文件"
@@ -363,7 +365,6 @@ export function ReportCreateFlow({
         {phase === "type" ? (
           <div className="report-create-type-step">
             <div className="dialog-body report-create-type-body scroll-content">
-              <p className="content-description">{dialogDescription} · 选择后将显示该类型对应的录入字段。</p>
               <GroupedList className="report-create-type-list" density="standard">
                 {REPORT_TYPES.map((type) => (
                   <button
@@ -378,22 +379,20 @@ export function ReportCreateFlow({
                 ))}
               </GroupedList>
             </div>
-            <footer className="report-create-footer dialog-action-bar"><button className="control control--secondary secondary-button control-primary dialog-secondary-action" onClick={() => setPhase("method")} type="button"><ChevronLeftIcon /><span>返回</span></button></footer>
           </div>
         ) : null}
         {phase === "editor" && selectedType ? (
           <form className="report-create-form" onSubmit={submit}>
             <div className="dialog-body report-create-form-scroll scroll-content">
-              <p className="content-description">{dialogDescription}</p>
               <section aria-labelledby="report-create-common-heading" className="report-create-form-section">
                 <h3 id="report-create-common-heading">基础信息</h3>
                 <GroupedList layout="fields" className="report-create-form-grid" density="standard">
-                  <ReadonlyField className="field-row" label="报告类型" value={selectedType} />
+                  <ReadonlyField className="field-row" label="医疗报告类型" value={selectedType} />
                   {selectedType === "检验报告" ? (
                     <label className="field-row">
-                      <span>报告名称 <b>*</b></span>
+                      <span>医疗报告名称 <b>*</b></span>
                       <SelectPopover
-                        ariaLabel="报告名称"
+                        ariaLabel="医疗报告名称"
                         disabled={dictionaryLoading || !dictionary?.categories.length}
                         menuWidth="content" menuAlign="end" interactionOwner="row"
                         onChange={(nextCategory) => {
@@ -410,7 +409,7 @@ export function ReportCreateFlow({
                       />
                     </label>
                   ) : (
-                    <label className="field-row"><span>报告名称 <b>*</b></span><input autoComplete="off" name="report_name" onChange={(event) => updateDraft("report_name", event.target.value)} onCompositionEnd={(event) => syncCommittedText(event, (value) => updateDraft("report_name", value))} placeholder="例如：腹部超声" required value={draft.report_name} /></label>
+                    <label className="field-row"><span>医疗报告名称 <b>*</b></span><input autoComplete="off" name="report_name" onChange={(event) => updateDraft("report_name", event.target.value)} onCompositionEnd={(event) => syncCommittedText(event, (value) => updateDraft("report_name", value))} placeholder="例如：腹部超声" required value={draft.report_name} /></label>
                   )}
                   <label className="field-row"><span>就诊机构</span><input autoComplete="off" name="institution_name" onChange={(event) => updateDraft("institution_name", event.target.value)} onCompositionEnd={(event) => syncCommittedText(event, (value) => updateDraft("institution_name", value))} value={draft.institution_name} /></label>
                   <ReportDateEntry field={{ key: "report_time", label: "就诊时间", required: true }} value={draft.report_time} onChange={(value) => updateDraft("report_time", value)} disabled={workspace.creating} />
@@ -443,15 +442,15 @@ export function ReportCreateFlow({
                 </section>
               ) : (
                 <section aria-labelledby="report-create-typed-heading" className="report-create-form-section">
-                  <h3 id="report-create-typed-heading">{selectedType === "检查报告" ? "检查结果" : selectedType === "病理报告" ? "病理结果" : selectedType === "手术报告" ? "手术记录" : "报告内容"}</h3>
-                  {selectedType === "其它报告" ? (
+                  <h3 id="report-create-typed-heading">{selectedType === "检查报告" ? "检查结果" : selectedType === "病理报告" ? "病理结果" : selectedType === "手术报告" ? "手术记录" : "医疗报告内容"}</h3>
+                  {selectedType === "其它医疗报告" ? (
                     <textarea
                       aria-labelledby="report-create-typed-heading"
                       className="report-create-body-input"
                       name="report_body"
                       onChange={(event) => updateDraft("report_body", event.target.value)}
                       onCompositionEnd={(event) => syncCommittedText(event, (value) => updateDraft("report_body", value))}
-                      placeholder="录入报告正文"
+                      placeholder="录入医疗报告正文"
                       required
                       rows={6}
                       value={draft.report_body}
@@ -472,8 +471,7 @@ export function ReportCreateFlow({
               )}
             </div>
             <footer className="report-create-footer dialog-action-bar">
-              <button className="control control--secondary secondary-button control-primary dialog-secondary-action" disabled={workspace.creating} onClick={() => { setPhase("type"); setSelectedType(null); setError(""); }} type="button"><ChevronLeftIcon /><span>返回</span></button>
-              <button className="control control--primary command-button creation-action-button dialog-primary-action" disabled={!workspace.canEdit || workspace.creating || dictionaryLoading} onMouseDown={keepTextControlFocused} type="submit"><CheckIcon /><span>{dictionaryLoading ? "加载中..." : workspace.creating ? "保存中..." : "保存报告"}</span></button>
+              <button className="control control--primary command-button creation-action-button dialog-primary-action" disabled={!workspace.canEdit || workspace.creating || dictionaryLoading} onMouseDown={keepTextControlFocused} type="submit"><CheckIcon /><span>{dictionaryLoading ? "加载中..." : workspace.creating ? "保存中..." : "完成"}</span></button>
             </footer>
           </form>
         ) : null}

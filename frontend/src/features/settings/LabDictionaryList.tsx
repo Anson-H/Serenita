@@ -1,7 +1,13 @@
+import { ListSelectionSlot } from "../../components/ListSelectionSlot";
+import { navigationLabels } from "../../components/navigationLabels";
+import { EmptyState } from "../../components/EmptyState";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { LabDictionaryCategory, LabDictionaryItem } from "../../api/client";
 import { GroupedList } from "../../components/GroupedList";
-import { CheckIcon, PlusIcon, TrashIcon, XIcon } from "../../components/icons";
+import { CheckIcon, PlusIcon, TrashIcon } from "../../components/icons";
+import { ListSelectionBar } from "../../components/ListSelectionBar";
+import { ListCount } from "../../components/ListCount";
+import { ListBulkActions } from "../../components/ListBulkActions";
 import { MultiSelectPopover } from "../../components/MultiSelectPopover";
 import { SelectAllButton } from "../../components/SelectAllButton";
 import type { useListContextMenu } from "../../components/useListContextMenu";
@@ -13,7 +19,7 @@ import type { LabCatalog } from "./settingsTypes";
 
 type Props = {
   selectionMode: boolean;
-  catalogTitle: "检验指标目录" | "检验分类目录";
+  catalogTitle: typeof navigationLabels.labItems | typeof navigationLabels.labCategories;
   batchBusy: boolean;
   saving: boolean;
   selectedEntryIds: Set<string>;
@@ -68,23 +74,24 @@ export function LabDictionaryList({
 }: Props) {
   return (<SettingsListPanel
     bodyClassName="dictionary-list-body"
-    className={selectionMode ? "dictionary-list-column has-bulk-actions" : "dictionary-list-column"}
-    footer={selectionMode ? (
-      <footer aria-label={`${catalogTitle}批量操作`} className="dictionary-bulk-toolbar">
-        <button
-          className="control control--secondary control--danger removal-action-control"
-          disabled={batchBusy || saving || selectedEntryIds.size === 0}
-          onClick={() => void requestDelete([...selectedEntryIds])}
-          type="button"
-        >
-          <TrashIcon className="message-action-icon" />
-          <span>{batchBusy ? "正在删除…" : "删除"}</span>
-        </button>
-      </footer>
-    ) : undefined}
+    className="dictionary-list-column"
+    footer={selectionMode ? <ListBulkActions label={`${catalogTitle}批量操作`} inset>
+      <button className="control control--compact control--secondary control--danger removal-action-control" aria-busy={batchBusy} disabled={batchBusy || saving || selectedEntryIds.size === 0} onClick={() => void requestDelete([...selectedEntryIds])} type="button"><TrashIcon /><span>删除</span></button>
+    </ListBulkActions> : undefined}
     title={catalogTitle}
     titleId="dictionary-list-title"
   >
+    <ListSelectionSlot active={selectionMode} onCancel={batchBusy?undefined:cancelSelection} selection={<ListSelectionBar summary={`已选择 ${selectedEntryIds.size} ${tab === "items" ? "条检验指标" : "个检验分类"}`} label={`${catalogTitle}多选`} cancelLabel={`退出${catalogTitle}多选`} busy={batchBusy} onCancel={cancelSelection}>
+                <SelectAllButton
+                  disabled={batchBusy || saving}
+                  ids={tab === "items"
+                    ? sortedFilteredItems.map((item) => item.item_id)
+                    : filteredCategories.map((category) => category.category_name)}
+                  onChange={setSelectedEntryIds}
+                  scopeLabel={`当前筛选结果中的${tab === "items" ? "指标" : "分类"}`}
+                  selectedIds={selectedEntryIds}
+                />
+            </ListSelectionBar>}>
     <div className="dictionary-list-tools">
       <input
         aria-label={`搜索${catalogTitle}`}
@@ -113,36 +120,14 @@ export function LabDictionaryList({
         />
       ) : null}
     </div>
-    <div className="dictionary-entity-list" aria-busy={loading || batchBusy ? "true" : "false"} onKeyDown={(event) => {
+    </ListSelectionSlot>
+    <div className={`dictionary-entity-list${!loading && visibleEntityCount === 0 ? " empty" : ""}`} aria-busy={loading || batchBusy ? "true" : "false"} onKeyDown={(event) => {
       if (selectionMode && event.key === "Escape") cancelSelection();
     }} ref={listRef}>
       {loading ? <p className="status-message">正在加载{catalogTitle}...</p> : null}
       {!loading ? (
         <>
-          {selectionMode ? (
-            <div aria-live="polite" className="list-selection-heading standard-control-bar" role="status">
-              <strong>已选择 {selectedEntryIds.size} {tab === "items" ? "条指标" : "个分类"}</strong>
-              <div className="compact-control-actions">
-                <SelectAllButton
-                  disabled={batchBusy || saving}
-                  ids={tab === "items"
-                    ? sortedFilteredItems.map((item) => item.item_id)
-                    : filteredCategories.map((category) => category.category_name)}
-                  onChange={setSelectedEntryIds}
-                  scopeLabel={`当前筛选结果中的${tab === "items" ? "指标" : "分类"}`}
-                  selectedIds={selectedEntryIds}
-                />
-                <button
-                  aria-label={`退出${catalogTitle}多选`}
-                  className="control control--inline control--icon control--ghost dictionary-selection-cancel standard-bar-icon-control"
-                  disabled={batchBusy}
-                  onClick={cancelSelection}
-                  title="退出多选"
-                  type="button"
-                ><XIcon /></button>
-              </div>
-            </div>
-          ) : null}
+
           <GroupedList className="dictionary-grouped-list" density="standard">
             {!selectionMode ? <button
               className="control control--row dictionary-create-button grouped-list-create-button"
@@ -151,7 +136,7 @@ export function LabDictionaryList({
               type="button"
             >
               <PlusIcon className="settings-action-icon" />
-              <span>新增{tab === "items" ? "指标" : "分类"}</span>
+              <span>{tab === "items" ? navigationLabels.createItem : navigationLabels.createCategory}</span>
             </button> : null}
             {tab === "items" ? sortedFilteredItems.map((item) => (
               <button
@@ -171,7 +156,7 @@ export function LabDictionaryList({
                   {selectedEntryIds.has(item.item_id) ? <CheckIcon className="selection-check-icon" /> : null}
                 </span> : null}
                 <span><strong>{item.item_name_zh}</strong></span>
-                <small>{item.primary_category_name} · {item.report_count} 份报告</small>
+                <small>{item.primary_category_name} · {item.report_count} 份医疗报告</small>
                 {!selectionMode ? <SettingsListForwardIcon className="dictionary-row-chevron" /> : null}
               </button>
             )) : filteredCategories.map((category) => (
@@ -192,23 +177,19 @@ export function LabDictionaryList({
                   {selectedEntryIds.has(category.category_name) ? <CheckIcon className="selection-check-icon" /> : null}
                 </span> : null}
                 <span><strong>{category.category_name}</strong></span>
-                <small>{category.item_count} 项指标 · {category.report_count} 份报告</small>
+                <small>{category.item_count} 条检验指标 · {category.report_count} 份医疗报告</small>
                 {!selectionMode ? <SettingsListForwardIcon className="dictionary-row-chevron" /> : null}
               </button>
             ))}
           </GroupedList>
           {visibleEntityCount === 0 ? (
-            <p className="dictionary-empty-state workspace-empty-state" role="status">
-              {listEmptyMessage}
-            </p>
+            <EmptyState className="dictionary-empty-state" role="status" title={listEmptyMessage} />
           ) : null}
         </>
       ) : null}
+      {!loading && visibleEntityCount > 0 ? (
+        <ListCount total={visibleEntityCount} unit={tab === "items" ? "条" : "个"} label={tab === "items" ? "检验指标" : "检验分类"} />
+      ) : null}
     </div>
-    {!loading && visibleEntityCount > 0 ? (
-      <p className="object-list-count">
-        {tab === "items" ? `共 ${visibleEntityCount} 条指标` : `共 ${visibleEntityCount} 条分类`}
-      </p>
-    ) : null}
   </SettingsListPanel>);
 }

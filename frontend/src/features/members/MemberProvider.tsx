@@ -1,3 +1,4 @@
+import { hasNavigationSaves, saveBeforeNavigation } from "../../utils/pendingNavigation";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { deleteMember, fetchMembers, saveMemberPreferences, subscribeMemberAccess, type Member, type MemberCollection, type MemberDeletion } from "../../api/memberApi";
 import { ApiRequestError } from "../../api/request";
@@ -104,6 +105,7 @@ export function MemberProvider({ children, onStartMember }: { children: ReactNod
   }
 
   async function selectMember(id: string | null, destination: MemberDestination = { type: "chat" }) {
+    if (hasNavigationSaves() && !await saveBeforeNavigation()) return;
     const sequence = ++selectionSequence.current;
     try {
       await persistSelection(id);

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from backend.app.agent_runtime.tools.parameters import validate_parameters
+
 from dataclasses import dataclass, replace
 from copy import deepcopy
+from collections import deque
+from uuid import uuid4
 import json
 import math
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Protocol
 
 from backend.app.agent_runtime.context import AgentContext
+from backend.app.agent_runtime.compaction import TRIGGER_RATIO
 from backend.app.agent_runtime.events import AgentEvent
 from backend.app.agent_runtime.model_types import (
     AssistantModelOutput,
@@ -21,9 +26,11 @@ from backend.app.agent_runtime.skills.registry import (
     SkillRegistry,
 )
 from backend.app.agent_runtime.tools.registry import ToolRegistry
+from backend.app.agent_runtime.tools.base import ToolResult
+from backend.app.agent_runtime.tools.errors import stops_execution, tool_failure
 from backend.app.core.tabular_json import encode_tabular_json
 from backend.app.core.time import local_now
-from backend.app.model_capabilities import DEFAULT_CONTEXT_WINDOW_TOKENS
+from backend.app.domain.model_capabilities import DEFAULT_CONTEXT_WINDOW_TOKENS
 from backend.app.providers.errors import ProviderChatCompletionError
 
 
@@ -46,6 +53,27 @@ SERVER_BOUND_ARGUMENT_NAMES = frozenset(
 class RuntimeResult:
     output: dict[str, Any]
     events: list[AgentEvent]
+
+
+@dataclass(frozen=True)
+class PendingReadPage:
+    call: ToolCall
+    load: Callable[[], ToolResult]
+    root_call_id: str
+    number: int
+
+
+class RequestRebuilder(Protocol):
+    """Rebuild from durable messages and their visible skill names.
+
+    The Harness adds any pending tool result and skill activation, and keeps
+    suspended tools unavailable. Callers supply history without that pending
+    result; repeated calls do not change execution state.
+    """
+
+    def __call__(
+        self, *, messages: list[dict[str, Any]], skill_names: Iterable[str]
+    ) -> ModelRequest: ...
 
 
 class AgentHarnessRuntime:
@@ -75,13 +103,15 @@ class AgentHarnessRuntime:
         derive_messages: Callable[[], list[dict[str, Any]]],
         complete_model: Callable[[ModelRequest], AssistantModelOutput],
         before_model_request: Callable[[], None] | None = None,
-        prepare_request: Callable[[ModelRequest, bool], ModelRequest] | None = None,
+        prepare_request: Callable[[ModelRequest, RequestRebuilder, bool], ModelRequest] | None = None,
         derive_skill_names: Callable[[], Iterable[str]] | None = None,
-        before_tool_result: Callable[[ModelRequest], ModelRequest] | None = None,
+        before_tool_result: Callable[[ModelRequest, RequestRebuilder], ModelRequest] | None = None,
         on_event: Callable[[AgentEvent], None] | None = None,
         estimate_request_tokens: Callable[[ModelRequest], int] | None = None,
         context_window_tokens: int | None = None,
         reserved_output_tokens: int = 4096,
+        prepare_tool_result: Callable[[dict[str, Any]], Callable[[], None] | None] | None = None,
+        tool_result_context_budget: Callable[[], tuple[int, int]] | None = None,
     ) -> RuntimeResult:
         events: list[AgentEvent] = []
 
@@ -109,11 +139,14 @@ class AgentHarnessRuntime:
         tool_results: list[dict[str, Any]] = []
         repeated_calls: dict[str, int] = {}
         suspended_tools: set[str] = set()
+        call_ids = set(context.memory.get("tool_call_ids") or ())
         latest_observation: dict[str, Any] = {
             "type": "turn_started",
             "resource_count": len(context.resources),
         }
-        for _index in range(self.max_actions):
+        pending_pages: deque[PendingReadPage] = deque()
+        action_count = 0
+        while action_count < self.max_actions or pending_pages:
             if before_model_request is not None:
                 before_model_request()
             if derive_skill_names is not None:
@@ -132,7 +165,37 @@ class AgentHarnessRuntime:
                 model_config={"purpose": "agent_action"},
             )
             if prepare_request is not None:
-                request = prepare_request(request, False)
+                request = prepare_request(
+                    request,
+                    self._request_rebuilder(
+                        context=context, read_skills=read_skills,
+                        suspended_tools=suspended_tools, template=request,
+                    ),
+                    False,
+                )
+            if pending_pages:
+                pending = pending_pages.popleft()
+                call_ids.add(pending.call.id)
+                emit(AgentEvent(type="assistant_tool_calls", payload={
+                    "content": f"继续读取同一查询的第 {pending.number} 页。",
+                    "tool_calls": [pending.call.as_dict()],
+                    "pagination": {"root_call_id": pending.root_call_id, "page": pending.number},
+                }))
+                self._execute_call(
+                    call=pending.call, available={item.name: item for item in request.tools},
+                    context=context, read_skills=read_skills, tool_results=tool_results,
+                    repeated_calls=repeated_calls, suspended_tools=suspended_tools,
+                    emit=emit, request=request, derive_messages=derive_messages,
+                    before_tool_result=before_tool_result,
+                    estimate_request_tokens=estimate_request_tokens,
+                    context_window_tokens=context_window_tokens,
+                    reserved_output_tokens=reserved_output_tokens,
+                    prepare_tool_result=prepare_tool_result,
+                    tool_result_context_budget=tool_result_context_budget,
+                    pending_pages=pending_pages, continuation=pending,
+                )
+                continue
+            action_count += 1
             try:
                 try:
                     model_output = complete_model(request)
@@ -144,7 +207,14 @@ class AgentHarnessRuntime:
                         raise
                     # The Service must reject compaction without progress. Retry
                     # only this model call, before emitting or executing actions.
-                    request = prepare_request(request, True)
+                    request = prepare_request(
+                        request,
+                        self._request_rebuilder(
+                            context=context, read_skills=read_skills,
+                            suspended_tools=suspended_tools, template=request,
+                        ),
+                        True,
+                    )
                     model_output = complete_model(request)
             except ProviderChatCompletionError as exc:
                 if "文本工具协议" in str(exc):
@@ -165,6 +235,18 @@ class AgentHarnessRuntime:
 
             if model_output.tool_calls:
                 tool_calls = model_output.tool_calls
+                ids = [call.id for call in tool_calls]
+                if len(ids) != len(set(ids)) or call_ids.intersection(ids):
+                    emit(AgentEvent(type="harness_observation", payload={
+                        "type": "protocol_error",
+                        "error": {
+                            "code": "TOOL_CALL_ID_CONFLICT",
+                            "message": "工具调用标识重复；该批调用均未执行，请使用新的调用标识。",
+                            "details": {"rejected_tool_calls": [call.as_dict() for call in tool_calls]},
+                        },
+                    }))
+                    continue
+                call_ids.update(ids)
                 emit(
                     AgentEvent(
                         type="assistant_tool_calls",
@@ -192,10 +274,25 @@ class AgentHarnessRuntime:
                         estimate_request_tokens=estimate_request_tokens,
                         context_window_tokens=context_window_tokens,
                         reserved_output_tokens=reserved_output_tokens,
+                        prepare_tool_result=prepare_tool_result,
+                        tool_result_context_budget=tool_result_context_budget,
+                        pending_pages=pending_pages,
                     )
                 continue
 
             content = str(model_output.content or "").strip()
+            if not model_output.has_final_stop:
+                if content:
+                    emit(AgentEvent(type="assistant_intermediate", payload={"content": content}))
+                emit(AgentEvent(type="harness_observation", payload={
+                    "type": "action_error",
+                    "error": {
+                        "code": "MODEL_OUTPUT_INCOMPLETE",
+                        "message": "模型输出未正常完成，请根据已保留的内容决定继续、调整行动或说明无法完成。",
+                        "stop_reason": model_output.stop_reason,
+                    },
+                }))
+                continue
             if not content:
                 latest_observation = {
                     "type": "action_error",
@@ -238,11 +335,39 @@ class AgentHarnessRuntime:
         emit: Callable[[AgentEvent], None],
         request: ModelRequest,
         derive_messages: Callable[[], list[dict[str, Any]]],
-        before_tool_result: Callable[[ModelRequest], ModelRequest] | None,
+        before_tool_result: Callable[[ModelRequest, RequestRebuilder], ModelRequest] | None,
         estimate_request_tokens: Callable[[ModelRequest], int] | None,
         context_window_tokens: int | None,
         reserved_output_tokens: int,
+        prepare_tool_result: Callable[[dict[str, Any]], Callable[[], None] | None] | None = None,
+        tool_result_context_budget: Callable[[], tuple[int, int]] | None = None,
+        pending_pages: deque[PendingReadPage] | None = None,
+        continuation: PendingReadPage | None = None,
     ) -> dict[str, Any]:
+        pending_skills: dict[str, Any] = {}
+
+        def prepare_candidate(candidate: ModelRequest) -> ModelRequest:
+            assert before_tool_result is not None
+            return before_tool_result(
+                candidate,
+                self._request_rebuilder(
+                    context=context, read_skills=read_skills,
+                    suspended_tools=suspended_tools, template=candidate,
+                    pending_messages=(candidate.messages[-1],),
+                    pending_skills=pending_skills,
+                ),
+            )
+
+        finish_arguments = dict(
+            call=call, tool_results=tool_results, emit=emit, request=request,
+            derive_messages=derive_messages,
+            before_tool_result=prepare_candidate if before_tool_result is not None else None,
+            estimate_request_tokens=estimate_request_tokens,
+            context_window_tokens=context_window_tokens,
+            reserved_output_tokens=reserved_output_tokens,
+            prepare_tool_result=prepare_tool_result,
+            tool_result_context_budget=tool_result_context_budget,
+        )
         visible_arguments = dict(call.arguments)
         emit(
             AgentEvent(
@@ -253,10 +378,15 @@ class AgentHarnessRuntime:
                     "tool": call.name,
                     "arguments": visible_arguments,
                     "control": call.name in CONTROL_TOOL_NAMES,
+                    **({"pagination": {"root_call_id": continuation.root_call_id,
+                                        "page": continuation.number}} if continuation else {}),
                 },
             )
         )
-        if call.name not in available:
+        # A continuation completes a previously admitted read. Its exact query
+        # survives compaction even when the granting skill leaves model context;
+        # this does not restore that tool to the model's available capabilities.
+        if continuation is None and call.name not in available:
             return self._emit_tool_error(
                 call,
                 code="TOOL_NOT_ALLOWED",
@@ -298,9 +428,25 @@ class AgentHarnessRuntime:
                     message=str(exc) or "技能读取失败。",
                     emit=emit,
                 )
-            read_skills[skill_name] = skill_content
-            self._emit_tool_result(call, skill_content.content, emit=emit)
-            return {"type": "skill_read", "name": skill_name}
+            # The next request contains both this body and the schemas it
+            # authorizes. Budget them together before activating the skill.
+            pending_skills[skill_name] = skill_content
+            finish_arguments["request"] = self._rebuild_request(
+                context=context,
+                read_skills={**read_skills, skill_name: skill_content},
+                suspended_tools=suspended_tools,
+                template=request,
+                messages=list(request.messages),
+            )
+            observation = self._finish_tool_result(
+                result=ToolResult(call.name, {"content": skill_content.content}),
+                wire_output=skill_content.content,
+                retain_in_observations=False,
+                **finish_arguments,
+            )
+            if observation.get("type") == "tool_result":
+                read_skills[skill_name] = skill_content
+            return observation
 
         if call.name == "update_plan":
             try:
@@ -316,25 +462,9 @@ class AgentHarnessRuntime:
                     message=str(exc) or "任务计划参数无效。",
                     emit=emit,
                 )
-            output = dict(call.arguments)
-            observation = {
-                "type": "tool_result",
-                "call_id": call.id,
-                "name": call.name,
-                "output": output,
-                "effects": {},
-                "trust": "untrusted_data_only",
-            }
-            tool_results.append(
-                {
-                    "call_id": call.id,
-                    "name": call.name,
-                    "output": output,
-                    "effects": {},
-                }
+            return self._finish_tool_result(
+                result=ToolResult(call.name, dict(call.arguments)), **finish_arguments
             )
-            self._emit_tool_result(call, observation, emit=emit)
-            return observation
 
         arguments = dict(call.arguments)
         reserved_arguments = sorted(set(arguments) & SERVER_BOUND_ARGUMENT_NAMES)
@@ -397,8 +527,9 @@ class AgentHarnessRuntime:
                 emit=emit,
             )
         call_key = self._call_key(call.name, arguments)
-        repeated_calls[call_key] = repeated_calls.get(call_key, 0) + 1
-        if repeated_calls[call_key] > self.max_repeated_calls:
+        if continuation is None:
+            repeated_calls[call_key] = repeated_calls.get(call_key, 0) + 1
+        if continuation is None and repeated_calls[call_key] > self.max_repeated_calls:
             return self._emit_tool_error(
                 call,
                 code="REPEATED_TOOL_CALL_LIMIT",
@@ -411,27 +542,42 @@ class AgentHarnessRuntime:
                 context=context,
                 observations=tool_results,
             )
-            result = tool.run(bound)
+            result = continuation.load() if continuation else tool.run(bound)
+            if continuation is not None and result.name != call.name:
+                raise ValueError("自动续读不能切换工具。")
         except Exception as exc:
-            detail = getattr(exc, "detail", None)
-            error_details = None
-            if isinstance(detail, dict):
-                code = str(detail.get("code") or type(exc).__name__.upper())
-                message = str(detail.get("message") or str(exc) or "工具执行失败。")
-                error_details = detail.get("details")
-            else:
-                code = str(getattr(exc, "code", "") or type(exc).__name__.upper())
-                message = str(exc) or "工具执行失败。"
-                details = getattr(exc, "details", None)
-                if isinstance(details, dict):
-                    error_details = details
+            failure = tool_failure(exc)
+            if continuation is not None:
+                failure["details"] = {
+                    **(failure.get("details") or {}),
+                    "pagination": {"root_call_id": continuation.root_call_id,
+                                   "page": continuation.number, "complete": False},
+                }
             return self._emit_tool_error(
                 call,
-                code=code,
-                message=message,
-                details=error_details,
+                **failure,
                 emit=emit,
             )
+        observation = self._finish_tool_result(result=result, **finish_arguments)
+        if observation.get("type") == "tool_result" and result.next_page is not None:
+            if pending_pages is None:
+                raise RuntimeError("自动读取缺少 Harness 分页队列。")
+            pending_pages.append(PendingReadPage(
+                call=ToolCall(id="page_" + uuid4().hex, name=call.name, arguments=deepcopy(call.arguments)),
+                load=result.next_page,
+                root_call_id=continuation.root_call_id if continuation else call.id,
+                number=continuation.number + 1 if continuation else 2,
+            ))
+        return observation
+
+    def _finish_tool_result(
+        self, *, result, call, tool_results, emit, request, derive_messages,
+        before_tool_result, estimate_request_tokens, context_window_tokens,
+        reserved_output_tokens, prepare_tool_result=None, wire_output=None,
+        tool_result_context_budget=None,
+        retain_in_observations=True,
+    ):
+        """Prepare, budget and audit every completed tool through one exit."""
         output = self._assemble_tool_output(result)
         observation = {
             "type": "tool_result",
@@ -441,12 +587,14 @@ class AgentHarnessRuntime:
             "effects": dict(getattr(result, "effects", {}) or {}),
             "trust": "untrusted_data_only",
         }
-        encoded_observation = {
+        encoded_observation = wire_output if wire_output is not None else {
             **observation,
             "output": encode_tabular_json(output),
         }
 
         def retain_result() -> None:
+            if not retain_in_observations:
+                return
             tool_results.append(
                 {
                     "call_id": call.id,
@@ -456,7 +604,14 @@ class AgentHarnessRuntime:
                 }
             )
 
+        rollback_preparation = None
+        preparing_result = prepare_tool_result is not None
         try:
+            if prepare_tool_result is not None:
+                rollback_preparation = prepare_tool_result(observation)
+            preparing_result = False
+            if tool_result_context_budget is not None:
+                context_window_tokens, reserved_output_tokens = tool_result_context_budget()
             budget_error = self._tool_result_budget_error(
                 call=call,
                 result=result,
@@ -470,32 +625,44 @@ class AgentHarnessRuntime:
                 reserved_output_tokens=reserved_output_tokens,
             )
         except Exception as exc:
-            # Finish auditing the executed call before propagating cancellation
-            # or a compaction failure. Only the error enters model context.
+            # Audit the executed result before either returning a capability
+            # failure to the model or propagating a security/cancellation stop.
             retain_result()
-            self._emit_tool_error(
+            if rollback_preparation is not None:
+                rollback_preparation()
+            failure = tool_failure(exc)
+            error_observation = self._emit_tool_error(
                 call,
-                code=str(getattr(exc, "code", "") or type(exc).__name__.upper()),
-                message=str(exc) or "工具结果上下文准备失败。",
+                code=failure["code"],
+                message=failure["message"],
                 details={
+                    **(failure["details"] or {}),
                     "execution_completed": True,
                     "effects": observation["effects"],
                 },
                 output=encoded_observation,
                 emit=emit,
             )
-            raise
+            if not preparing_result or stops_execution(exc):
+                raise
+            return error_observation
         if budget_error is not None:
+            if rollback_preparation is not None:
+                rollback_preparation()
             retain_result()
             budget_error = {
                 **budget_error,
                 "execution_completed": True,
                 "effects": observation["effects"],
             }
+            paginated = isinstance(output.get("pagination"), dict)
+            if paginated:
+                budget_error["pagination"] = {**output["pagination"], "complete": False}
             return self._emit_tool_error(
                 call,
                 code="TOOL_RESULT_TOO_LARGE",
-                message="工具已执行，完整结果无法装入当前模型上下文；未返回任何部分结果。",
+                message=("本页已读取，但完整内容无法装入当前模型上下文；本页未返回部分内容，整个查询尚未完成。"
+                         if paginated else "工具已执行，完整结果无法装入当前模型上下文；未返回任何部分结果。"),
                 details=budget_error,
                 output=encoded_observation,
                 emit=emit,
@@ -567,7 +734,7 @@ class AgentHarnessRuntime:
                 "role": "tool",
                 "tool_call_id": call.id,
                 "name": call.name,
-                "content": json.dumps(
+                "content": observation if isinstance(observation, str) else json.dumps(
                     observation,
                     ensure_ascii=False,
                     separators=(",", ":"),
@@ -611,7 +778,7 @@ class AgentHarnessRuntime:
         )
         estimator = estimate_request_tokens or cls._default_request_token_estimate
         estimated_required = max(1, int(estimator(candidate)))
-        if estimated_required > available_tokens and before_tool_result is not None:
+        if estimated_required >= int(available_tokens * TRIGGER_RATIO) and before_tool_result is not None:
             candidate = before_tool_result(candidate)
             estimated_required = max(1, int(estimator(candidate)))
         if estimated_required <= available_tokens:
@@ -625,7 +792,7 @@ class AgentHarnessRuntime:
             base_output = deepcopy(dict(result.output or {}))
         fitted_pages = 0
         partial_output = base_output
-        for page in pages:
+        for page in pages if isinstance(encoded_observation, dict) else ():
             partial_output = cls._merge_tool_page(partial_output, page)
             partial_observation = {
                 **encoded_observation,
@@ -663,37 +830,52 @@ class AgentHarnessRuntime:
             "reserved_output_tokens": reserved_output,
         }
 
-    @staticmethod
-    def _schema_alternative_applies(value: Any, schema: dict[str, Any]) -> bool:
-        expected = schema.get("type")
-        if expected == "object" and not isinstance(value, dict):
-            return False
-        if expected == "array" and not isinstance(value, (list, str)):
-            return False
-        if expected == "null" and value is not None:
-            return False
-        if expected == "string" and not isinstance(value, str):
-            return False
+    def _request_rebuilder(
+        self,
+        *,
+        context: AgentContext,
+        read_skills: dict[str, Any],
+        suspended_tools: set[str],
+        template: ModelRequest,
+        pending_messages: tuple[dict[str, Any], ...] = (),
+        pending_skills: dict[str, Any] | None = None,
+    ) -> RequestRebuilder:
+        """Capture the execution state that a history checkpoint cannot supply."""
 
-        if not isinstance(value, dict):
-            return True
-        properties = schema.get("properties") or {}
-        saw_discriminator = False
-        for name, child_schema in properties.items():
-            if name not in value or not isinstance(child_schema, dict):
-                continue
-            if "const" in child_schema:
-                saw_discriminator = True
-                if value[name] != child_schema["const"]:
-                    return False
-            enum = child_schema.get("enum")
-            if isinstance(enum, list) and enum:
-                saw_discriminator = True
-                if value[name] not in enum:
-                    return False
-        return saw_discriminator or expected == "object"
+        loaded = dict(read_skills)
+        pending = dict(pending_skills or {})
+        suspended = set(suspended_tools)
+        retained_messages = deepcopy(pending_messages)
+        assembly_time = local_now().isoformat()
 
-    def rebuild_request(
+        def rebuild(
+            *, messages: list[dict[str, Any]], skill_names: Iterable[str]
+        ) -> ModelRequest:
+            visible_skills: dict[str, Any] = {}
+            for name in skill_names:
+                name = str(name or "").strip()
+                if not name or name in visible_skills:
+                    continue
+                if name in loaded:
+                    visible_skills[name] = loaded[name]
+                    continue
+                try:
+                    visible_skills[name] = self.skill_registry.get(name).read(context)
+                except SkillNotFoundError:
+                    continue
+            visible_skills.update(pending)
+            return self._rebuild_request(
+                context=context,
+                read_skills=visible_skills,
+                suspended_tools=suspended,
+                template=template,
+                messages=[*messages, *deepcopy(retained_messages)],
+                runtime_context_overrides={"current_time": assembly_time},
+            )
+
+        return rebuild
+
+    def _rebuild_request(
         self,
         *,
         context: AgentContext,
@@ -771,7 +953,6 @@ class AgentHarnessRuntime:
         now = local_now()
         return {
             "current_time": now.isoformat(),
-            "current_date": now.date().isoformat(),
             "attachment_metadata_trust": "untrusted_data_only",
             "visible_attachments": attachments,
             **(
@@ -850,114 +1031,6 @@ class AgentHarnessRuntime:
             )
         )
 
-    @classmethod
-    def _validate_schema(
-        cls,
-        value: Any,
-        schema: dict[str, Any],
-        *,
-        label: str,
-    ) -> None:
-        if not schema:
-            return
-        if "const" in schema and value != schema["const"]:
-            raise ValueError(f"{label} 必须等于约定值。")
-        if isinstance(schema.get("enum"), list) and value not in schema["enum"]:
-            raise ValueError(f"{label} 不在允许值范围内。")
-        alternatives = schema.get("anyOf") or schema.get("oneOf")
-        if isinstance(alternatives, list) and alternatives:
-            matched = 0
-            errors: list[ValueError] = []
-            applicable = [
-                alternative
-                for alternative in alternatives
-                if isinstance(alternative, dict)
-                and cls._schema_alternative_applies(value, alternative)
-            ]
-            candidates = applicable or [
-                alternative
-                for alternative in alternatives
-                if isinstance(alternative, dict)
-            ]
-            for alternative in candidates:
-                try:
-                    cls._validate_schema(value, alternative, label=label)
-                    matched += 1
-                except ValueError as exc:
-                    errors.append(exc)
-            required_matches = 1
-            if matched != required_matches and schema.get("oneOf"):
-                if matched == 0 and len(candidates) == 1 and errors:
-                    raise errors[0]
-                raise ValueError(f"{label} 不符合唯一允许的结构。")
-            if matched < required_matches and schema.get("anyOf"):
-                if len(candidates) == 1 and errors:
-                    raise errors[0]
-                raise ValueError(f"{label} 不符合任何允许的结构。")
-            return
-        expected = schema.get("type")
-        if expected == "object":
-            if not isinstance(value, dict):
-                raise ValueError(f"{label} 必须是对象。")
-            required = schema.get("required") or []
-            missing = [name for name in required if name not in value]
-            if missing:
-                raise ValueError(f"{label} 缺少字段：{', '.join(missing)}")
-            properties = schema.get("properties") or {}
-            if schema.get("additionalProperties") is False:
-                extras = set(value) - set(properties)
-                if extras:
-                    raise ValueError(
-                        f"{label} 包含未知字段：{', '.join(sorted(extras))}"
-                    )
-            for name, child_schema in properties.items():
-                if name in value and isinstance(child_schema, dict):
-                    cls._validate_schema(
-                        value[name], child_schema, label=f"{label}.{name}"
-                    )
-        elif expected == "array":
-            if not isinstance(value, list):
-                raise ValueError(f"{label} 必须是数组。")
-            if (
-                isinstance(schema.get("minItems"), int)
-                and len(value) < schema["minItems"]
-            ):
-                raise ValueError(f"{label} 项目数量不足。")
-            if (
-                isinstance(schema.get("maxItems"), int)
-                and len(value) > schema["maxItems"]
-            ):
-                raise ValueError(f"{label} 项目数量过多。")
-            item_schema = schema.get("items")
-            if isinstance(item_schema, dict):
-                for index, item in enumerate(value):
-                    cls._validate_schema(item, item_schema, label=f"{label}[{index}]")
-        elif expected == "string":
-            if not isinstance(value, str):
-                raise ValueError(f"{label} 必须是字符串。")
-            if (
-                isinstance(schema.get("minLength"), int)
-                and len(value) < schema["minLength"]
-            ):
-                raise ValueError(f"{label} 长度不足。")
-        elif expected == "boolean" and not isinstance(value, bool):
-            raise ValueError(f"{label} 必须是布尔值。")
-        elif expected == "integer" and (
-            not isinstance(value, int) or isinstance(value, bool)
-        ):
-            raise ValueError(f"{label} 必须是整数。")
-        elif expected == "number" and (
-            not isinstance(value, (int, float)) or isinstance(value, bool)
-        ):
-            raise ValueError(f"{label} 必须是数字。")
-        elif expected == "null" and value is not None:
-            raise ValueError(f"{label} 必须为空值。")
-        if (
-            expected in {"integer", "number"}
-            and isinstance(value, (int, float))
-            and not isinstance(value, bool)
-        ):
-            if schema.get("minimum") is not None and value < schema["minimum"]:
-                raise ValueError(f"{label} 小于允许的最小值。")
-            if schema.get("maximum") is not None and value > schema["maximum"]:
-                raise ValueError(f"{label} 大于允许的最大值。")
+    @staticmethod
+    def _validate_schema(value: Any, schema: dict[str, Any], *, label: str) -> None:
+        validate_parameters(value, schema, label=label)

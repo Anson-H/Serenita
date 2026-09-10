@@ -12,6 +12,7 @@ from backend.app.schemas.model_provider import (
     AddModelRequest,
     ModelPatchRequest,
     ModelDefaultsPatchRequest,
+    ModelProbeRequest,
 )
 
 router = APIRouter(prefix="/api", tags=["model-providers"])
@@ -105,10 +106,17 @@ def update_model(
 @router.post("/models/capability-probe/{model_id:path}")
 def probe_model_capabilities(
     model_id: str,
+    payload: ModelProbeRequest | None = None,
     user: CurrentUser = Depends(require_current_user),
     service: ModelSettingsService = Depends(get_model_settings_service),
 ):
-    return service.probe_model_capabilities(user.account_id, model_id)
+    return service.probe_model_capabilities(user.account_id, model_id, payload.probe_id if payload else None)
+
+
+@router.post("/models/capability-probe-cancel/{model_id:path}")
+def cancel_model_capability_probe(model_id: str, payload: ModelProbeRequest | None = None, user: CurrentUser = Depends(require_current_user), service: ModelSettingsService = Depends(get_model_settings_service)):
+    service.probes.cancel(user.account_id, model_id, payload.probe_id if payload else None)
+    return {"model_id": model_id, "cancelled": True}
 
 
 @router.get("/model-access-settings")

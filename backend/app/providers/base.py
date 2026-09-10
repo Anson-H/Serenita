@@ -1,7 +1,7 @@
 from typing import Any, List, Optional
 from urllib import request
 
-from backend.app.model_capabilities import (
+from backend.app.domain.model_capabilities import (
     DEFAULT_CAPABILITY_PROFILE,
     ModelCapabilityProfiles,
     ModelCapabilityProfile,
@@ -49,6 +49,25 @@ class ModelProvider:
             stream_client_factory=stream_client_factory,
         )
         self.probe = ProviderCapabilityProbe(self)
+
+    def embedding_protocols(self, api_url):
+        return ["compatible"]
+
+    def embedding_modalities(self, protocol):
+        return {"text"}
+
+    def embedding_dimensions(self, remote_model_id):
+        return []
+
+    def build_embedding_request(self, api_url, model, inputs, mode, dimensions, protocol):
+        from backend.app.providers.embeddings import compatible_payload
+        if protocol != "compatible":
+            raise ProviderChatCompletionError("向量接口协议未确认。", code="EMBEDDING_PROTOCOL_UNCONFIRMED")
+        return api_url.rstrip("/") + "/embeddings", compatible_payload(model, inputs, mode, dimensions)
+
+    def complete_embedding(self, **kwargs):
+        from backend.app.providers.embeddings import complete_embedding
+        return complete_embedding(self, **kwargs)
 
     def test_connection(self, api_url: str, api_key: str) -> ProviderConnectionResult:
         return self.transport.test_connection(api_url=api_url, api_key=api_key)
@@ -165,7 +184,7 @@ class ModelProvider:
 
     def parse_model_payload(self, payload: Any) -> List[ProviderModel]:
         if isinstance(payload, dict):
-            raw_models = payload.get("data") or payload.get("models") or []
+            raw_models = payload.get("data") or payload.get("models") or payload.get("output", {}).get("models") or []
         elif isinstance(payload, list):
             raw_models = payload
         else:
@@ -196,6 +215,8 @@ class ModelProvider:
                     if isinstance(model_name, str)
                     else remote_model_id,
                     profile=profile,
+                    model_type=self.model_type_from_metadata(item),
+                    embedding_dimensions=[value for value in item.get("supported_dimensions", []) if type(value) is int and value > 0],
                     created_at=created_at,
                     capability_declarations=self.capability_declarations(
                         item,
@@ -204,6 +225,15 @@ class ModelProvider:
                 )
             )
         return models
+
+    def model_type_from_metadata(self, item):
+        output = (item.get("architecture") or {}).get("output_modalities", [])
+        explicit = item.get("model_type") or item.get("type")
+        if explicit in {"embedding", "embeddings"} or "embeddings" in output:
+            return "embedding"
+        if explicit in {"generation", "chat", "text-generation"} or "text" in output:
+            return "generation"
+        return "unknown"
 
     def normalize_capabilities(
         self,

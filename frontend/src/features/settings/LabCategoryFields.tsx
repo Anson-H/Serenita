@@ -1,3 +1,4 @@
+import { EmptyState } from "../../components/EmptyState";
 import type { LabDictionaryCategory, LabDictionaryItem } from "../../api/client";
 import {
   type LabDictionaryResponse
@@ -60,9 +61,7 @@ export function LabCategoryFields({
           </GroupedList>
         </>
       ) : (
-        <span className="message-meta empty-list-status dictionary-category-members-empty">
-          暂无关联指标
-        </span>
+        <EmptyState layout="inline" title="暂无关联指标" />
       )}
     </section>
     <footer className="dictionary-editor-actions">

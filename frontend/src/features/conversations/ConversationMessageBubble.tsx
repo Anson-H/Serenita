@@ -1,3 +1,6 @@
+import { ModelIdentity } from "./ModelIdentity";
+import { RelatedContent } from "./RelatedContent";
+import type { RelatedResourceReference } from "./relatedResources";
 import {
   useId,
   useMemo,
@@ -33,7 +36,6 @@ import {
   hasConversationTokenUsage
 } from "./ConversationTokenUsage";
 import {
-  RelatedReports,
   type RelatedReportReference
 } from "./RelatedReports";
 import {
@@ -69,10 +71,13 @@ type ConversationMessageBubbleProps = {
   ) => void | Promise<void>;
   onToggleFavorite: (message: ConversationMessage) => void | Promise<void>;
   relatedReportResources?: RelatedReportReference[];
+  relatedResources?: RelatedResourceReference[];
+  resourceStates?: ConversationResourceState[];
   resourceStateByReportId: ReadonlyMap<string, ConversationResourceState>;
   sending: boolean;
   showRelatedContent: boolean;
   showTokenUsage: boolean;
+  showModelIdentity: boolean;
   turnTokenUsageRecords?: ConversationModelRecord[];
 };
 
@@ -166,10 +171,13 @@ export function ConversationMessageBubble({
   onSubmitEditedUserMessage,
   onToggleFavorite,
   relatedReportResources = [],
+  relatedResources = [],
+  resourceStates = [],
   resourceStateByReportId,
   sending,
   showRelatedContent,
   showTokenUsage,
+  showModelIdentity,
   turnTokenUsageRecords
 }: ConversationMessageBubbleProps) {
   const editFormId = useId();
@@ -203,7 +211,7 @@ export function ConversationMessageBubble({
     showRelatedContent &&
     hasFinishedAssistantOutput &&
     visibleMessageContent &&
-    relatedReportResources.length
+    (relatedReportResources.length || relatedResources.length)
   );
   const shouldShowTokenUsage = Boolean(
     showTokenUsage &&
@@ -222,6 +230,7 @@ export function ConversationMessageBubble({
       key={message.message_id}
       ref={(node) => onRegisterMessageElement(message.message_id, node)}
     >
+      {message.role === "assistant" && showModelIdentity ? <ModelIdentity modelId={message.model_id} /> : null}
       <div
         className={`message-bubble ${message.role}`}
         data-input-surface={message.role === "user" ? "secondary" : undefined}
@@ -307,10 +316,12 @@ export function ConversationMessageBubble({
       {shouldShowRelatedContent || shouldShowTokenUsage ? (
         <div className="assistant-turn-supplements root-disclosure-stack">
           {shouldShowRelatedContent ? (
-            <RelatedReports
+            <RelatedContent
               messageId={message.message_id}
               onOpenReport={onOpenReport}
               reports={relatedReportResources}
+              resources={relatedResources}
+              resourceStates={resourceStates}
               resourceStateByReportId={resourceStateByReportId}
             />
           ) : null}

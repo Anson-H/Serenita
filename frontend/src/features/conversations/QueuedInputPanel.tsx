@@ -64,7 +64,7 @@ export function QueuedInputPanel({
 
   return (
     <section aria-label="等候队列" className="queued-input-panel">
-      <div className="queued-input-list">
+      <div className="queued-input-list scroll-balanced">
         {orderedItems.map((item, index) => {
           const firstAttachment = item.context_resources.find(
             (resource) => resource.resource_type === "file"

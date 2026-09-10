@@ -8,17 +8,17 @@
         "type": "tabs",
         "children": [
           {
-            "id": "a0022ea04370b97b",
+            "id": "d3ea71461a3f14fd",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "AGENTS.md",
+                "file": "docs/未来愿景/长期记忆与认知架构.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "AGENTS"
+              "title": "长期记忆与认知架构"
             }
           }
         ]
@@ -80,7 +80,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 200
+    "width": 255.421875
   },
   "right": {
     "id": "ad503c60e4d99397",
@@ -158,7 +158,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "AGENTS.md",
+                "file": "docs/未来愿景/长期记忆与认知架构.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
@@ -173,8 +173,8 @@
             "state": {
               "type": "quiet-outline",
               "state": {},
-              "icon": "lines-of-text",
-              "title": "Quiet Outline"
+              "icon": "lucide-ghost",
+              "title": "quiet-outline"
             }
           }
         ],
@@ -182,7 +182,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 443.58984375
+    "width": 234.0390625
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -195,53 +195,53 @@
       "bases:新建数据库": false
     }
   },
-  "active": "a0022ea04370b97b",
+  "active": "d3ea71461a3f14fd",
   "lastOpenFiles": [
-    "tests/agent_support.py",
-    "tests/model_support.py",
-    "tests/report_support.py",
-    "tests/__pycache__/test_report_field_contract.cpython-313-pytest-9.0.3.pyc",
-    "tests/__pycache__/test_report_citations.cpython-313-pytest-9.0.3.pyc",
-    "tests/__pycache__/test_model_capability_contract.cpython-313-pytest-9.0.3.pyc",
-    "tests/__pycache__/api_client.cpython-313.pyc",
-    "tests/__pycache__/test_account_context.cpython-313-pytest-9.0.3.pyc",
-    "artifacts/verification/全量问题修正验收.md",
-    "artifacts/verification",
-    "artifacts",
-    "frontend/test-results/browser/conversation-overlay-geome-8efcb--remain-reachable-at-1280px-webkit/slider.png",
-    "frontend/test-results/browser/conversation-overlay-geome-8efcb--remain-reachable-at-1280px-webkit",
-    "frontend/test-results/browser/conversation-overlay-geome-e5c38-s-remain-reachable-at-390px-webkit/slider.png",
-    "frontend/test-results/browser/conversation-overlay-geome-8efcb--remain-reachable-at-1280px-chromium/slider.png",
-    "frontend/test-results/browser/conversation-overlay-geome-e5c38-s-remain-reachable-at-390px-chromium/slider.png",
-    "frontend/test-results/browser/members-personal-informati-08eb7-s-read-only-access-at-390px-chromium/error-context.md",
-    "frontend/test-results/browser/members-personal-informati-08eb7-s-read-only-access-at-390px-chromium/test-failed-1.png",
-    "frontend/test-results/integration/boundaries-real-API-databa-e7157-s-favorites-and-attachments/error-context.md",
-    "frontend/test-results/integration/boundaries-real-API-databa-e7157-s-favorites-and-attachments/test-failed-1.png",
-    "frontend/test-results/boundaries-real-API-databa-e7157-s-favorites-and-attachments/test-failed-1.png",
-    "frontend/test-results/boundaries-real-API-databa-e7157-s-favorites-and-attachments/error-context.md",
-    "frontend/test-results/conversation-overlay-geome-8efcb--remain-reachable-at-1280px-webkit/slider.png",
-    "frontend/test-results/conversation-overlay-geome-e5c38-s-remain-reachable-at-390px-webkit/slider.png",
-    "frontend/test-results/conversation-overlay-geome-8efcb--remain-reachable-at-1280px-chromium/slider.png",
-    "frontend/test-results/conversation-upload-retry--04d4a--hover-owns-only-its-button-chromium/error-context.md",
-    "frontend/test-results/select-popover-report-filt-2a1bb-en-after-selection-at-390px-chromium/error-context.md",
-    "frontend/test-results/select-popover-report-filt-392fe-n-after-selection-at-1280px-chromium/error-context.md",
-    "docs/未来愿景/README.md",
-    "frontend/test-results/conversation-overlay-geome-8efcb--remain-reachable-at-1280px-webkit/error-context.md",
-    "frontend/test-results/conversation-overlay-geome-e5c38-s-remain-reachable-at-390px-webkit/error-context.md",
-    "docs/未来愿景/应用实现.md",
-    "docs/未来愿景/前端.md",
-    "docs/未来愿景/技术架构.md",
-    "docs/未来愿景/产品蓝图.md",
-    "DESIGN.md",
-    "frontend/test-results/dialog-geometry-all-dialog-c26b2-ain-long-content-at-650x700-chromium/error-context.md",
-    "frontend/test-results/dialog-geometry-all-dialog-60cb8-in-long-content-at-1280x900-chromium/error-context.md",
-    "frontend/test-results/dialog-geometry-all-dialog-40763-ain-long-content-at-320x480-chromium/error-context.md",
-    "frontend/test-results/dialog-geometry-all-dialog-15a37-ain-long-content-at-390x300-chromium/error-context.md",
-    "frontend/test-results/members-revocation-silentl-02c50-historical-binding-at-390px-chromium/error-context.md",
-    "frontend/test-results/select-popover-model-menu--e8703-vers-content-width-at-390px-chromium/error-context.md",
-    "frontend/test-results/select-popover-model-menu--f2358-ers-content-width-at-1280px-chromium/error-context.md",
-    "frontend/test-results/members-member-selection-p-0979b-and-isolates-draft-at-390px-chromium/error-context.md",
-    "frontend/test-results/conversation-upload-retry--67767-rimary-and-accessory-action-chromium/error-context.md",
-    "docs/当前执行/运维/数据库结构.md"
+    "serenita.pem",
+    "tmp/pdfs/resume-link-check/demo.png",
+    "tmp/pdfs/resume-link-check/pm.png",
+    "tmp/pdfs/resume-link-check/dev.png",
+    "tmp/pdfs/resume-link-check",
+    "docs/当前执行/运维/数据库结构.md",
+    "frontend/test-results/browser",
+    "frontend/dist/assets/MarkdownRenderer-Bcoh5lIH.js",
+    "frontend/dist/assets/ReportWorkspacePanel-ABM6vQYt.js",
+    "frontend/dist/assets/MultiSelectPopover-DAZikxbh.js",
+    "frontend/dist/assets/ContentDialog-Cu92fx1d.js",
+    "frontend/dist/assets/FilePreview-BcSsSlmu.js",
+    "frontend/dist/assets/Switch-n2APjO3u.js",
+    "frontend/dist/assets/FavoritesWorkspacePanel-C6ty2tAc.js",
+    "frontend/dist/assets/ListCount-Cng0eN86.js",
+    "frontend/test-results/browser/creation-dialogs-creation--1f11b-ader-navigation-at-1280x900-chromium/new-indicator.png",
+    "frontend/test-results/browser/creation-dialogs-creation--2e2ac-eader-navigation-at-390x844-chromium/new-indicator.png",
+    "frontend/test-results/browser/creation-dialogs-creation--6e9cf-eader-navigation-at-390x420-chromium/new-indicator.png",
+    "frontend/test-results/browser/creation-dialogs-creation--1f11b-ader-navigation-at-1280x900-chromium/error-context.md",
+    "frontend/test-results/browser/creation-dialogs-creation--6e9cf-eader-navigation-at-390x420-chromium/error-context.md",
+    "frontend/test-results/browser/creation-dialogs-creation--2e2ac-eader-navigation-at-390x844-chromium/error-context.md",
+    "frontend/test-results/browser/creation-dialogs-creation--1f11b-ader-navigation-at-1280x900-chromium/test-failed-1.png",
+    "frontend/test-results/browser/creation-dialogs-creation--6e9cf-eader-navigation-at-390x420-chromium/test-failed-1.png",
+    "frontend/test-results/browser/creation-dialogs-creation--2e2ac-eader-navigation-at-390x844-chromium/test-failed-1.png",
+    "frontend/test-results/browser/navigation-titles-report-o-92fef-try-and-long-names-at-390px-chromium/long-title.png",
+    "frontend/test-results/browser/medications-plan-creation--ab2f2-nd-validates-dates-at-390px-chromium/error-context.md",
+    "frontend/test-results/browser/medications-plan-creation--39fa7-d-validates-dates-at-1280px-chromium/error-context.md",
+    "frontend/test-results/browser/medication-catalog-medicat-2bcad-tory-stays-read-only-at-390-chromium/error-context.md",
+    "frontend/test-results/browser/medication-catalog-medicat-5a9eb-ory-stays-read-only-at-1280-chromium/error-context.md",
+    "backend/app/plugins/medical_log/skills/log/references/log-writing.md",
+    "docs/当前执行/领域/健康日记.md",
+    "backend/app/plugins/medication/skills/medication-query/SKILL.md",
+    "backend/app/plugins/medication/skills/medication-catalog/SKILL.md",
+    "frontend/test-results/integration/medications-account-medica-11f26-istinct-write-APIs-at-390px/error-context.md",
+    "frontend/test-results/integration/medications-account-medica-2a76d-stinct-write-APIs-at-1280px/error-context.md",
+    "frontend/test-results/browser/medication-navigation-read-40f37--trapping-an-unsaved-editor-chromium/error-context.md",
+    "frontend/test-results/browser/medications-medicine-ident-94586-pact-report-layout-at-390px-chromium/error-context.md",
+    "frontend/test-results/browser/medications-medicine-ident-c3c64-act-report-layout-at-1280px-chromium/error-context.md",
+    "backend/app/plugins/medication/skills/medication-inventory/SKILL.md",
+    "backend/app/plugins/medical_log/skills/medical-log/SKILL.md",
+    "backend/app/plugins/medication/skills/medication-plan/SKILL.md",
+    "backend/app/plugins/medication/skills/medication-cabinet/SKILL.md",
+    "backend/app/plugins/medical_log/skills/log/SKILL.md",
+    "backend/app/plugins/medical_report/skills/report-analysis/references/report-analysis.md",
+    "backend/app/plugins/medical_report/skills/report-analysis/SKILL.md",
+    "backend/app/plugins/medical_report/skills/report-update/SKILL.md"
   ]
 }

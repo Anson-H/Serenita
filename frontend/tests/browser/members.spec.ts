@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { MEDICAL_HISTORY_FIELDS } from "../../src/api/medicalHistoryTypes";
 import type { Member } from "../../src/api/memberApi";
 
 function initialState() {
@@ -10,6 +11,7 @@ function initialState() {
       { ...base, member_id: "shared", member_name: "本人", is_default: false, account_id: "owner", owner_account: "owner", is_owned: false, can_edit: false, permission: "read" as const }
     ] as Member[],
     defaultId: "self" as string | null, mode: "last_used", last: "family" as string | null, revision: 1, requests: [] as string[],
+    histories: {} as Record<string, Record<string, { text: string | null; updated_at: string | null }>>,
     reportSources: [] as Array<Record<string, unknown>>,
   };
 }
@@ -77,6 +79,14 @@ async function mockApi(page: Page, state: State) {
     const memberId = path.split("/")[2];
     const member = state.members.find(item => item.member_id === memberId);
     if (path.startsWith("/members/") && !member) return json({ detail: { code: "MEMBER_ACCESS_UNAVAILABLE", message: "已撤权" } }, 403);
+    if (path === `/members/${memberId}/medical-history`) {
+      const history = state.histories[memberId] ??= Object.fromEntries(MEDICAL_HISTORY_FIELDS.map(([field]) => [field, { text: null, updated_at: null }]));
+      if (method === "PATCH") {
+        if (!member!.can_edit) return json({ detail: { message: "只读成员" } }, 403);
+        for (const [field, value] of Object.entries(body)) history[field] = { text: typeof value === "string" ? value.trim() || null : null, updated_at: "2026-09-07T12:00:00+08:00" };
+      }
+      return json({ member_id: memberId, history });
+    }
     if (path === `/members/${memberId}` && method === "PATCH") {
       Object.assign(member!, body); state.revision++;
       if (body.set_as_default) setDefault(memberId);
@@ -87,7 +97,7 @@ async function mockApi(page: Page, state: State) {
       state.members = state.members.filter(item => item.member_id !== memberId); state.revision++;
       return json({ member_id: memberId, deleted: true, pending_file_cleanup: 0, collection: collection() });
     }
-    const reportDetail = () => ({ member_id: memberId, report_id: "SAME-ID", report_type: "其它报告", report_name: `${memberId}-报告`, report_time: "2026-08-01T12:00:00+08:00", created_at: "2026-08-01T12:00:00+08:00", updated_at: "2026-08-01T12:00:00+08:00", institution_name: "测试机构", has_analysis: false, analysis_content: "", analysis_outdated: false, flagged_count: 0, total_count: 1, sources: state.reportSources, lab_test_results: [], other_report: { report_body: "测试报告内容" }, examination_report: null, pathology_report: null, surgery_report: null });
+    const reportDetail = () => ({ member_id: memberId, report_id: "SAME-ID", report_type: "其它医疗报告", report_name: `${memberId}-报告`, report_time: "2026-08-01T12:00:00+08:00", created_at: "2026-08-01T12:00:00+08:00", updated_at: "2026-08-01T12:00:00+08:00", institution_name: "测试机构", has_analysis: false, analysis_content: "", analysis_outdated: false, flagged_count: 0, total_count: 1, sources: state.reportSources, lab_test_results: [], other_report: { report_body: "测试报告内容" }, examination_report: null, pathology_report: null, surgery_report: null });
     if (path.endsWith("/reports")) return json({ reports: [], total: 0 });
     if (path.endsWith("/reports/SAME-ID/source-files") && method === "POST") {
       state.reportSources = [{ resource_id: "FILE-SUPPLEMENTED", filename: "FILE-SUPPLEMENTED.jpg", mime_type: "image/jpeg", size_bytes: 1024, source_kind: "photo", source_type: "uploaded_file", download_url: `/api/members/${memberId}/reports/SAME-ID/source-files/FILE-SUPPLEMENTED`, created_at: "2026-08-01T12:00:00+08:00", is_primary: true }];
@@ -190,6 +200,9 @@ test("member modal fits a short 300px viewport and refresh retry cannot duplicat
   await page.getByRole("button", { name: "切换成员", exact: true }).click();
   await page.getByRole("dialog", { name: "切换成员", exact: true }).getByRole("button", { name: "添加成员", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "添加成员", exact: true });
+  await dialog.locator(".dialog-titlebar").getByRole("button", { name: "返回上一级", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("dialog", { name: "切换成员", exact: true }).getByRole("button", { name: "添加成员", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 300 });
   await expect(dialog).toBeVisible();
   const bounds = (await dialog.boundingBox())!;
@@ -197,13 +210,13 @@ test("member modal fits a short 300px viewport and refresh retry cannot duplicat
   expect(bounds.y).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(300);
-  await expect(dialog.getByRole("button", { name: "保存成员", exact: true })).toBeInViewport();
+  await expect(dialog.getByRole("button", { name: "完成", exact: true })).toBeInViewport();
 
   await dialog.getByLabel("成员名称", { exact: true }).fill("无需重复创建的家人");
-  await dialog.getByRole("button", { name: "保存成员", exact: true }).click();
+  await dialog.getByRole("button", { name: "完成", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText("暂时无法刷新成员");
-  await expect(dialog.getByRole("button", { name: "继续打开成员", exact: true })).toBeEnabled();
-  await dialog.getByRole("button", { name: "继续打开成员", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "完成", exact: true })).toBeEnabled();
+  await dialog.getByRole("button", { name: "完成", exact: true }).click();
   await expect(page).toHaveURL(/\/health\/created-/);
   expect(state.requests.filter(request => request === "POST /members")).toHaveLength(1);
 });
@@ -214,15 +227,20 @@ test(`personal information autosaves and respects read-only access at ${width}px
   await mockApi(page, state); await page.setViewportSize({ width, height: 900 }); await page.goto("/health/family");
   const identity = page.getByRole("region", { name: "妈妈的健康档案概览", exact: true });
   await expect(identity).toContainText("妈妈");
-  await expect(identity).toContainText("女·1970-03-10·AB 型");
+  await expect(identity).toContainText("女·1970年3月10日·AB 型");
+  const nameBox = (await identity.locator('.control-row-title').boundingBox())!;
+  const descriptionBox = (await identity.locator('.control-row-description').boundingBox())!;
+  expect(descriptionBox.y).toBeGreaterThanOrEqual(nameBox.y + nameBox.height);
+  expect(Math.abs(descriptionBox.x - nameBox.x)).toBeLessThan(1);
   const source = identity.getByRole("button", { name: "查看妈妈的个人信息", exact: true });
   await source.click();
   const detail = page.getByRole("region", { name: "个人信息", exact: true });
   await expect(detail).toBeVisible();
   await expect(detail.getByLabel("成员名称", { exact: true })).toHaveValue("妈妈");
+  await expect(detail.getByRole("heading", { name: "妈妈", exact: true })).toBeVisible();
   await expect(detail.getByRole("button", { name: "性别", exact: true })).toContainText("女");
   const birthDate = detail.getByRole("button", { name: "出生日期", exact: true });
-  await expect(birthDate).toContainText("1970/03/10");
+  await expect(birthDate).toContainText("1970年3月10日");
   await birthDate.click();
   const birthDatePicker = page.getByRole("dialog", { name: "出生日期选择器", exact: true });
   await birthDatePicker.getByLabel("年份", { exact: true }).fill("1971");
@@ -304,7 +322,7 @@ test(`explicit report member overrides startup and read-only controls at ${width
   const state = initialState(); state.mode = "default"; await mockApi(page, state);
   await page.setViewportSize({ width, height: 900 }); await page.goto("/reports/shared/SAME-ID");
   await expect(page.getByText("shared-报告", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "删除报告", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "删除医疗报告", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "开始解读", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "补充原件", exact: true })).toBeDisabled();
   expect(state.requests.some(path => path.includes("/members/self/reports/SAME-ID"))).toBe(false);
@@ -343,6 +361,15 @@ test("editable report supplements an original from the inline source action", as
   })).toBeVisible();
   await expect(supplement).toBeEnabled();
   await expect(supplement).toHaveText("补充原件");
+  await page.route("**/api/members/self/reports/SAME-ID/source-files/*", route=>route.fulfill({contentType:"text/plain",body:"报告原件内容"}));
+  const thumbnail=page.getByRole("button",{name:"打开原件预览，共 1 个关联文件",exact:true});
+  await thumbnail.click();
+  const preview=page.getByRole("dialog");
+  await expect(preview.locator("pre")).toHaveText("报告原件内容");
+  await expect(preview.locator(".file-preview-files")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(preview).toHaveCount(0);
+  await expect(thumbnail).toBeFocused();
 });
 
 test("personal information preserves the draft after a save failure and supports an invited editor", async ({ page }) => {
@@ -364,7 +391,7 @@ test("personal information preserves the draft after a save failure and supports
   await detail.getByLabel("成员名称", { exact: true }).fill("共享家人");
   await expect(detail.getByRole("alert")).toContainText("暂时无法保存个人信息");
   await expect(detail.getByLabel("成员名称", { exact: true })).toHaveValue("共享家人");
-  await expect(detail.getByRole("button", { name: "保存成员", exact: true })).toHaveCount(0);
+  await expect(detail.getByRole("button", { name: "完成", exact: true })).toHaveCount(0);
   expect(state.members[2].member_name).toBe("本人");
   await detail.getByRole("button", { name: "返回上一级", exact: true }).click();
   await expect(detail).toHaveCount(0);
@@ -411,7 +438,7 @@ test(`zero-member workspace stays usable and the first member is forced default 
   await expect(defaultSwitch).toBeChecked();
   await expect(defaultSwitch).toBeDisabled();
   await dialog.getByLabel("成员名称", { exact: true }).fill("首位成员");
-  await dialog.getByRole("button", { name: "保存成员", exact: true }).click();
+  await dialog.getByRole("button", { name: "完成", exact: true }).click();
   await expect(page).toHaveURL(/\/health\/created-/);
   expect(state.members).toHaveLength(1);
   expect(state.defaultId).toBe(state.members[0].member_id);
@@ -474,7 +501,7 @@ test(`default selection autosaves from personal information at ${width}px`, asyn
   await open();
   const detail = page.getByRole('region', { name: '个人信息', exact: true });
   await expect(detail.getByRole('button', { name: '取消', exact: true })).toHaveCount(0);
-  await expect(detail.getByRole('button', { name: '保存成员', exact: true })).toHaveCount(0);
+  await expect(detail.getByRole('button', { name: '完成', exact: true })).toHaveCount(0);
   await detail.getByRole('switch', { name: '设为默认成员' }).click();
   await detail.getByRole('button', { name: '返回上一级', exact: true }).click();
   await expect(detail).toHaveCount(0);
@@ -543,13 +570,13 @@ for (const width of [390, 820, 1280]) {
     const state = initialState();
     await mockApi(page, state);
     await page.route("**/api/members/family/reports", route => route.fulfill({ json: {
-      reports: [{ report_id: "SAME-ID", member_id: "family", report_type: "其它报告", report_name: "family-报告", report_time: "2026-08-01T12:00:00+08:00", flagged_count: 0 }], total: 1
+      reports: [{ report_id: "SAME-ID", member_id: "family", report_type: "其它医疗报告", report_name: "family-报告", report_time: "2026-08-01T12:00:00+08:00", flagged_count: 0 }], total: 1
     } }));
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/health/family");
     const overview = page.getByRole("region", { name: "妈妈的健康档案概览", exact: true });
     await expect(overview).toBeVisible();
-    await page.getByRole("button", { name: "打开报告：其它报告 - family-报告", exact: true }).click();
+    await page.getByRole("button", { name: "打开医疗报告：family-报告", exact: true }).click();
     await expect(page).toHaveURL(/\/reports\/family\/SAME-ID$/);
     await expect(page.locator(".report-detail-column")).toBeVisible();
     await expect(page.locator(".reports-list-toolbar")).toHaveText("健康档案");
@@ -557,7 +584,7 @@ for (const width of [390, 820, 1280]) {
       await page.locator(".reports-detail-toolbar").getByRole("button", { name: "返回上一级" }).click();
       await expect(page).toHaveURL(/\/health\/family$/);
       await expect(overview).toBeVisible();
-      await expect(page.getByRole("button", { name: "新增报告", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "创建医疗报告", exact: true })).toBeVisible();
     } else {
       await expect(overview).toBeVisible();
     }
@@ -571,3 +598,171 @@ for (const width of [390, 820, 1280]) {
     await expect(page.locator(".health-member-sections button")).toHaveCount(4);
   });
 }
+
+
+test("medical history failure retains draft, retries latest text and never changes another member", async ({ page }) => {
+  const state = initialState();
+  await mockApi(page, state);
+  let fail = true;
+  await page.route("**/api/members/family/medical-history", async route => {
+    if (route.request().method() === "PATCH" && fail) return route.fulfill({ status: 503, json: { detail: { message: "既往史保存暂时失败" } } });
+    return route.fallback();
+  });
+  await page.goto("/health/family");
+  await page.getByRole("button", { name: "查看妈妈的个人信息", exact: true }).click();
+  const history = page.getByRole("region", { name: "既往史", exact: true });
+  const field = history.getByRole("textbox", { name: "过敏史", exact: true });
+  await field.fill("待保存内容");
+  await expect(history.getByRole("alert")).toContainText("既往史保存暂时失败");
+  await expect(field).toHaveValue("待保存内容");
+  fail = false;
+  await field.fill("明确修正内容");
+  await expect.poll(() => state.histories.family?.allergy_history.text).toBe("明确修正内容");
+  await page.goto("/health/self");
+  await page.getByRole("button", { name: "查看本人的个人信息", exact: true }).click();
+  await expect(history.getByRole("textbox", { name: "过敏史", exact: true })).toHaveValue("");
+  await page.goto("/health/shared");
+  await page.getByRole("button", { name: "查看owner 本人的个人信息", exact: true }).click();
+  await expect(history.getByText("未记录", { exact: true })).toHaveCount(8);
+  await expect(history.getByRole("textbox")).toHaveCount(0);
+});
+
+test("failed member deletion preserves pending history and composition saves only committed text", async ({ page }) => {
+  const state = initialState();
+  await mockApi(page, state);
+  await page.route("**/api/members/family", async route => {
+    if (route.request().method() === "DELETE") return route.fulfill({ status: 503, json: { detail: { message: "删除暂时失败" } } });
+    return route.fallback();
+  });
+  await page.goto("/health/family");
+  await page.getByRole("button", { name: "查看妈妈的个人信息", exact: true }).click();
+  const field = page.getByRole("region", { name: "既往史", exact: true }).getByRole("textbox", { name: "过敏史", exact: true });
+  await field.dispatchEvent("compositionstart");
+  await field.fill("中文输入中");
+  await page.waitForTimeout(500);
+  expect(state.requests.filter(value => value === "PATCH /members/family/medical-history")).toHaveLength(0);
+  await field.dispatchEvent("compositionend");
+  await page.getByRole("button", { name: "删除成员", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("删除暂时失败");
+  await expect.poll(() => state.histories.family?.allergy_history.text).toBe("中文输入中");
+  await expect(field).toHaveValue("中文输入中");
+});
+
+for (const destination of ["page", "member", "log-list"] as const) {
+  test(`medical history blocks ${destination} navigation on save failure and retries before leaving`, async ({ page }) => {
+    const state = initialState();
+    await mockApi(page, state);
+    await page.route("**/api/members/family/medical-logs**", route => route.fulfill({ json: { member_id: "family", medical_logs: [] } }));
+    let fail = true;
+    let attempts = 0;
+    await page.route("**/api/members/family/medical-history", async route => {
+      if (route.request().method() === "PATCH") {
+        attempts++;
+        if (fail) return route.fulfill({ status: 503, json: { detail: { message: "既往史保存暂时失败" } } });
+      }
+      return route.fallback();
+    });
+    const path = destination === "log-list" ? "/health/family/medical-logs" : "/health/family";
+    await page.goto(path);
+    await page.getByRole("button", { name: "查看妈妈的个人信息", exact: true }).click();
+    const history = page.getByRole("region", { name: "既往史", exact: true });
+    const field = history.getByRole("textbox", { name: "过敏史", exact: true });
+    await field.fill("离开前需要保存的内容");
+    await expect(history.getByRole("alert")).toContainText("既往史保存暂时失败");
+    const leave = async () => {
+      if (destination === "member") await choose(page, "本人 · 默认成员");
+      else await page.getByRole("button", { name: destination === "page" ? "我的收藏" : "健康日记", exact: true }).click();
+    };
+    const previousAttempts = attempts;
+    await leave();
+    await expect.poll(() => attempts).toBeGreaterThan(previousAttempts);
+    await expect(page).toHaveURL(path);
+    await expect(field).toHaveValue("离开前需要保存的内容");
+    await expect(field).toBeEnabled();
+    fail = false;
+    await leave();
+    await expect.poll(() => state.histories.family?.allergy_history.text).toBe("离开前需要保存的内容");
+    await expect(history).toHaveCount(0);
+    expect(state.histories.self?.allergy_history.text ?? null).toBeNull();
+  });
+}
+
+test("medical history follows group spacing and grows and shrinks when the viewport changes", async ({ page }) => {
+  const state = initialState();
+  const text = "用于验证自动换行与完整显示的既往史测试内容。".repeat(30);
+  state.histories.family = Object.fromEntries(MEDICAL_HISTORY_FIELDS.map(([field]) => [field, { text: field === "past_medical_history" ? text : null, updated_at: null }]));
+  await mockApi(page, state);
+  await page.goto("/health/family");
+  await page.getByRole("button", { name: "查看妈妈的个人信息", exact: true }).click();
+  const history = page.getByRole("region", { name: "既往史", exact: true });
+  const field = history.getByRole("textbox", { name: "既往疾病史", exact: true });
+  await expect(field).toHaveValue(text);
+  const gaps = await page.locator(".member-information-scroll").evaluate(pane => {
+    const base = pane.children[0].getBoundingClientRect();
+    const heading = pane.querySelector(".group-heading")!.getBoundingClientRect();
+    const list = pane.querySelector(".member-history .grouped-object-list")!.getBoundingClientRect();
+    return [heading.top - base.bottom, list.top - heading.bottom];
+  });
+  expect(gaps).toEqual([15, 5]);
+  const overflow = () => field.evaluate(area => area.scrollHeight - area.clientHeight);
+  await expect.poll(overflow).toBeLessThanOrEqual(1);
+  const height = await field.evaluate(area => area.clientHeight);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(overflow).toBeLessThanOrEqual(1);
+  await expect.poll(() => field.evaluate(area => area.clientHeight)).toBeGreaterThan(height);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect.poll(() => field.evaluate(area => area.clientHeight)).toBe(height);
+});
+
+test("read-only medical history aligns short values to the left and wraps long text", async ({ page }) => {
+  const state = initialState();
+  state.histories.shared = Object.fromEntries(MEDICAL_HISTORY_FIELDS.map(([field]) => [field, {
+    text: field === "past_medical_history" ? "只读长文本换行测试。".repeat(30) : "不详", updated_at: null
+  }]));
+  await mockApi(page, state);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/health/shared");
+  await page.getByRole("button", { name: "查看owner 本人的个人信息", exact: true }).click();
+  const history = page.getByRole("region", { name: "既往史", exact: true });
+  await expect(history.getByRole("textbox")).toHaveCount(0);
+  const positions = await history.locator(".field-value").evaluateAll(values => values.map(value => {
+    const range = document.createRange();
+    range.setStart(value.firstChild!, 0);
+    range.setEnd(value.firstChild!, 1);
+    return { offset: range.getBoundingClientRect().left - value.getBoundingClientRect().left, overflow: value.scrollHeight - value.clientHeight };
+  }));
+  expect(positions).toHaveLength(8);
+  for (const position of positions) {
+    expect(Math.abs(position.offset)).toBeLessThanOrEqual(1);
+    expect(position.overflow).toBeLessThanOrEqual(1);
+  }
+});
+
+
+test('birth date offers today and unknown without long-term and preserves an empty date', async ({page}) => {
+ const state = initialState();
+ await mockApi(page, state);
+ await page.clock.setFixedTime(new Date('2026-09-08T12:05:00'));
+ await page.goto('/health/family');
+ await page.getByRole('button',{name:'查看妈妈的个人信息',exact:true}).click();
+ const trigger = page.getByRole('button',{name:'出生日期',exact:true});
+ const picker = page.getByRole('dialog',{name:'出生日期选择器',exact:true});
+ await trigger.click();
+ await expect(picker.getByRole('button',{name:'长期',exact:true})).toHaveCount(0);
+ await picker.getByRole('button',{name:'今天',exact:true}).click();
+ await picker.getByRole('button',{name:'完成',exact:true}).click();
+ await expect.poll(() => state.members[1].birth_date).toBe('2026-09-08');
+ await trigger.click();
+ await picker.getByRole('button',{name:'未知',exact:true}).click();
+ await expect(trigger).toHaveText('未知');
+ await expect.poll(() => state.members[1].birth_date).toBeNull();
+ await page.reload();
+ await page.getByRole('button',{name:'查看妈妈的个人信息',exact:true}).click();
+ await trigger.click();
+ await expect(picker.getByRole('button',{name:'未知',exact:true})).toHaveAttribute('aria-pressed','true');
+ await expect(picker.locator('[aria-selected="true"]')).toHaveCount(0);
+ await page.getByLabel('成员名称',{exact:true}).click();
+ await expect(picker).toHaveCount(0);
+ await expect(page.getByLabel('成员名称',{exact:true})).toBeFocused();
+ expect(state.members[1].birth_date).toBeNull();
+});

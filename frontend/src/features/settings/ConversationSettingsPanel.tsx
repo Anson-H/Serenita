@@ -1,3 +1,4 @@
+import { navigationLabels } from "../../components/navigationLabels";
 import { GroupedList } from "../../components/GroupedList";
 import { SelectPopover } from "../../components/SelectPopover";
 import { Switch } from "../../components/Switch";
@@ -43,7 +44,7 @@ export function ConversationSettingsList({
     <SettingsListPanel
       bodyClassName="conversation-settings-list-body"
       className="conversation-settings-list"
-      title="聊天设置"
+      title={navigationLabels.conversation}
       titleId="conversation-settings-list-title"
     >
       <GroupedList
@@ -82,6 +83,7 @@ export function ConversationSettingsDetail({
   showContextWindowUsage,
   showRelatedContent,
   showTokenUsage,
+  showModelIdentity,
   toolDisplayTypes,
   updateBaseContextDisplayMode,
   updateComposerSubmitShortcut,
@@ -89,6 +91,7 @@ export function ConversationSettingsDetail({
   updateShowRelatedContent,
   updateShowContextWindowUsage,
   updateShowTokenUsage,
+  updateShowModelIdentity,
   updateToolDisplayType
 }: {
   activeSection: ConversationSettingsSection;
@@ -98,6 +101,7 @@ export function ConversationSettingsDetail({
   showContextWindowUsage: boolean;
   showRelatedContent: boolean;
   showTokenUsage: boolean;
+  showModelIdentity: boolean;
   toolDisplayTypes: ToolExecutionDisplayType[];
   updateBaseContextDisplayMode: (
     contextType: BaseContextAssemblyType,
@@ -108,6 +112,7 @@ export function ConversationSettingsDetail({
   updateShowRelatedContent: (visible: boolean) => void;
   updateShowContextWindowUsage: (visible: boolean) => void;
   updateShowTokenUsage: (visible: boolean) => void;
+  updateShowModelIdentity: (visible: boolean) => void;
   updateToolDisplayType: (type: ToolExecutionDisplayType, visible: boolean) => void;
 }) {
   return (
@@ -143,6 +148,16 @@ export function ConversationSettingsDetail({
       {activeSection === "response" ? (
         <>
           <GroupedList layout="fields" className="settings-control-list conversation-settings-option-list" density="standard">
+            <SettingsControlRow
+              control={(
+                <Switch
+                  checked={showModelIdentity}
+                  label="显示模型标识"
+                  onChange={updateShowModelIdentity}
+                />
+              )}
+              label="显示模型标识"
+            />
             <SettingsControlRow
               control={(
                 <Switch

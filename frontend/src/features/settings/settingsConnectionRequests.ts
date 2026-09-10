@@ -1,28 +1,29 @@
-
-type ConnectionTestRequestIdsRef = {
-  current: Map<string, number>;
+type ConnectionTestRequestsRef = {
+  current: Map<string, AbortController>;
 };
 
 export function beginConnectionTestRequest(
-  requestIdsRef: ConnectionTestRequestIdsRef,
+  requestsRef: ConnectionTestRequestsRef,
   providerId: string
 ) {
-  const requestId = (requestIdsRef.current.get(providerId) ?? 0) + 1;
-  requestIdsRef.current.set(providerId, requestId);
-  return requestId;
+  invalidateConnectionTestRequest(requestsRef, providerId);
+  const request = new AbortController();
+  requestsRef.current.set(providerId, request);
+  return request;
 }
 
 export function invalidateConnectionTestRequest(
-  requestIdsRef: ConnectionTestRequestIdsRef,
+  requestsRef: ConnectionTestRequestsRef,
   providerId: string
 ) {
-  beginConnectionTestRequest(requestIdsRef, providerId);
+  requestsRef.current.get(providerId)?.abort();
+  requestsRef.current.delete(providerId);
 }
 
 export function connectionTestRequestIsCurrent(
-  requestIdsRef: ConnectionTestRequestIdsRef,
+  requestsRef: ConnectionTestRequestsRef,
   providerId: string,
-  requestId: number
+  request: AbortController
 ) {
-  return requestIdsRef.current.get(providerId) === requestId;
+  return requestsRef.current.get(providerId) === request;
 }

@@ -5,6 +5,8 @@ import {
 } from "../../api/client";
 
 const capabilityProbeLabels: Record<string, string> = {
+  independent: "独立向量", fusion: "融合向量", batch: "批量输入",
+  image: "图片", audio: "音频", video: "视频", document: "文档",
   text: "文本",
   tool_calling: "工具调用",
   image_input: "图片输入",
@@ -48,6 +50,7 @@ function capabilityModeSummary(
 }
 
 export function capabilityProbeSummary(checks: ModelCapabilityProbeResponse["checks"]) {
+  if (checks.embedding) return capabilityModeSummary("向量能力", checks.embedding);
   return [
     capabilityModeSummary("思考档位", Object.fromEntries(
       Object.entries(checks.thinking_modes).map(([mode, status]) => [

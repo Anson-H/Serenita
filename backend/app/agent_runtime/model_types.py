@@ -168,6 +168,11 @@ class AssistantModelOutput:
     stop_reason: str = "end_turn"
     raw_content: str = ""
 
+    @property
+    def has_final_stop(self) -> bool:
+        """The provider reported a complete answer, rather than a partial output."""
+        return self.stop_reason in {"stop", "end_turn", "stop_sequence", "completed"}
+
 @dataclass(frozen=True)
 class ModelStreamChunk:
     content_delta: str = ""

@@ -1,3 +1,4 @@
+import {useOptionActivation} from "./useOptionActivation";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { SelectMenuLayout } from "../utils/popoverPosition";
@@ -34,6 +35,7 @@ export function SelectPopover<Value extends string>({
     picker.close(modality);
     void onChange(optionValue);
   }
+  const activation = useOptionActivation(select);
   return (
     <div className={["select-popover", className].filter(Boolean).join(" ")} data-density={density}
       onBlur={picker.onBlur} ref={picker.pickerRef}>
@@ -45,7 +47,7 @@ export function SelectPopover<Value extends string>({
         <ChevronDownIcon className="select-popover-icon" />
       </button>
       {picker.open && typeof document !== "undefined" ? createPortal(
-        <GroupedList density="standard" aria-label={ariaLabel + "候选项"} className="select-popover-options"
+        <GroupedList density="standard" aria-label={ariaLabel + "候选项"} className="select-popover-options scroll-balanced"
           data-modal-focus-scope="true" data-placement={picker.position?.placement}
           id={picker.listboxId} onBlur={picker.onBlur} ref={picker.optionsRef} role="listbox"
           style={{ left: picker.position?.left ?? 0, top: picker.position?.top ?? 0,
@@ -54,12 +56,7 @@ export function SelectPopover<Value extends string>({
             visibility: picker.position ? undefined : "hidden" }}>
           {options.map(option => (
             <button aria-selected={option.value === value} className="select-popover-option"
-              key={option.value} onClick={event => { if (event.detail === 0) select(option.value, "keyboard"); }}
-              onKeyDown={picker.moveOptionFocus} onPointerDown={event => {
-                if (event.button !== 0) return;
-                event.preventDefault();
-                select(option.value, "pointer");
-              }} role="option" type="button">
+              key={option.value} {...activation(option.value)} onKeyDown={picker.moveOptionFocus} role="option" type="button">
               <span>{option.label}</span>
             </button>
           ))}

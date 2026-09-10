@@ -24,35 +24,15 @@ def service(tmp_path, monkeypatch):
     )
 
 
-def validate_text(service, *, text="报告文本", report=None, message_id="message"):
-    validated = service.validate_parsed_reports(
-        service.scope.member_id,
-        reports=[
-            {
-                "sources": [{"source_type": "conversation_text"}],
-                "report": report or report_payload(),
-            }
-        ],
-        source_text=text,
-        session_id="session",
-        source_message_id=message_id,
-        visible_attachments={},
-        authorized_report_sources={},
-    )
-    trusted_source = {**validated["sources"][0], "source_text": text}
-    return validated, validated["reports"][0]["report"], trusted_source
+def write_arguments(*, text="医疗报告文本", report=None, message_id="message"):
+    return dict(report=report or report_payload(),
+                sources=[{"source_type": "conversation_text"}],
+                source_text=text, session_id="session", source_message_id=message_id,
+                visible_attachments={}, authorized_report_sources={})
 
 
-def create(service, *, text="报告文本", report=None, message_id="message"):
-    _validated, parsed, source = validate_text(
-        service, text=text, report=report, message_id=message_id
-    )
-    return service.create_report_from_parsed(
-        service.scope.member_id,
-        parsed_report=parsed,
-        parsed_sources=[source],
-        session_id="session",
-    )
+def create(service, **arguments):
+    return service.create_report_from_parsed(service.scope.member_id, **write_arguments(**arguments))
 
 
 @pytest.mark.parametrize("flag_text", ["未标记", "正常", "异常", "偏高", "偏低"])
@@ -85,111 +65,52 @@ def test_lab_flag_rejects_arrow_symbols(service):
 def test_missing_lab_flag_defaults_to_unmarked(service):
     payload = report_payload()
     payload["lab_test_results"][0].pop("flag_text")
-    _validated, parsed, _source = validate_text(service, report=payload)
-    assert parsed["lab_test_results"][0]["flag_text"] == "未标记"
+    created = create(service, report=payload)
+    detail = service.get_report(service.scope.member_id, created["report_id"])
+    assert detail["lab_test_results"][0]["flag_text"] == "未标记"
 
 
-def test_unified_validation_is_read_only_and_server_binds_text(service):
+def test_create_validates_and_persists_exact_bound_text(service):
     text = "2026-08-08 肝功能 ALT 65 U/L"
-    before_reports_db = service.paths.reports_db(account_id_for("demo")).exists()
-    validated, parsed, _source = validate_text(service, text=text)
-    assert validated["sources"] == [
-        {
-            "source_index": 0,
-            "source_type": "conversation_text",
-            "session_id": "session",
-            "message_id": "message",
-            "mime_type": "text/plain",
-            "sha256": hashlib.sha256(text.encode()).hexdigest(),
-        }
-    ]
-    assert validated["reports"][0]["source_indexes"] == [0]
-    assert parsed["report_name"] == "肝功能"
-    assert service.paths.reports_db(account_id_for("demo")).exists() is before_reports_db
-    assert service.list_reports(service.scope.member_id)["total"] == 0
+    created = create(service, text=text)
+    detail = service.get_report(service.scope.member_id, created["report_id"])
+    source = detail["sources"][0]
+    path, _, _ = service.source_download(service.scope.member_id, created["report_id"], source["resource_id"])
+    assert path.read_text() == text
+    assert service.resolve_report_source(service.scope.member_id, created["report_id"], source["resource_id"])["sha256"] == hashlib.sha256(text.encode()).hexdigest()
+    assert detail["report_name"] == "肝功能"
 
 
-def test_validation_deduplicates_across_reports_and_rejects_local_duplicate(service):
-    validated = service.validate_parsed_reports(
-        service.scope.member_id,
-        reports=[
-            {
-                "sources": [{"source_type": "conversation_text"}],
-                "report": report_payload(),
-            },
-            {
-                "sources": [{"source_type": "conversation_text"}],
-                "report": report_payload(report_type="检查报告"),
-            },
-        ],
-        source_text="同一消息含两份报告",
-        session_id="session",
-        source_message_id="message",
-        visible_attachments={},
-        authorized_report_sources={},
-    )
-    assert len(validated["sources"]) == 1
-    assert [item["source_indexes"] for item in validated["reports"]] == [[0], [0]]
-
+def test_writes_share_sources_and_reject_duplicate_references(service):
+    first = create(service, text="同一消息含两份医疗报告")
+    second = create(service, text="同一消息含两份医疗报告", report=report_payload(report_type="检查报告"))
+    details = [service.get_report(service.scope.member_id, value["report_id"]) for value in (first, second)]
+    assert details[0]["sources"][0]["resource_id"] == details[1]["sources"][0]["resource_id"]
+    arguments = write_arguments(text="重复")
+    arguments["sources"] *= 2
     with pytest.raises(ValueError, match="不能重复绑定"):
-        service.validate_parsed_reports(
-            service.scope.member_id,
-            reports=[
-                {
-                    "sources": [
-                        {"source_type": "conversation_text"},
-                        {"source_type": "conversation_text"},
-                    ],
-                    "report": report_payload(),
-                }
-            ],
-            source_text="重复",
-            session_id="session",
-            source_message_id="message",
-            visible_attachments={},
-            authorized_report_sources={},
-        )
+        service.create_report_from_parsed(service.scope.member_id, **arguments)
+    assert service.list_reports(service.scope.member_id)["total"] == 2
 
 
-def test_validation_rejects_unauthorized_and_mixed_category_sources(service):
+def test_write_rejects_unauthorized_and_mixed_category_sources(service):
+    arguments = write_arguments()
+    arguments["sources"] = [{"source_type": "conversation_attachment", "resource_id": "forged"}]
     with pytest.raises(PermissionError, match="当前分支可见消息"):
-        service.validate_parsed_reports(
-            service.scope.member_id,
-            reports=[
-                {
-                    "sources": [
-                        {
-                            "source_type": "conversation_attachment",
-                            "resource_id": "forged",
-                        }
-                    ],
-                    "report": report_payload(),
-                }
-            ],
-            source_text="",
-            session_id="session",
-            source_message_id="message",
-            visible_attachments={},
-            authorized_report_sources={},
-        )
+        service.create_report_from_parsed(service.scope.member_id, **arguments)
     mixed = report_payload()
-    mixed["lab_test_results"].append(
-        {
-            **mixed["lab_test_results"][0],
-            "item_id": "item-creatinine",
-            "item_name_zh": "肌酐",
-            "category_name": "肾功能",
-        }
-    )
+    mixed["lab_test_results"].append({**mixed["lab_test_results"][0], "item_id": "item-creatinine", "item_name_zh": "肌酐", "category_name": "肾功能"})
     with pytest.raises(ValueError, match="只能包含一个"):
-        validate_text(service, report=mixed)
+        create(service, report=mixed)
+    assert service.list_reports(service.scope.member_id)["total"] == 0
+    assert not list(service.paths.report_attachments_dir(service.account_id).glob("*"))
 
 
 def test_validation_requires_lab_name_to_match_single_category(service):
     payload = report_payload()
-    payload["report_name"] = "生化报告"
+    payload["report_name"] = "生化医疗报告"
     with pytest.raises(ValueError, match="完全一致"):
-        validate_text(service, report=payload)
+        create(service, report=payload)
 
 
 def test_validation_rejects_duplicate_item_id_in_one_report(service):
@@ -201,273 +122,109 @@ def test_validation_rejects_duplicate_item_id_in_one_report(service):
         }
     )
     with pytest.raises(ValueError, match="不能重复包含同一个 item_id"):
-        validate_text(service, report=payload)
+        create(service, report=payload)
 
 
-def test_validation_does_not_query_dictionary_or_write(service):
-    create(service, text="既有肝功能报告", message_id="existing")
+def test_invalid_write_preserves_dictionary_reports_and_files(service):
+    create(service, text="既有医疗报告", message_id="existing")
     dictionary_before = service.repository.lab_dictionary(service.scope.member_id)
     reports_before = service.list_reports(service.scope.member_id)
-
+    files_before = set(service.paths.report_attachments_dir(service.account_id).glob("*"))
     payload = report_payload()
-    payload["report_name"] = "肝脏酶学"
-    payload["lab_test_results"][0]["item_name_zh"] = "谷丙转氨酶"
-    payload["lab_test_results"][0]["aliases"] = []
-    payload["lab_test_results"][0]["category_name"] = "肝脏酶学"
-
-    validated, _parsed, _source = validate_text(
-        service,
-        text="仅校验最终结构",
-        report=payload,
-        message_id="related-category",
-    )
-    assert validated["reports"][0]["report"]["lab_test_results"][0]["item_id"] == "item-alt"
+    payload["report_name"] = "名称不匹配"
+    with pytest.raises(ValueError, match="完全一致"):
+        create(service, text="无效内容", report=payload, message_id="invalid")
     assert service.repository.lab_dictionary(service.scope.member_id) == dictionary_before
     assert service.list_reports(service.scope.member_id) == reports_before
-    assert service.repository.lab_dictionary(service.scope.member_id) == dictionary_before
-    assert service.list_reports(service.scope.member_id) == reports_before
+    assert set(service.paths.report_attachments_dir(service.account_id).glob("*")) == files_before
 
 
 def test_create_persists_all_sources_in_order_with_first_primary(service, tmp_path):
-    attachment = tmp_path / "report.jpg"
-    content = b"\xff\xd8\xffreport"
+    attachment = tmp_path / 'report.jpg'
+    content = b'\xff\xd8\xffreport'
     attachment.write_bytes(content)
-    text = "文本与图片共同构成一份报告"
-    validated = service.validate_parsed_reports(
-        service.scope.member_id,
-        reports=[
-            {
-                "sources": [
-                    {"source_type": "conversation_text"},
-                    {
-                        "source_type": "conversation_attachment",
-                        "resource_id": "resource-one",
-                    },
-                ],
-                "report": report_payload(),
-            }
-        ],
-        source_text=text,
-        session_id="session",
-        source_message_id="message",
-        visible_attachments={
-            "resource-one": {
-                "resource_id": "resource-one",
-                "path": str(attachment),
-                "original_filename": "report.jpg",
-                "mime_type": "image/jpeg",
-                "sha256": hashlib.sha256(content).hexdigest(),
-            }
-        },
-        authorized_report_sources={},
-    )
-    trusted_sources = [
-        {**validated["sources"][0], "source_text": text},
-        {**validated["sources"][1], "path": str(attachment)},
-    ]
-    result = service.create_report_from_parsed(
-        service.scope.member_id,
-        parsed_report=validated["reports"][0]["report"],
-        parsed_sources=trusted_sources,
-        session_id="session",
-    )
-    sources = service.get_report(service.scope.member_id, result["report_id"])["sources"]
+    text = '文本与图片共同构成一份医疗报告'
+    result = service.create_report_from_parsed(service.scope.member_id, source_text=text, session_id='session', source_message_id='message', visible_attachments={'resource-one': {'resource_id': 'resource-one', 'path': str(attachment), 'original_filename': 'report.jpg', 'mime_type': 'image/jpeg', 'sha256': hashlib.sha256(content).hexdigest()}}, authorized_report_sources={}, sources=[{'source_type': 'conversation_text'}, {'source_type': 'conversation_attachment', 'resource_id': 'resource-one'}], report=report_payload())
+    sources = service.get_report(service.scope.member_id, result['report_id'])['sources']
     assert len(sources) == 2
-    assert sources[0]["is_primary"] is True
-    assert sources[0]["mime_type"] == "text/plain"
-    assert sources[1]["is_primary"] is False
-    image_resource_id = sources[1]["resource_id"]
-    stored_image = service.repository.source_file(
-        service.scope.member_id, image_resource_id
-    )
+    assert sources[0]['is_primary'] is True
+    assert sources[0]['mime_type'] == 'text/plain'
+    assert sources[1]['is_primary'] is False
+    image_resource_id = sources[1]['resource_id']
+    stored_image = service.repository.source_file(service.scope.member_id, image_resource_id)
     assert stored_image is not None
-    assert stored_image["relative_path"] == (
-        f"reports/attachments/{image_resource_id}.jpg"
-    )
-    stored_path = (
-        service.paths.account_root(service.account_id)
-        / stored_image["relative_path"]
-    )
+    assert stored_image['relative_path'] == f'reports/attachments/{image_resource_id}.jpg'
+    stored_path = service.paths.account_root(service.account_id) / stored_image['relative_path']
     assert stored_path.resolve() != attachment.resolve()
     assert stored_path.read_bytes() == content
 
 
-def test_same_conversation_resource_id_in_different_sessions_stays_distinct(
-    service, tmp_path
-):
-    resource_ids: list[str] = []
+def test_same_conversation_resource_id_in_different_sessions_stays_distinct(service, tmp_path):
+    resource_ids = []
     for ordinal, session_id in enumerate(("session-one", "session-two"), start=1):
         attachment = tmp_path / f"conversation-{ordinal}.jpg"
         content = b"\xff\xd8\xff" + f"report-{ordinal}".encode()
         attachment.write_bytes(content)
-        created = service.create_report_from_parsed(
-            service.scope.member_id,
-            parsed_report=report_payload(),
-            parsed_sources=[
-                {
-                    "source_type": "conversation_attachment",
-                    "resource_id": "same-name.jpg",
-                    "path": str(attachment),
-                    "original_filename": "same-name.jpg",
-                    "mime_type": "image/jpeg",
-                    "sha256": hashlib.sha256(content).hexdigest(),
-                }
-            ],
-            session_id=session_id,
-        )
-        source = service.get_report(
-            service.scope.member_id, created["report_id"]
-        )["sources"][0]
-        resource_ids.append(source["resource_id"])
-
-    assert all(resource_id.startswith("RESOURCE-") for resource_id in resource_ids)
+        arguments = write_arguments()
+        arguments.update(session_id=session_id, sources=[{"source_type": "conversation_attachment", "resource_id": "same-name.jpg"}],
+            visible_attachments={"same-name.jpg": {"path": str(attachment), "original_filename": "same-name.jpg", "mime_type": "image/jpeg", "sha256": hashlib.sha256(content).hexdigest()}})
+        created = service.create_report_from_parsed(service.scope.member_id, **arguments)
+        resource_ids.append(service.get_report(service.scope.member_id, created["report_id"])["sources"][0]["resource_id"])
+    assert all(value.startswith("RESOURCE-") for value in resource_ids)
     assert len(set(resource_ids)) == 2
 
 
-def test_link_multiple_sources_preserves_primary(service):
+def test_link_sources_preserves_primary(service):
     created = create(service, text="首个来源", message_id="one")
     report_id = created["report_id"]
-    before_updated_at = service.get_report(service.scope.member_id, report_id)["updated_at"]
-    original_primary = service.get_report(service.scope.member_id, report_id)["sources"][0][
-        "resource_id"
-    ]
-    _first, parsed, source_one = validate_text(
-        service, text="第二来源", message_id="two"
-    )
-    _second, _parsed, source_two = validate_text(
-        service, text="第三来源", message_id="three"
-    )
-    service.link_parsed_report_sources(
-        service.scope.member_id,
-        parsed_report=parsed,
-        parsed_sources=[source_one, source_two],
-        target_report_id=report_id,
-        session_id="session",
-    )
-    sources = service.get_report(service.scope.member_id, report_id)["sources"]
-    after_updated_at = service.get_report(service.scope.member_id, report_id)["updated_at"]
-    assert len(sources) == 3
-    assert sources[0]["resource_id"] == original_primary
-    assert sources[0]["is_primary"] is True
-    assert after_updated_at > before_updated_at
+    before = service.get_report(service.scope.member_id, report_id)
+    for text, message_id in (("第二来源", "two"), ("第三来源", "three")):
+        service.link_parsed_report_sources(service.scope.member_id, target_report_id=report_id, **write_arguments(text=text, message_id=message_id))
+    after = service.get_report(service.scope.member_id, report_id)
+    assert len(after["sources"]) == 3
+    assert after["sources"][0]["resource_id"] == before["sources"][0]["resource_id"]
+    assert after["sources"][0]["is_primary"] is True
+    assert after["updated_at"] > before["updated_at"]
 
 
 def test_all_import_write_tools_proceed_without_corpus_observation(service):
-    _validated, parsed, source = validate_text(service, text="创建来源", message_id="one")
-    created = service.create_report_from_parsed(
-        service.scope.member_id,
-        parsed_report=parsed,
-        parsed_sources=[source],
-        session_id="session",
-    )
-    report_id = created["report_id"]
-
-    _validated, parsed, link_source = validate_text(
-        service, text="关联来源", message_id="two"
-    )
-    linked = service.link_parsed_report_sources(
-        service.scope.member_id,
-        parsed_report=parsed,
-        parsed_sources=[link_source],
-        target_report_id=report_id,
-        session_id="session",
-    )
-    assert linked["report_id"] == report_id
-
+    arguments = write_arguments(text='创建来源', message_id='one')
+    created = service.create_report_from_parsed(service.scope.member_id, **arguments)
+    report_id = created['report_id']
+    arguments = write_arguments(text='关联来源', message_id='two')
+    linked = service.link_parsed_report_sources(service.scope.member_id, target_report_id=report_id, **arguments)
+    assert linked['report_id'] == report_id
     merge_payload = report_payload()
-    merge_payload["lab_test_results"].append(
-        {
-            "item_id": "item-ast",
-            "item_name_zh": "天冬氨酸氨基转移酶",
-            "aliases": ["谷草转氨酶"],
-            "category_name": "肝功能",
-            "result_text": "30 U/L",
-            "reference_text": "15-40 U/L",
-            "flag_text": "正常",
-        }
-    )
-    _validated, parsed, merge_source = validate_text(
-        service, text="合并来源", report=merge_payload, message_id="three"
-    )
-    merged = service.merge_parsed_report(
-        service.scope.member_id,
-        parsed_report=parsed,
-        parsed_sources=[merge_source],
-        target_report_id=report_id,
-        session_id="session",
-    )
-    assert merged["report_id"] == report_id
-    assert merged["changed"] is True
-    assert merged["added_item_ids"] == ["item-ast"]
+    merge_payload['lab_test_results'].append({'item_id': 'item-ast', 'item_name_zh': '天冬氨酸氨基转移酶', 'aliases': ['谷草转氨酶'], 'category_name': '肝功能', 'result_text': '30 U/L', 'reference_text': '15-40 U/L', 'flag_text': '正常'})
+    arguments = write_arguments(text='合并来源', report=merge_payload, message_id='three')
+    merged = service.merge_parsed_report(service.scope.member_id, target_report_id=report_id, **arguments)
+    assert merged['report_id'] == report_id
+    assert merged['changed'] is True
+    assert merged['added_item_ids'] == ['item-ast']
 
 
 def test_conflicting_merge_does_not_partially_write(service):
-    created = create(service, text="基础", message_id="base")
-    report_id = created["report_id"]
-    _validated, parsed, source = validate_text(
-        service,
-        text="冲突",
-        report=report_payload(result="99 U/L"),
-        message_id="conflict",
-    )
+    created = create(service, text='基础', message_id='base')
+    report_id = created['report_id']
+    arguments = write_arguments(text='冲突', report=report_payload(result='99 U/L'), message_id='conflict')
     before = service.get_report(service.scope.member_id, report_id)
     with pytest.raises(ReportImportWriteConflictError):
-        service.merge_parsed_report(
-            service.scope.member_id,
-            parsed_report=parsed,
-            parsed_sources=[source],
-            target_report_id=report_id,
-            session_id="session",
-        )
+        service.merge_parsed_report(service.scope.member_id, target_report_id=report_id, **arguments)
     assert service.get_report(service.scope.member_id, report_id) == before
 
 
 def test_evidence_sources_authorize_reclassification_without_time_change(service):
     created = create(service)
-    report_id = created["report_id"]
+    report_id = created['report_id']
     before = service.get_report(service.scope.member_id, report_id)
-    evidence = service.query_evidence(
-        service.scope.member_id,
-        report_ids=[report_id],
-        fields=["sources"],
-    )
-    source = evidence["reports"][0]["sources"][0]
-    target = report_payload(report_type="检查报告")
-    target["report_time"] = "2030-01-01T00:00:00+00:00"
-    validated = service.validate_parsed_reports(
-        service.scope.member_id,
-        reports=[
-            {
-                "sources": [
-                    {
-                        "source_type": "report_source",
-                        "read_call_id": "read-one",
-                        "report_id": report_id,
-                        "resource_id": source["resource_id"],
-                    }
-                ],
-                "report": target,
-            }
-        ],
-        source_text="",
-        session_id="session",
-        source_message_id="message",
-        visible_attachments={},
-        authorized_report_sources={
-            f"read-one\0{report_id}\0{source['resource_id']}": source
-        },
-    )
-    updated = service.reclassify_report(
-        service.scope.member_id,
-        report_id,
-        parsed_report=validated["reports"][0]["report"],
-        parsed_sources=[validated["sources"][0]],
-    )
-    assert updated["report_type"] == "检查报告"
-    assert updated["report_time"] == before["report_time"]
-    assert [item["resource_id"] for item in updated["sources"]] == [
-        item["resource_id"] for item in before["sources"]
-    ]
+    evidence = service.query_evidence(service.scope.member_id, report_ids=[report_id], fields=['sources'])
+    source = evidence['reports'][0]['sources'][0]
+    target = report_payload(report_type='检查报告')
+    target['report_time'] = '2030-01-01T00:00:00+00:00'
+    updated = service.reclassify_report(service.scope.member_id, report_id, source_text='', session_id='session', source_message_id='message', visible_attachments={}, authorized_report_sources={f"read-one\x00{report_id}\x00{source['resource_id']}": source}, sources=[{'source_type': 'report_source', 'read_call_id': 'read-one', 'report_id': report_id, 'resource_id': source['resource_id']}], report=target)
+    assert updated['report_type'] == '检查报告'
+    assert updated['report_time'] == before['report_time']
+    assert [item['resource_id'] for item in updated['sources']] == [item['resource_id'] for item in before['sources']]
 
 
 def test_analysis_write_persists_markdown_and_binding(service):
@@ -514,7 +271,7 @@ def test_report_edit_only_invalidates_its_own_analysis(service):
         service.write_report_analysis(
             service.scope.member_id,
             report_id=report_id,
-            analysis_content="当前报告解读。",
+            analysis_content="当前医疗报告解读。",
         )
 
     service.update_report_field(
@@ -534,7 +291,7 @@ def test_update_report_fields_updates_multiple_fields_in_one_transaction(service
     service.write_report_analysis(
         service.scope.member_id,
         report_id=report_id,
-        analysis_content="当前报告解读。",
+        analysis_content="当前医疗报告解读。",
     )
 
     updated = service.update_report_fields(
@@ -563,7 +320,7 @@ def test_update_report_fields_rolls_back_when_any_change_is_invalid(service):
             service.scope.member_id,
             report_id,
             updates=[
-                {"field": "exam_findings", "value": "不应保留的修改"},
+                {"field": "exam_findings", "value": "不应保留的更新"},
                 {
                     "field": "lab_result",
                     "value": "10 U/L",
@@ -598,7 +355,7 @@ def test_add_lab_report_item_restores_dictionary_item_and_invalidates_analysis(s
     service.write_report_analysis(
         service.scope.member_id,
         report_id=report_id,
-        analysis_content="当前报告解读。",
+        analysis_content="当前医疗报告解读。",
     )
 
     updated = service.add_lab_report_item(
@@ -667,7 +424,7 @@ def test_add_lab_report_items_adds_multiple_results_in_one_transaction(service):
     service.write_report_analysis(
         service.scope.member_id,
         report_id=report_id,
-        analysis_content="当前报告解读。",
+        analysis_content="当前医疗报告解读。",
     )
 
     updated = service.add_lab_report_items(
@@ -766,7 +523,7 @@ def test_delete_lab_report_items_removes_multiple_targets_and_invalidates_analys
     service.write_report_analysis(
         service.scope.member_id,
         report_id=report_id,
-        analysis_content="当前报告解读。",
+        analysis_content="当前医疗报告解读。",
     )
 
     updated = service.delete_lab_report_items(
@@ -856,15 +613,15 @@ def test_report_resource_state_becomes_deleted_after_deletion(service):
 def test_read_report_catalog_supports_inclusive_date_bounds(service):
     early_report = report_payload()
     early_report["report_time"] = "2026-08-05T08:00:00+08:00"
-    create(service, text="较早报告", report=early_report)
+    create(service, text="较早医疗报告", report=early_report)
 
     middle_report = report_payload()
     middle_report["report_time"] = "2026-08-08T08:00:00+08:00"
-    middle = create(service, text="中间报告", report=middle_report)
+    middle = create(service, text="中间医疗报告", report=middle_report)
 
     late_report = report_payload()
     late_report["report_time"] = "2026-08-10T08:00:00+08:00"
-    create(service, text="较晚报告", report=late_report)
+    create(service, text="较晚医疗报告", report=late_report)
 
     bounded = service.read_report_catalog(
         service.scope.member_id,
@@ -970,6 +727,8 @@ def test_query_evidence_fields_projection_defaults_and_sources(service):
         "examination_report",
         "pathology_report",
         "surgery_report",
+        "outpatient_report",
+        "emergency_report",
         "other_report",
     }
     assert "sources" not in default_report
@@ -1055,3 +814,83 @@ def test_query_evidence_strips_redundant_nested_foreign_keys(service):
         "exam_diagnosis",
     }
     assert "report_id" not in examination
+
+
+@pytest.mark.parametrize("tool_name", ["create_report", "link_duplicate_sources", "merge_report", "reclassify_report"])
+def test_write_tools_validate_before_persistence_and_accept_corrected_content(service, tool_name):
+    from types import SimpleNamespace
+    from backend.app.plugins.medical_report.registry import build_tools
+    from backend.app.plugins.runtime_context import PluginRuntimeContext
+
+    created = create(service, message_id="original")
+    report_id = created["report_id"]
+    before = service.get_report(service.scope.member_id, report_id)
+    reports_before = service.list_reports(service.scope.member_id)
+    files_before = set(service.paths.report_attachments_dir(service.account_id).glob("*"))
+    dictionary_before = service.repository.lab_dictionary(service.scope.member_id)
+    tools = build_tools(runtime_context=PluginRuntimeContext(
+        account_id=service.account_id, member_id=service.scope.member_id,
+        event_recorder=lambda _event: None,
+        service_factory=lambda _name: service,
+    ))
+    tool = next(value for value in tools if value.name == tool_name)
+    ctx = SimpleNamespace(account_id=service.account_id, member_id=service.scope.member_id,
+        session_id="session", turn_id="turn", input_text="添加医疗报告原文",
+        memory={"current_message_id": "new-message", "visible_attachments": {}})
+    payload = report_payload()
+    arguments = {"report": payload, "sources": [{"source_type": "conversation_text"}]}
+    observations = []
+    if tool_name in {"link_duplicate_sources", "merge_report"}:
+        arguments["target_report_id"] = report_id
+    if tool_name == "merge_report":
+        payload["lab_test_results"].append({**payload["lab_test_results"][0], "item_id": "item-ast", "item_name_zh": "天冬氨酸氨基转移酶", "aliases": []})
+    if tool_name == "reclassify_report":
+        arguments["report_id"] = report_id
+        source = before["sources"][0]
+        arguments["sources"] = [{"source_type": "report_source", "read_call_id": "read-one", "report_id": report_id, "resource_id": source["resource_id"]}]
+        observations = [{"name": "read_report_information", "call_id": "read-one", "output": {"reports": [before]}}]
+    payload["report_name"] = "与分类不一致的名称"
+    with pytest.raises(ValueError, match="完全一致"):
+        tool.run(tool.bind_runtime_arguments(arguments, context=ctx, observations=observations))
+    assert service.get_report(service.scope.member_id, report_id) == before
+    assert service.list_reports(service.scope.member_id) == reports_before
+    assert service.repository.lab_dictionary(service.scope.member_id) == dictionary_before
+    assert set(service.paths.report_attachments_dir(service.account_id).glob("*")) == files_before
+    payload["report_name"] = "肝功能"
+    if tool_name == "reclassify_report":
+        arguments["report"] = report_payload(report_type="检查报告")
+    result = tool.run(tool.bind_runtime_arguments(arguments, context=ctx, observations=observations))
+    assert result.output["report_id"]
+    assert "resolved_context_items" not in result.effects
+    if tool_name == "reclassify_report":
+        assert result.output["report_type"] == "检查报告"
+        assert result.output["report_time"] == before["report_time"]
+        assert result.output["sources"] == before["sources"]
+    elif tool_name == "merge_report":
+        assert result.output["added_item_ids"] == ["item-ast"]
+    elif tool_name == "link_duplicate_sources":
+        after = service.get_report(service.scope.member_id, report_id)
+        assert len(after["sources"]) == 2
+        assert after["lab_test_results"] == before["lab_test_results"]
+    else:
+        assert service.list_reports(service.scope.member_id)["total"] == reports_before["total"] + 1
+
+
+@pytest.mark.parametrize("failure", ["unread", "changed", "missing"])
+def test_write_rechecks_saved_source_authorization_and_integrity(service, failure):
+    created = create(service)
+    report_id = created["report_id"]
+    before = service.get_report(service.scope.member_id, report_id)
+    source = before["sources"][0]
+    arguments = write_arguments(report=report_payload(report_type="检查报告"))
+    arguments["sources"] = [{"source_type": "report_source", "read_call_id": "read-one", "report_id": report_id, "resource_id": source["resource_id"]}]
+    if failure != "unread":
+        arguments["authorized_report_sources"] = {f"read-one\0{report_id}\0{source['resource_id']}": source}
+        path, _, _ = service.source_download(service.scope.member_id, report_id, source["resource_id"])
+        if failure == "changed":
+            path.write_text("已被更新")
+        else:
+            path.unlink()
+    with pytest.raises((PermissionError, ValueError, FileNotFoundError)):
+        service.reclassify_report(service.scope.member_id, report_id, **arguments)
+    assert service.get_report(service.scope.member_id, report_id) == before

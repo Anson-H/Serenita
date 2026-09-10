@@ -1,3 +1,7 @@
+import { NavigationTitle } from "../../components/NavigationTitle";
+import { ListCount } from "../../components/ListCount";
+import { navigationLabels } from "../../components/navigationLabels";
+import { EmptyState } from "../../components/EmptyState";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type {
   AddedModel,
@@ -56,9 +60,9 @@ export function RemoteModelPicker({
   remoteModels
 }: Props) {
   return (<div className="model-picker-backdrop dialog-viewport-backdrop">
-    <section aria-labelledby="model-picker-title" aria-modal="true" className="model-picker-modal dialog-viewport-surface dialog-title-ellipsis" ref={modelPickerDialogRef} role="dialog" tabIndex={-1}>
+    <section aria-labelledby="model-picker-title" aria-modal="true" className="model-picker-modal creation-dialog dialog-viewport-surface dialog-title-ellipsis" ref={modelPickerDialogRef} role="dialog" tabIndex={-1}>
       <header className="dialog-titlebar model-picker-header">
-        <h2 data-modal-initial-focus id="model-picker-title" tabIndex={-1}>添加模型</h2>
+        <NavigationTitle data-modal-initial-focus id="model-picker-title" tabIndex={-1} title={navigationLabels.addModel} />
         <button
           aria-label="关闭添加模型"
           className="control control--titlebar control--icon control--ghost icon-action-control secondary-button settings-icon-button titlebar-icon-control"
@@ -76,7 +80,7 @@ export function RemoteModelPicker({
         <input
           aria-label="搜索可添加模型"
           className="model-picker-search"
-          disabled={modelPickerLoading || Boolean(modelPickerError)}
+          disabled={modelPickerLoading}
           onChange={(event) => {
             const nextQuery = event.target.value;
             if (Boolean(normalizedModelPickerQuery) !== Boolean(nextQuery.trim())) {
@@ -154,7 +158,7 @@ export function RemoteModelPicker({
                         onClick={() => void toggleRemoteModel(model, added)}
                         title={added
                           ? removing ? "正在取消添加" : "取消添加"
-                          : adding ? "正在添加" : "添加模型"}
+                          : adding ? "正在添加" : navigationLabels.addModel}
                         type="button"
                       >
                         <span
@@ -175,17 +179,19 @@ export function RemoteModelPicker({
                 </section>
               );
             })}
+            <ListCount total={visibleRemoteModels.length} unit="个" label="模型" />
           </div>
         ) : null}
+        {!modelPickerLoading && modelPickerQuery.trim() && !remoteModels.some(model => model.remote_model_id === modelPickerQuery.trim()) && <button className="control control--secondary" type="button"
+          disabled={addingRemoteModelIds.includes(modelPickerQuery.trim()) || addedModels.some(model => model.provider_id === selectedProviderId && model.remote_model_id === modelPickerQuery.trim())}
+          onClick={() => void toggleRemoteModel({ model_type: "unknown", remote_model_id: modelPickerQuery.trim(), model_name: modelPickerQuery.trim(), thinking_modes: null, capability_profiles: null, supports_text: false, supports_tool_calling: false, file_mime_types: [], context_window_tokens: null, max_output_tokens: null, embedding_capabilities: null, embedding_dimensions: null, max_input_tokens: null, max_batch_size: null })}>
+          添加模型 ID：{modelPickerQuery.trim()}
+        </button>}
         {!modelPickerLoading && !modelPickerError && !visibleRemoteModels.length ? (
-          <p className="status-message">
-            {remoteModels.length ? "没有匹配的模型。" : "暂无可添加模型。"}
-          </p>
-        ) : null}
-        {!modelPickerLoading && !modelPickerError ? (
-          <p className="object-list-count">共 {visibleRemoteModels.length} 个模型</p>
+          <EmptyState title={remoteModels.length ? "没有匹配的模型。" : "暂无可添加模型。"} />
         ) : null}
       </div>
+      <footer className="dialog-action-bar"><button className="control control--primary" type="button" onClick={() => { setModelPickerQuery(""); setModelPickerOpen(false); }}><CheckIcon />完成</button></footer>
     </section>
   </div>);
 }

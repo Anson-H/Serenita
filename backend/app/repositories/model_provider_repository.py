@@ -1,8 +1,8 @@
 from contextlib import contextmanager
 
-from backend.app.model_capabilities import MODEL_DEFAULT_COLUMN_BY_PURPOSE
+from backend.app.domain.model_capabilities import MODEL_DEFAULT_COLUMN_BY_PURPOSE
 from backend.app.storage.model_codec import capability_column_values
-from backend.app.storage.config_database import initialize_config_database
+from backend.app.storage.config_database import initialize_config_database, CONFIG_DATABASE_SCHEMA
 from backend.app.storage.paths import app_paths
 from backend.app.storage.sqlite import connect
 
@@ -10,6 +10,10 @@ from backend.app.storage.sqlite import connect
 class ModelProviderTransaction:
     def __init__(self, connection):
         self.connection = connection
+
+    def validate_write(self, table, values, previous=None):
+        contract = CONFIG_DATABASE_SCHEMA.table_by_name[table]
+        contract.validate_values({**dict(previous or {}), **values}, partial=previous is None)
 
     def get_provider(self, *, provider_id):
         values = (provider_id,)
@@ -73,6 +77,7 @@ class ModelProviderTransaction:
             *capability_column_values(profile, profiles),
             model_id,
         )
+        self.validate_write('models', dict(zip(('model_name','updated_at','thinking_modes','capability_profiles','context_window_tokens','max_output_tokens','model_id'), values)), self.get_model(model_id=model_id))
         return self.connection.execute(
             """
         UPDATE models
@@ -106,6 +111,7 @@ class ModelProviderTransaction:
             created_at,
             updated_at,
         )
+        self.validate_write('model_providers', dict(zip(CONFIG_DATABASE_SCHEMA.table_by_name['model_providers'].column_names, values)))
         return self.connection.execute(
             """
             INSERT INTO model_providers (
@@ -143,6 +149,7 @@ class ModelProviderTransaction:
             updated_at,
             provider_id,
         )
+        self.validate_write('model_providers', dict(zip(('api_url','official_url','encrypted_api_key','is_configured','updated_at','provider_id'), values)), self.get_provider(provider_id=provider_id))
         return self.connection.execute(
             """
             UPDATE model_providers
@@ -160,38 +167,28 @@ class ModelProviderTransaction:
         provider_id,
         remote_model_id,
         model_name,
-        profile,
-        profiles,
         created_at,
         updated_at,
     ):
-        values = (
-            model_id,
-            provider_id,
-            remote_model_id,
-            model_name,
-            *capability_column_values(profile, profiles),
-            created_at,
-            updated_at,
+        values = (model_id, provider_id, remote_model_id, model_name, created_at, updated_at)
+        self.validate_write('models', dict(zip(('model_id','provider_id','remote_model_id','model_name','created_at','updated_at'), values)))
+        self.connection.execute(
+            "INSERT INTO models (model_id, provider_id, remote_model_id, model_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(model_id) DO NOTHING", values
         )
-        return self.connection.execute(
-            """
-            INSERT INTO models (
-                model_id, provider_id, remote_model_id, model_name,
-                thinking_modes, capability_profiles,
-                context_window_tokens, max_output_tokens,
-                created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(model_id) DO UPDATE SET
-                model_name = excluded.model_name,
-                updated_at = excluded.updated_at,
-                thinking_modes = excluded.thinking_modes,
-                capability_profiles = excluded.capability_profiles,
-                context_window_tokens = excluded.context_window_tokens,
-                max_output_tokens = excluded.max_output_tokens
-            """,
-            values,
+
+    def write_typed_model(self, *, model_id, model_type, model_name, profile=None, profiles=None,
+                          embedding_capabilities=None, embedding_dimensions=None,
+                          max_input_tokens=None, max_batch_size=None, updated_at):
+        import json
+        generation = capability_column_values(profile, profiles) if model_type == "generation" else (None,) * 4
+        embedding = (json.dumps(embedding_capabilities) if embedding_capabilities is not None else None, embedding_dimensions, max_input_tokens, max_batch_size) if model_type == "embedding" else (None,) * 4
+        self.validate_write('models', dict(zip(('model_type','model_name','thinking_modes','capability_profiles','context_window_tokens','max_output_tokens','embedding_capabilities','embedding_dimensions','max_input_tokens','max_batch_size','updated_at','model_id'), (model_type, model_name, *generation, *embedding, updated_at, model_id))), self.get_model(model_id=model_id))
+        self.connection.execute(
+            """UPDATE models SET model_type = ?, model_name = ?, thinking_modes = ?,
+            capability_profiles = ?, context_window_tokens = ?, max_output_tokens = ?,
+            embedding_capabilities = ?, embedding_dimensions = ?, max_input_tokens = ?,
+            max_batch_size = ?, updated_at = ? WHERE model_id = ?""",
+            (model_type, model_name, *generation, *embedding, updated_at, model_id),
         )
 
     def list_models(self):
@@ -216,9 +213,10 @@ class ModelProviderRepository:
         self.paths = paths or app_paths()
 
     @contextmanager
-    def transaction(self, account_id):
+    def transaction(self, account_id, *, write=False):
         initialize_config_database(account_id, self.paths)
         with connect(self.paths.config_db(account_id)) as connection:
+            connection.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             yield ModelProviderTransaction(connection)
 
     def get_provider(self, account_id, provider_id):

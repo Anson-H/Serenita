@@ -4,7 +4,7 @@ import unittest
 
 class ProviderCapabilityNormalizationTests(unittest.TestCase):
     def test_capability_profiles_aggregate_with_boolean_or_and_mime_union(self):
-        from backend.app.model_capabilities import (
+        from backend.app.domain.model_capabilities import (
             ModelCapabilityProfiles,
             ModelModeCapabilityProfile,
             aggregate_capability_profile,
@@ -179,7 +179,7 @@ class ProviderCapabilityNormalizationTests(unittest.TestCase):
         self.assertNotIn("video/mp4", profile.file_mime_types)
 
     def test_provider_model_ids_do_not_infer_capabilities(self):
-        from backend.app.model_capabilities import DEFAULT_CAPABILITY_PROFILE
+        from backend.app.domain.model_capabilities import DEFAULT_CAPABILITY_PROFILE
         from backend.app.providers.aliyun_bailian import AliyunBailianProvider
         from backend.app.providers.deepseek import DeepSeekProvider
 

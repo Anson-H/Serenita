@@ -1,3 +1,4 @@
+from tests.member_support import create_stored_report
 from member_support import account_id as account_id_for, member_id
 import os
 import tempfile
@@ -40,10 +41,10 @@ def test_report_page_field_crud_uses_last_valid_write_and_creates_no_conversatio
             sha256="sha-field-crud",
             source_kind="unknown",
         )
-        report_id = repository.create_report(
+        report_id = create_stored_report(repository, 
             member_id("alice"),
             {
-                "report_type": "其它报告",
+                "report_type": "其它医疗报告",
                 "report_name": "原始名称",
                 "report_time": "2026-08-16T09:00:00+08:00",
                 "other_report": {"report_body": "原始正文"},
@@ -318,7 +319,7 @@ def test_manual_report_creation_is_page_crud_without_conversation_or_fake_source
         invalid = client.post(
             f"/api/members/{member_id('alice')}/reports",
             json={
-                "report_type": "其它报告",
+                "report_type": "其它医疗报告",
                 "report_name": "空正文",
                 "report_time": "2026-08-21T09:30:00+08:00",
                 "other_report": {"report_body": ""},
@@ -356,10 +357,10 @@ def test_report_page_can_supplement_originals_without_a_conversation():
         created = client.post(
             f"/api/members/{member_id('alice')}/reports",
             json={
-                "report_type": "其它报告",
+                "report_type": "其它医疗报告",
                 "report_name": "手工录入记录",
                 "report_time": "2026-08-21T09:30:00+08:00",
-                "other_report": {"report_body": "已经整理好的报告事实"},
+                "other_report": {"report_body": "已经整理好的医疗报告事实"},
             },
         )
         assert created.status_code == 201, created.text
@@ -462,11 +463,11 @@ def test_report_page_delete_does_not_create_a_conversation():
             sha256="sha-ui-delete",
             source_kind="photo",
         )
-        report_id = repository.create_report(
+        report_id = create_stored_report(repository, 
             member_id("alice"),
             {
-                "report_type": "其它报告",
-                "report_name": "待删除报告",
+                "report_type": "其它医疗报告",
+                "report_name": "待删除医疗报告",
                 "report_time": "2026-08-16T09:00:00+08:00",
                 "other_report": {"report_body": "测试内容"},
             },
