@@ -24,7 +24,7 @@ export function SelectAllButton({
     <button
       aria-label={label}
       aria-pressed={allSelected}
-      className="control control--inline control--icon control--ghost selection-select-all standard-bar-icon-control"
+      className="control control--icon control--ghost selection-select-all"
       disabled={unavailable}
       onClick={() => {
         if (!unavailable) onChange((current) => toggleAllSelection(ids, current));

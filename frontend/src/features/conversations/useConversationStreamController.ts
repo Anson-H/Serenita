@@ -4,12 +4,9 @@ import {
   type SetStateAction
 } from "react";
 
-import {
-  type ConversationDetail,
-  type ConversationSummary,
-  type StartedMessageResponse,
-  apiClient
-} from "../../api/client";
+import * as conversationApi from "../../api/conversations/conversationApi";
+import type { ConversationDetail, ConversationSummary, StartedMessageResponse } from "../../api/conversations/conversationTypes";
+
 import { showStatusNotification } from "../../components/StatusNotificationCenter";
 import {
   appendRecordDeltaToDetail,
@@ -20,6 +17,11 @@ import {
 } from "./streamingMessages";
 import { isAbortError, thinkingModeLabel } from "./thinking";
 import { type ActiveStream } from "./workspaceTypes";
+import { ApiRequestError } from "../../api/transport/request";
+
+export function canReconnectConversationStream(error: unknown) {
+  return !(error instanceof ApiRequestError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status));
+}
 
 type ConversationStreamControllerOptions = {
   activeStreamRef: MutableRefObject<ActiveStream | null>;
@@ -89,7 +91,7 @@ export function useConversationStreamController({
     setCancellingTurnId(activeStream.turnId);
     setComposerError("");
     try {
-      await apiClient.cancelTurn(activeStream.sessionId, activeStream.turnId, {
+      await conversationApi.cancelTurn(activeStream.sessionId, activeStream.turnId, {
         preservePartial
       });
       const stillVisible = activeStreamRef.current === activeStream;
@@ -102,9 +104,12 @@ export function useConversationStreamController({
         onTurnSettled();
       }
       activeStream.abortController.abort();
+      setCancellingTurnId(current => current === activeStream.turnId ? null : current);
       if (refreshAfterCancel && stillVisible) {
-        await openConversation(activeStream.sessionId);
-        await refreshConversations();
+        // Cancellation is already confirmed; refreshing must not hold the control busy.
+        void openConversation(activeStream.sessionId).catch(() => {
+          setComposerError("已停止生成，聊天刷新失败，请重新打开聊天。");
+        });
       }
       return true;
     } catch (error) {
@@ -156,7 +161,7 @@ export function useConversationStreamController({
         terminalState.result === null
       ) {
         try {
-          await apiClient.streamConversation(response.session_id, response.stream_id, {
+          await conversationApi.streamConversation(response.session_id, response.stream_id, {
             signal: abortController.signal,
             onEvent: (event) => {
               if (!isCurrent()) {
@@ -246,6 +251,10 @@ export function useConversationStreamController({
             isAbortError(error)
           ) {
             return "detached";
+          }
+          if (!canReconnectConversationStream(error)) {
+            setComposerError(error instanceof Error ? error.message : "聊天订阅已不可用，请重新打开聊天。");
+            throw error;
           }
           await waitForReconnect(retryDelay, abortController.signal);
           retryDelay = Math.min(5000, retryDelay * 2);

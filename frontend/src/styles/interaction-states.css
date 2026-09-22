@@ -9,22 +9,22 @@
   border: 0;
   box-shadow: none;
   background: var(--color-danger-soft);
-  color: var(--color-danger);
+  color: var(--color-foreground);
 }
 
 .control.control--danger.removal-action-control:hover:not(:disabled) {
   background: var(--color-danger-hover);
-  color: var(--color-danger);
+  color: var(--color-foreground);
 }
 
 .context-action-menu > .control.control--danger.removal-action-control {
   background: transparent;
-  color: var(--color-danger);
+  color: var(--color-foreground);
 }
 
 .context-action-menu > .control.control--danger.removal-action-control:hover:not(:disabled) {
   background: var(--color-danger-hover);
-  color: var(--color-danger);
+  color: var(--color-foreground);
 }
 
 :is(button, summary, [role="button"], .control, .select-popover-trigger):where(:hover):where(:not(:disabled, [aria-disabled="true"], [data-disabled="true"], [data-hover="none"], [data-interaction-owner="row"], .control--primary, .control--danger, .selection-check-control, .toggle-switch)):where(:not(:has(:disabled):not(:has(:enabled)))):where(:not(:has(:is(button, summary, [role="button"], .control):hover))) {
@@ -91,6 +91,15 @@
 }
 
 /* A row's corners and separators follow its surface, not its inner input or button. */
+.grouped-object-list > :is([aria-pressed="true"], [aria-selected="true"], [data-current="true"], [role="radio"][aria-checked="true"], [role="menuitemradio"][aria-checked="true"]):where(:not(.selection-check-control, [data-selection-mode="multiple"] *, [aria-multiselectable="true"] *)) {
+  border-radius: var(--radius-list);
+}
+
+.grouped-object-list > :is([aria-pressed="true"], [aria-selected="true"], [data-current="true"], [role="radio"][aria-checked="true"], [role="menuitemradio"][aria-checked="true"]):where(:not(.selection-check-control, [data-selection-mode="multiple"] *, [aria-multiselectable="true"] *))::before,
+.grouped-object-list > :is([aria-pressed="true"], [aria-selected="true"], [data-current="true"], [role="radio"][aria-checked="true"], [role="menuitemradio"][aria-checked="true"]):where(:not(.selection-check-control, [data-selection-mode="multiple"] *, [aria-multiselectable="true"] *)) + *::before {
+  opacity: 0;
+}
+
 .grouped-object-list > :is(.active, [aria-current="page"], [data-active="true"], :has(> [aria-current="page"]), :has(:is(input, textarea):read-write:focus), :has([data-interaction-owner="row"]:is([aria-haspopup], [data-popup-trigger])[aria-expanded="true"]), [data-keyboard-focus="inset"]),
 .grouped-object-list > :is([role="radio"][aria-checked="true"], [role="menuitemradio"][aria-checked="true"]),
 [data-row-surface]:is(.active, [data-current="true"], [data-active="true"], [data-keyboard-focus]),

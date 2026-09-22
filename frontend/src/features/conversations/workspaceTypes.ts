@@ -34,8 +34,8 @@ export const scenarioCopy: Record<ScenarioTab, ScenarioCopy> = {
     placeholder: "问问Serenita"
   },
   reports: {
-    title: "报告问答",
-    eyebrow: "报告",
-    placeholder: "询问这份报告的异常或后续关注点"
+    title: "医疗报告问答",
+    eyebrow: "医疗报告",
+    placeholder: "询问这份医疗报告的异常或后续关注点"
   }
 };

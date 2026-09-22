@@ -1,0 +1,294 @@
+sag_extract:
+  description: 从实际资料同时提取事件和实体
+  version: '10.0'
+  variables:
+  - time
+  - timezone
+  - custom_background
+  - custom_requirements
+  template: |
+    ## Role
+
+    你负责从获授权资料中选择具有记忆价值的重要信息，组织事件，并识别事件中的实体。
+
+    ## Background
+
+    当前时区：{timezone}
+    当前时间：{time}
+    {custom_background}
+    来源原文保存完整依据；事件正文保存经过选择和组织的重要信息；事件摘要进一步概括正文的核心事实和关键变化。
+
+    ## Task
+
+    1. 理解资料主体、实际经历、属性、活动与变化，结合上下文选择具有记忆价值的信息。
+    2. 按事实的独立意义确定事件边界。同一次经历中的参与者、条件和多个结果共同组织；具有独立经历、后续变化或单独追踪价值的事实分别表达。分块、字段和指标数量仅描述资料结构。
+    3. 为事件生成标题、正文和摘要。正文用清楚、紧凑的语言重新组织重要信息，详略由信息对事件的意义决定。先完成正文，再从正文提炼一至两句摘要，突出核心事实及关键变化。摘要采用核对后的结论，名称、数量、数值和确定程度与正文一致。
+    4. 识别事件中实际有意义的实体，说明其作用，按当前实体目录核对身份，并关联支持事件内容的来源依据。
+
+    ## Input
+
+    输入为 type=request 的 JSON，data.items 提供有明确 id 的来源单元及 content。meta.source_contexts 提供各单元所属资料、成员、日期及变更语境。资料中的记录日期、检查日期、计划日期和实际发生日期各按自身含义理解。
+    extraction_phase=direct 时读取完整资料。extraction_phase=organization 时，meta.important_facts 提供各分块提取的重要信息，items 提供这些信息对应且已经程序核对的来源原文摘录；结合所有分块统一组织事件，按摘录核对数据、限定和确定程度。摘录间的分隔说明表示原文位置有间隔，摘录之外的信息沿来源追溯。
+    更新记录表达本次保存的补充或修正。历史资料采用其对应的经历时间，补充和修正体现新增信息及修正后的含义，实际健康变化保留变化过程。清空、删除及管理状态属于记录操作语境，其健康含义依据实际内容判断。
+    coverage 表示实际读取范围与缺口。validation_errors 和 previous_output 提供前次输出的具体问题，收到后返回修正后的完整结果。
+
+    ### 实体身份目录
+
+    对每个实体，根据名称、类型、别名和上下文判断是否对应 meta.entity_catalog 中的同一现实对象。已有对象逐字复制 entity_id 和 type；当前名称保存在 name，有据的其他名称保存在 aliases。无对应或身份不确定时 entity_id 填 null。名称规范化和最终保存由程序完成。
+
+    ## Output
+
+    返回 type=response 的 JSON。data.items 是事件数组，确有整体与组成关系且分层有助于理解时使用 children，最多 L0、L1、L2 三层。
+    每个事件按 content、title、summary 的顺序生成文字字段，再填写 category、priority、references 和 entities。content 保存选择后的重要信息；title 点明事件；summary 从已经写出的 content 提炼一至两句核心结论。category 根据内容填写，priority 为 HIGH、MEDIUM 或 LOW，表示记忆关注价值。
+    references 使用支持当前事件的实际 items.id，可跨多个来源单元。occurrence_time 填写有依据的实际发生时间，未知时省略或填 null。data.meta.reason 简要说明信息选择与事件组织依据。没有值得提取的有效信息时 items 返回空数组并说明原因。
+
+    ## Rules
+
+    - 事件正文围绕一个可独立理解的事实单元，采用归纳、合并和重组表达。保留关键结果及影响理解的主体、时间、必要数值、条件、否定和不确定性，信息详略与其记忆价值相称。
+    - 同一次检查的多个结果可以共同组成事件。某项结果具有独立意义时，结合其具体经历或追踪价值决定是否单独表达；相似资料采用同样的判断尺度。
+    - 正常结果、稳定属性及简短陈述都可以提供重要信息，根据上下文判断其价值。资料完整细节沿来源引用读取。
+    - 摘要用一至两句概括正文的核心事实和关键变化，保留关键限定。输出前核对正文与摘要中的名称、数量和数值，使用核对后的表述。
+    - 标题和摘要聚焦整体发现，具体项目及数值在正文表达。原文直接给出的集合数量按其实际范围采用；仅列出项目时，使用“多项”“部分”等与证据相称的范围表述，精确计数留给统计能力。
+    - 事件整理来源已经陈述的信息。医学诊断、原因、风险和建议采用来源已有表述；不加入提取模型自行推导的医学解释。正文与摘要中的检验状态采用来源已有的结论用语；“未标记异常”原样表达，正常、阳性、阴性和未见异常等结论以来源的明确陈述为依据。
+    - 每层事件独立可读。父事件表达整体的重要事实，子事件表达具有独立价值的组成事实；跨层保留必要语境，同级各自贡献不同信息。数量和层级由事实意义决定。
+    - children 中各层会分别保存为事件，后续阶段依据事实判断关系和事项归属。当前阶段完成重要信息选择和事件组织。
+    - 记录时间作为来源语境，事件时间按实际发生含义表达；正文在时间身份影响理解时明确说明。
+    - 标题、正文、摘要和实体说明共同保持证据支持的范围与确定程度。检验数值、报告标记和报告结论各按来源含义表达；缺少的结论保持未知。
+    - 事件引用覆盖所有保留的事实，包括集合数量及范围所采用的全部单元；个别项目的依据支持对应项目的结论。引用采用本次 items 中实际提供的整数 id。来源语境用于理解对应单元，原文摘录用于核对事实。
+    - 实体围绕保留事实中的主体、对象及有意义的联系选择，description 说明其在事件中的具体作用。同一对象采用一致身份，并列的不同对象分别表示。
+
+    {custom_requirements}
+  input_schema:
+    type: object
+    required:
+    - type
+    - data
+    properties:
+      type:
+        const: request
+      data:
+        type: object
+        required:
+        - items
+        - meta
+        properties:
+          items:
+            type: array
+            items:
+              type: object
+              required:
+              - id
+              - content
+              properties:
+                id:
+                  type: integer
+                  minimum: 1
+                content:
+                  type: string
+              additionalProperties: false
+          meta:
+            type: object
+            required:
+            - source_type
+            - source_title
+            - source_summary
+            properties:
+              source_type:
+                enum:
+                - article
+                - chat
+              source_title:
+                type: string
+              source_summary:
+                type: string
+        additionalProperties: false
+    additionalProperties: false
+  output_schema:
+    type: object
+    required:
+    - type
+    - data
+    properties:
+      type:
+        const: response
+      data:
+        type: object
+        required:
+        - items
+        - meta
+        properties:
+          items:
+            type: array
+            items:
+              $ref: '#/definitions/event'
+          meta:
+            type: object
+            required:
+            - reason
+            properties:
+              reason:
+                type: string
+                description: 处理原因说明
+              confidence:
+                type: number
+                description: 置信度（0-1）
+  definitions:
+    event:
+      type: object
+      required:
+      - content
+      - title
+      - summary
+      - references
+      - category
+      - priority
+      properties:
+        content:
+          type: string
+          description: 围绕独立事实单元选择并组织重要信息；采用紧凑表述，保留关键结果、必要数值、时间及影响理解的条件、否定和不确定性。详细资料沿来源引用读取。
+        title:
+          type: string
+          description: 根据正文点明事件的简短标题。
+        summary:
+          type: string
+          minLength: 1
+          pattern: \S
+          description: 从已完成的正文提炼一至两句摘要，概括核心事实及关键变化；采用核对后的数量与结论，保留影响理解的限定。
+        category:
+          type: string
+          minLength: 1
+          pattern: \S
+          description: 必填事件分类，根据内容开放填写。
+        priority:
+          type: string
+          enum:
+          - HIGH
+          - MEDIUM
+          - LOW
+          description: 必填记忆重要程度，高、中或低；不表示医疗紧急程度。
+        occurrence_time:
+          anyOf:
+          - type: 'null'
+          - $ref: '#/definitions/occurrence_time'
+          description: 可选的实际发生时间；没有明确发生时间时省略或为 null，不使用保存时间补齐。
+        references:
+          type: array
+          description: 支持当前事件所保留事实的来源单元 id 数组，采用本次输入实际提供的编号
+          items:
+            type: integer
+          minItems: 1
+        entities:
+          type: array
+          items:
+            $ref: '#/definitions/entity'
+        children:
+          type: array
+          description: 直接子事件；最多 L0、L1、L2 三层。
+          items:
+            $ref: '#/definitions/event_level1'
+      additionalProperties: false
+    event_level1:
+      allOf:
+      - $ref: '#/definitions/event'
+      - properties:
+          children:
+            items:
+              $ref: '#/definitions/event_level2'
+    event_level2:
+      allOf:
+      - $ref: '#/definitions/event'
+      - properties:
+          children:
+            maxItems: 0
+    time_bound:
+      type: object
+      required:
+      - value
+      - precision
+      additionalProperties: false
+      properties:
+        value:
+          type: string
+          minLength: 1
+          description: 按精度填写年份、年月、日期或本地 ISO 日期时间。
+        precision:
+          type: string
+          enum:
+          - year
+          - month
+          - day
+          - instant
+    occurrence_time:
+      type: object
+      additionalProperties: false
+      anyOf:
+      - required:
+        - start
+        properties:
+          start:
+            $ref: '#/definitions/time_bound'
+      - required:
+        - end
+        properties:
+          end:
+            $ref: '#/definitions/time_bound'
+      properties:
+        start:
+          anyOf:
+          - type: 'null'
+          - $ref: '#/definitions/time_bound'
+        end:
+          anyOf:
+          - type: 'null'
+          - $ref: '#/definitions/time_bound'
+        original_text:
+          type:
+          - string
+          - 'null'
+        uncertainty:
+          type: string
+          enum:
+          - exact
+          - approximate
+        unknown:
+          type: array
+          items:
+            type: string
+        anchor_time:
+          type:
+          - string
+          - 'null'
+    entity:
+      type: object
+      required:
+      - type
+      - name
+      - description
+      - entity_id
+      - aliases
+      properties:
+        entity_id:
+          type:
+          - string
+          - 'null'
+          description: 从当前输入实体目录逐字复制的已有编号；无对应对象或不确定时为 null。
+        aliases:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          description: 当前资料或实体目录中有依据的其他名称表达；没有时为空数组。
+        type:
+          type: string
+          description: 实体类型，按实际内容填写，无固定枚举。
+        name:
+          type: string
+          description: 实体名称
+        description:
+          type: string
+          description: 实体在当前事项中的具体作用、角色或关系说明
+      additionalProperties: false
+  custom_background: 当前资料属于获授权的成员健康档案。事件主体依据实际资料及上下文确定。
+  custom_requirements: |
+    医疗资料按信息对事件的意义选择关键数值、单位、参考范围和测量条件；用药信息保留影响理解的规格、剂量、频次及实际提供的起止信息。
+    准确表达自述、检查所见、医学判断、建议、计划和实际执行各自的含义，保留相关主体。正常结果、否定陈述和不确定结论同样承载健康信息；归纳时保留这些限定，不扩大诊断、疗效或因果结论。

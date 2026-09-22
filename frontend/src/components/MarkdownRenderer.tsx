@@ -9,6 +9,7 @@ import {
 } from "../utils/markdownCitations";
 
 export type MarkdownRendererProps = {
+  className?: string;
   annotationSourceId?: string;
   content: string;
   citationSources?: readonly WebCitationSource[];
@@ -83,6 +84,7 @@ function markdownComponents(citationSources: readonly WebCitationSource[]): Comp
 }
 
 export function MarkdownRenderer({
+  className = "",
   annotationSourceId,
   content,
   citationSources = [],
@@ -100,7 +102,7 @@ export function MarkdownRenderer({
   );
   return (
     <div
-      className="markdown-content"
+      className={["markdown-content", className].filter(Boolean).join(" ")}
       data-annotation-source-id={annotationSourceId}
     >
       <ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>

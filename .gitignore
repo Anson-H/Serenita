@@ -1,28 +1,10 @@
-# 忽略整个模型文件夹（或按你需要的粒度调整）
-model/
-
-# uv 虚拟环境
-.venv/
-
-# local env / generated files
+serenita_self_hosted_data/
+serenita_online_data/
 .env
-/AGENTS.md
+.venv/
 node_modules/
 dist/
-*.tsbuildinfo
-frontend/test-results/
-frontend/playwright-report/
 __pycache__/
 *.pyc
-.obsidian/
-serenita_files/
-.local-backups/
-tmp/
-.worktrees/
-.superpowers/
-
-# macOS
+*.tsbuildinfo
 .DS_Store
-
-# transient in-memory session file
-:memory:.ses

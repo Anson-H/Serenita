@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from copy import deepcopy
 import json
 from typing import Any, Iterable
 
@@ -53,13 +54,13 @@ class ToolSchema:
 class ToolCall:
     id: str
     name: str
-    arguments: dict[str, Any]
+    arguments: dict[str, Any] | str
 
     def __post_init__(self) -> None:
         if not self.id.strip() or not self.name.strip():
             raise ValueError("工具调用 ID 和名称不能为空。")
-        if not isinstance(self.arguments, dict):
-            raise TypeError("工具调用参数必须是 JSON 对象。")
+        if not isinstance(self.arguments, (dict, str)):
+            raise TypeError("工具调用参数必须是 JSON 对象或原始参数文本。")
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -67,7 +68,7 @@ class ToolCall:
             "type": "function",
             "function": {
                 "name": self.name,
-                "arguments": json.dumps(
+                "arguments": self.arguments if isinstance(self.arguments, str) else json.dumps(
                     self.arguments,
                     ensure_ascii=False,
                     separators=(",", ":"),
@@ -115,6 +116,21 @@ class ModelRequest:
     tool_choice: str | dict[str, Any] | None = "auto"
     model_config: dict[str, Any] = field(default_factory=dict)
     transport_mode: str = "native"
+    # The stage owns this schema and must validate every returned output locally.
+    output_schema: dict[str, Any] | None = None
+    # Caller attests support for json_schema on the selected model/endpoint/mode.
+    # None means unknown; tool calling or JSON object support is not confirmation.
+    supports_json_schema_output: bool | None = None
+
+    def __post_init__(self) -> None:
+        if self.output_schema is not None:
+            if not isinstance(self.output_schema, dict):
+                raise TypeError("Output schema must be a JSON object.")
+            object.__setattr__(self, "output_schema", deepcopy(self.output_schema))
+        if self.supports_json_schema_output is not None and not isinstance(
+            self.supports_json_schema_output, bool
+        ):
+            raise TypeError("JSON schema output capability must be bool or None.")
 
     @classmethod
     def build(
@@ -127,6 +143,8 @@ class ModelRequest:
         tool_choice: str | dict[str, Any] | None = "auto",
         model_config: dict[str, Any] | None = None,
         transport_mode: str = "native",
+        output_schema: dict[str, Any] | None = None,
+        supports_json_schema_output: bool | None = None,
     ) -> "ModelRequest":
         normalized_system = str(system or "")
         normalized_context_sections = tuple(context_sections)
@@ -146,6 +164,8 @@ class ModelRequest:
             tool_choice=tool_choice,
             model_config=dict(model_config or {}),
             transport_mode=transport_mode,
+            output_schema=output_schema,
+            supports_json_schema_output=supports_json_schema_output,
         )
 
     def canonical_dict(self) -> dict[str, Any]:
@@ -156,6 +176,8 @@ class ModelRequest:
             "tool_choice": self.tool_choice if self.tools else None,
             "model_config": dict(self.model_config),
             "transport_mode": self.transport_mode,
+            "output_schema": deepcopy(self.output_schema),
+            "supports_json_schema_output": self.supports_json_schema_output,
         }
 
 
@@ -167,6 +189,11 @@ class AssistantModelOutput:
     usage: dict[str, Any] = field(default_factory=dict)
     stop_reason: str = "end_turn"
     raw_content: str = ""
+
+    @property
+    def has_final_stop(self) -> bool:
+        """The provider reported a complete answer, rather than a partial output."""
+        return self.stop_reason in {"stop", "end_turn", "stop_sequence", "completed"}
 
 @dataclass(frozen=True)
 class ModelStreamChunk:

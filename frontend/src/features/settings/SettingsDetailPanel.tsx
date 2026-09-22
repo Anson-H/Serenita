@@ -1,3 +1,4 @@
+import { NavigationTitle } from "../../components/NavigationTitle";
 import type { ReactNode } from "react";
 
 import { ChevronLeftIcon } from "../../components/icons";
@@ -31,10 +32,10 @@ export function SettingsDetailPanel({
         >
           <ChevronLeftIcon />
         </button>
-        <h2 id="settings-detail-panel-title">{title}</h2>
+        <NavigationTitle id="settings-detail-panel-title" title={title} />
         <span aria-hidden="true" />
       </header>
-      <div className="settings-detail-panel-body scroll-content">{children}</div>
+      <div className="settings-detail-panel-body scroll-content content-column">{children}</div>
     </section>
   );
 }

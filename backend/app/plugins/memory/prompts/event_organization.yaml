@@ -1,0 +1,206 @@
+event_organization:
+  description: 联合判断一个事件的事项归属及事件关系。
+  version: '1.0'
+  variables:
+  - time
+  - timezone
+  - custom_requirements
+  template: |
+    ## Role
+
+    你负责用开放语义联合判断一个不可变 Event 的事项归属、连接事件及关系。
+
+    ## Background
+
+    当前时间：{time}
+    当前时区：{timezone}
+
+    事项是“稳定的具体主体 + 可持续的目标、活动范围或状态维度”。scope 是事项范围，创建后固定，用于判断事件归属，表达事项的稳定边界，不能宽泛到只有主题、成员或通用实体相同，也不能窄到只复述一条事件、一次动作、一个时间、数值或临时结果。
+
+    ## Task
+
+    1. 结合所选事项的固定 scope、全部可读事件、已保存关系及来源原文，判断新旧事件是否具有共同的具体主体及持续目标或状态维度，或存在有依据的直接联系。共同成员、宽泛主题、来源或时间接近只提供线索。
+    2. 核对具体事实之间的重复、取消、冲突、更正、延续、补充、支持、先后、因果陈述或整体组成联系，再选择符合实际语义的关系类型和方向。补充须指出新事实完善了已有事件的哪个具体方面，资料数量增加本身不构成联系。
+    3. 归属与连接均有依据时加入所选事项；无所选事项或核对后不合适时，直接创建独立事项。所选事项过宽或过细时，结合实际事件核对其具体范围，不能只凭范围字面强行加入或排除。
+    4. 独立事项的 scope 依据当前事件生成。检查它能否自然容纳同一具体主体和持续目标下合理的后续实例；只容纳当前事件时适度概括，只有宽泛主题时收窄。这个检查用于确定范围，不把设想的未来实例当作已发生事实。
+    5. 最后生成一条忠实、具体的 reason，同时解释事项归属、连接事件、关系类型和方向；独立时说明依据。
+
+    ## Input
+
+    organization_event_id 指定当前新事件；selected_episode_id 是唯一待核对事项或 null。objects 包含新事件、所选事项的固定范围、全部可读事件及已有关系，change_sources 提供来源原文，retrieval.episode_event_ids 给出允许连接的已有事件。事项摘要与状态不进入本阶段输入。validation_errors 与 previous_output 仅用于修正当前判断。
+
+    ## Output
+
+    直接返回当前事件的单个判断对象，字段为 event_id、episode_id、scope、relation 和 reason，使用 JSON。整个联合判断只输出一个 reason，位于单个结果对象的末尾；relation 内不得再输出 reason。完整结构见输出 Schema。
+
+    ## Rules
+
+    合适时：episode_id 必须为 selected_episode_id；scope 为 null；relation 必须连接当前新事件和 retrieval.episode_event_ids 中该事项的一个已有事件。两端方向按关系语义确定。归属与关系一起保存。
+    不合适时：直接为新事件建立独立事项，episode_id 与 relation 为 null，scope 为有依据的固定范围；说明所选事项不合适的具体原因。不再核对其他事项。不因已选中某个事项就强行归入。selected_episode_id 为 null 时也返回独立事项判断。
+    关系另有 Unrelated（与所选事项无关）选项。如果输出归属或事件端点之后才发现无关，在 relation 中返回 relation_type=Unrelated 和独立事项 scope。即使前面 episode_id 非空、顶层 scope 为 null，也按 Unrelated 的最终判断直接建立独立事项；先前端点不形成关系边。无需回头修改已输出的归属字段，不再核对其他事项。Unrelated 的 scope 必须依据当前事件及实际读取内容生成。
+
+    正常加入时，reason 原样用于事项归属与边关系；独立时用于起始归属。阶段说明复用这条理由。
+
+    关系连接两个事件所表达的具体事实。来源类型、保存先后、同属一个成员或健康主题，以及资料数量增加，均不能单独证明事件关系。结合两端的主体、发生时间、对象和限定条件判断，不能把新事件与整个档案的关系当作它与某个已有事件的关系。
+
+    十种关系的含义与方向：
+    - Continues：同一具体过程、活动或状态的后续发展，能说明后续事件承接了什么，以及发生了何种延续或变化。后续指向前序；仅日期更晚不足以成立。
+    - Supersedes：明确更正已有事件对同一事实的错误表达，能指出被更正的内容及更正依据。更正指向被更正事件；不同时间的正常变化不等于更正，也不覆盖原事件或已有边。
+    - ConflictsWith：对同一对象、同一适用时间或条件的事实表达不能同时成立，且尚无依据确定哪项是更正。关系对称；时间、对象或条件不同所致的差异不构成冲突。
+    - Cancels：明确撤销已有安排、计划或待执行动作，能指出取消对象。取消指向原安排；尚未执行、暂未提及或执行结果不佳不等于取消。
+    - Duplicates：两端表达同一次实际经历或同一具体事实，核心内容一致，没有实质新增或更正。重复表达指向已有表达；不同时间发生的相似事件不能仅凭文字相似判为重复。
+    - Supplements：为已有事件所述的同一次经历或同一具体事实补足此前缺少的细节、范围或条件，且保留原有核心含义。补充指向被补充事件；须指出原事件的哪项具体内容得到补足。独立的新经历、后续发展或提高某项判断可信度的证据，应按其实际关系判断，不能仅因提供了更多信息就归为补充。
+    - Supports：一个事件为另一个事件中的具体判断提供证据，能解释该证据为何增加该判断的可信度。支持指向被支持事件；补足描述细节、主题一致或重复转述本身不构成支持，支持也不等于证明判断必然成立。
+    - Precedes：两端具有有依据的具体联系，且实际发生时间能确定先后，但不足以断言承接或因果。较早指向较晚；资料上传或保存顺序不代表发生顺序，不为任意两个可排序事件建立关系。
+    - CausalClaim：实际资料明确陈述或提供充分依据说明一个事件导致、促成另一个事件。所述原因指向结果；时间先后、同时发生或一般医学常识本身不足以建立因果。reason 保留因果陈述的来源、确定程度和限制。
+    - Contains：一个事件表示实际的整体经历或过程，另一个事件是其中的组成部分，能指出具体组成关系。整体指向组成部分；文档收录、概括性背景、同属事项或主题包含不等于事件组成关系。
+
+    对允许连接的已有事件，选择最能直接表达实际事实联系的一条关系；类型列举顺序不表示优先级，不以最早、最宽泛的事件作为默认连接对象。多种解释可能成立时，比较各自依据和语义区别，选择最贴切且不扩大事实的解释。Supplements 不是默认或兜底类型。全部可读内容仍不能支持任何一种关系时，按不合适规则建立独立事项，不为满足加入事项的结构要求制造联系；读取不完整仍属于执行失败。
+    reason 应具体说明两端哪些事实形成该关系、为何采用该方向及仍存在的不确定性，不能只复述关系名称或说“丰富了信息”“完善了背景”。
+    当前只有一个事件尚未归属，不能连接同批尚未组织的其他事件。已保存归属和关系不可修改。
+
+    标识必须逐字来自当前输入，连接端点必须属于所选事项。读取不完整属于执行失败，不能当作没有联系的证据。新建事项范围必须准确表达当前事件，不挪用其他事项范围。
+
+    {custom_requirements}
+  input_schema:
+    type: object
+    properties:
+      objects:
+        type: array
+      change_sources:
+        type: array
+        items:
+          type: object
+      new_event_ids:
+        type: array
+      record_cutoff:
+        type: integer
+      coverage:
+        type: array
+      retrieval:
+        type: object
+      operation_prefix:
+        type: string
+      validation_errors:
+        type: array
+      previous_output:
+        type: string
+      pipeline_stage:
+        const: event_organization
+      organization_event_id:
+        type: string
+        minLength: 1
+      selected_episode_id:
+        type:
+        - string
+        - 'null'
+    required:
+    - objects
+    - new_event_ids
+    - record_cutoff
+    - coverage
+    - retrieval
+    - operation_prefix
+    - pipeline_stage
+    - organization_event_id
+    - selected_episode_id
+    additionalProperties: false
+  output_schema:
+    additionalProperties: false
+    properties:
+      event_id:
+        title: Event Id
+        type: string
+      episode_id:
+        anyOf:
+        - type: string
+        - type: 'null'
+        default: null
+        title: Episode Id
+      scope:
+        description: 新建事项的范围，创建后固定，用于判断事件归属；加入已有事项时为 null。
+        anyOf:
+        - minLength: 1
+          type: string
+        - type: 'null'
+        default: null
+        title: Scope
+      relation:
+        anyOf:
+        - $ref: '#/definitions/RelationDecision'
+        - $ref: '#/definitions/UnrelatedDecision'
+        - type: 'null'
+        default: null
+        title: Relation
+      reason:
+        description: 当前事件唯一的最终联合判断理由；在归属与关系确定后输出。独立时解释独立依据；加入时同时解释所属事项、连接事件、关系类型和方向，并原样用于归属和边关系。
+        minLength: 1
+        title: Reason
+        type: string
+    required:
+    - event_id
+    - reason
+    title: OrganizeEventRequest
+    type: object
+  definitions:
+    RelationDecision:
+      additionalProperties: false
+      properties:
+        from_event_id:
+          description: 实际读取的起点 Event UUID；有向关系遵循类型语义，对称关系任一端均可作为起点。
+          title: From Event Id
+          type: string
+        to_event_id:
+          description: 实际读取的另一个 Event UUID，不能与起点相同。
+          title: To Event Id
+          type: string
+        relation_type:
+          description: 创建时确定的十种关系之一；保存后不能改变。Supersedes 表示新事件更正旧事件，不取代任何已有边。
+          enum:
+          - Continues
+          - Supersedes
+          - ConflictsWith
+          - Cancels
+          - Duplicates
+          - Supplements
+          - Supports
+          - Precedes
+          - CausalClaim
+          - Contains
+          title: Relation Type
+          type: string
+      required:
+      - from_event_id
+      - to_event_id
+      - relation_type
+      title: RelationDecision
+      type: object
+    UnrelatedDecision:
+      additionalProperties: false
+      properties:
+        from_event_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: From Event Id
+        to_event_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: To Event Id
+        relation_type:
+          const: Unrelated
+          title: Relation Type
+          type: string
+        scope:
+          description: 最终决定独立时，为当前新事件生成事项范围；创建后固定，用于判断事件归属。
+          minLength: 1
+          title: Scope
+          type: string
+      required:
+      - relation_type
+      - scope
+      title: UnrelatedDecision
+      type: object

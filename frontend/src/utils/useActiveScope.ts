@@ -1,4 +1,4 @@
-import { captureAuthContext, isAuthContextCurrent } from "../api/authLifecycle";
+import { captureAuthContext, isAuthContextCurrent } from "../api/auth/authLifecycle";
 import { useEffect, useRef } from "react";
 
 // An old request may finish in the background, but must not update or navigate

@@ -1,14 +1,12 @@
 import type * as React from "react";
+import { captureAuthContext, isAuthContextCurrent, type AuthContext } from "../../api/auth/authLifecycle";
 import {
   type Dispatch,
   type SetStateAction
 } from "react";
-import {
-  apiClient,
-  type ConversationDetail,
-  type ConversationSummary,
-  type UploadedResource
-} from "../../api/client";
+import * as conversationApi from "../../api/conversations/conversationApi";
+import type { ConversationDetail, ConversationSummary, UploadedResource } from "../../api/conversations/conversationTypes";
+
 import {
   APP_PATH,
   FAVORITES_PATH,
@@ -23,6 +21,7 @@ import type {
 } from "./workspaceTypes";
 
 type Dependencies = {
+  onDeletedSessions: (sessionIds: string[]) => void;
   refreshConversations: () => Promise<void>;
   setConversations: Dispatch<SetStateAction<ConversationSummary[]>>;
   setComposerError: Dispatch<SetStateAction<string>>;
@@ -40,6 +39,7 @@ type Dependencies = {
 };
 
 export function createConversationListActions({
+  onDeletedSessions,
   refreshConversations,
   setConversations,
   setComposerError,
@@ -56,9 +56,10 @@ export function createConversationListActions({
   navigateTo
 }: Dependencies) {
   async function deleteConversationFromSidebar(sessionId: string) {
+    const auth = captureAuthContext();
     try {
-      await apiClient.deleteConversation(sessionId);
-      clearDeletedCurrentConversation([sessionId]);
+      await conversationApi.deleteConversation(sessionId);
+      clearDeletedCurrentConversation([sessionId], auth);
       await refreshConversations();
       setComposerError("");
       showStatusNotification({
@@ -73,7 +74,9 @@ export function createConversationListActions({
     }
   }
 
-  function clearDeletedCurrentConversation(deletedIds: string[]) {
+  function clearDeletedCurrentConversation(deletedIds: string[], auth: AuthContext) {
+    if (!isAuthContextCurrent(auth)) return;
+    onDeletedSessions(deletedIds);
     const visibleSessionId = visibleConversationRef.current.currentSessionId;
     if (!isCurrentScope() || !visibleSessionId || !deletedIds.includes(visibleSessionId)) {
       return;
@@ -100,7 +103,7 @@ export function createConversationListActions({
 
   async function renameConversationFromSidebar(sessionId: string, title: string) {
     try {
-      const response = await apiClient.updateConversation(sessionId, { title });
+      const response = await conversationApi.updateConversation(sessionId, { title });
       mergeConversationSummaries([response.session]);
       if (sessionId === currentSessionId) {
         setConversationDetail((current) => current?.session_id === sessionId
@@ -117,7 +120,7 @@ export function createConversationListActions({
 
   async function setConversationPinnedFromSidebar(sessionId: string, isPinned: boolean) {
     try {
-      const response = await apiClient.updateConversation(sessionId, { is_pinned: isPinned });
+      const response = await conversationApi.updateConversation(sessionId, { is_pinned: isPinned });
       mergeConversationSummaries([response.session]);
       setComposerError("");
       return true;
@@ -129,7 +132,7 @@ export function createConversationListActions({
 
   async function batchPinConversationsFromSidebar(sessionIds: string[], isPinned: boolean) {
     try {
-      const response = await apiClient.batchPinConversations(sessionIds, isPinned);
+      const response = await conversationApi.batchPinConversations(sessionIds, isPinned);
       mergeConversationSummaries(response.sessions);
       setComposerError("");
       return true;
@@ -140,9 +143,10 @@ export function createConversationListActions({
   }
 
   async function batchDeleteConversationsFromSidebar(sessionIds: string[]) {
+    const auth = captureAuthContext();
     try {
-      const response = await apiClient.batchDeleteConversations(sessionIds);
-      clearDeletedCurrentConversation(response.deleted_ids);
+      const response = await conversationApi.batchDeleteConversations(sessionIds);
+      clearDeletedCurrentConversation(response.deleted_ids, auth);
       await refreshConversations();
       const failedIds = response.failed.map((failure) => failure.session_id);
       if (response.failed.length) {

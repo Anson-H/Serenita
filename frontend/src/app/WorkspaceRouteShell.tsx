@@ -1,6 +1,8 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 
-import type { AuthSession, ConversationSummary } from "../api/client";
+import type { AuthSession } from "../api/auth/authTypes";
+import type { ConversationSummary } from "../api/conversations/conversationTypes";
+
 import { SidebarCollapsedIcon } from "../components/icons";
 import type { ScenarioTab } from "../features/conversations/workspaceTypes";
 import { PatientShell } from "./PatientShell";
@@ -19,9 +21,11 @@ export type WorkspaceRouteShellControls = {
 
 type WorkspaceRouteShellProps = {
   healthNavigation: ReactNode;
+  memoryMemberId?: string | null;
   activeScenario: ScenarioTab;
   children: ReactNode;
   conversations: ConversationSummary[];
+  conversationPagination?: { hasMore: boolean; loading: boolean; error: string; loadMore: () => Promise<void> };
   currentSession: Extract<AuthSession, { authenticated: true }>;
   currentSessionId: string | null;
   onBatchDeleteConversations: (sessionIds: string[]) => Promise<string[]>;
@@ -93,9 +97,11 @@ export function useWorkspaceRouteShell(): WorkspaceRouteShellControls {
 
 export function WorkspaceRouteShell({
   healthNavigation,
+  memoryMemberId,
   activeScenario,
   children,
   conversations,
+  conversationPagination,
   currentSession,
   currentSessionId,
   onBatchDeleteConversations,
@@ -114,8 +120,10 @@ export function WorkspaceRouteShell({
   return (
     <ShellComponent
       healthNavigation={healthNavigation}
+        memoryMemberId={memoryMemberId}
       activeScenario={activeScenario}
       conversations={conversations}
+      conversationPagination={conversationPagination}
       currentSession={currentSession}
       currentSessionId={currentSessionId}
       mobileSidebarOpen={shellControls.mobileSidebarOpen}

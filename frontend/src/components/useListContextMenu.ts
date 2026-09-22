@@ -195,7 +195,7 @@ export function useListContextMenu({ enabled, scope }: { enabled: boolean; scope
 
   function onMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape" || event.key === "Tab") {
-      if (event.key === "Escape") event.preventDefault();
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); }
       closeContextMenu(event.key === "Escape");
       return;
     }

@@ -1,12 +1,10 @@
+import { relatedResourcesForTurn } from "./relatedResources";
 import { useMemo, type ReactNode } from "react";
 
-import {
-  apiClient,
-  type ConversationMessage,
-  type ConversationModelRecord,
-  type Favorite,
-  type UploadedResource
-} from "../../api/client";
+import * as conversationApi from "../../api/conversations/conversationApi";
+import type { ConversationMessage, ConversationModelRecord, UploadedResource } from "../../api/conversations/conversationTypes";
+import type { Favorite } from "../../api/favorites/favoriteTypes";
+
 import { SelectPopover } from "../../components/SelectPopover";
 import type { WebCitationSource } from "../../utils/markdownCitations";
 import { useComposerSubmitShortcut } from "../accountPreferences/composerSubmitShortcut";
@@ -77,6 +75,7 @@ type ConversationWorkspaceSurfaceProps = {
     | "annotationSelection"
     | "annotatedContexts"
     | "sending"
+    | "restoringQueuedInput"
     | "setAnnotatedContexts"
     | "setAnnotationSelection"
     | "setComposerText"
@@ -280,10 +279,13 @@ export function ConversationWorkspaceSurface({
         onSubmitEditedUserMessage={onSubmitEditedUserMessage}
         onToggleFavorite={onToggleFavorite}
         relatedReportResources={relatedReportResources}
+        relatedResources={message.role==='assistant'?relatedResourcesForTurn(conversationDetail?.records??[],message.turn_id):[]}
+        resourceStates={resourceStates}
         resourceStateByReportId={resourceStateByReportId}
-        sending={sending}
+        sending={sending || pageState.restoringQueuedInput}
         showRelatedContent={contextDisplaySettings.showRelatedContent}
         showTokenUsage={contextDisplaySettings.showTokenUsage}
+        showModelIdentity={contextDisplaySettings.showModelIdentity}
         turnTokenUsageRecords={turnTokenUsageRecords}
       />
     );
@@ -311,6 +313,7 @@ export function ConversationWorkspaceSurface({
               activeTurnId={turn.active ? activeStreamTurnId : null}
               highlightedMessageId={highlightedMessageId}
               onRegisterMessageElement={registerMessageElement}
+              showModelIdentity={contextDisplaySettings.showModelIdentity}
               records={turn.executionRecords}
               turnRecords={turn.records}
               visibleBaseContextRecordIds={visibleBaseContextRecordIdSet}
@@ -362,7 +365,7 @@ export function ConversationWorkspaceSurface({
       <UploadedResourceChip
         href={
           conversationSessionId
-            ? apiClient.conversationContextResourceUrl(
+            ? conversationApi.conversationContextResourceUrl(
               conversationSessionId,
               resource.resource_id
             )
@@ -382,7 +385,7 @@ export function ConversationWorkspaceSurface({
     return (
       <ConversationComposer
         activeStreamTurnId={activeStreamTurnId}
-        canAttachFiles={surfaceMode !== "composer" && canAttachFiles}
+        canAttachFiles={surfaceMode !== "composer" && canAttachFiles && !pageState.restoringQueuedInput}
         cancellingTurnId={cancellingTurnId}
         composerRef={layout.bindComposerElement}
         composerSubmitShortcut={composerSubmitShortcut}
@@ -403,8 +406,10 @@ export function ConversationWorkspaceSurface({
         renderUploadingResourceChip={renderUploadingResourceChip}
         queuedInputPanel={conversationEnabled && conversationDetail?.queued_inputs.length ? (
           <QueuedInputPanel
+            key={conversationDetail.session_id}
+            disabled={Boolean(cancellingTurnId)}
             items={conversationDetail.queued_inputs}
-            resourceUrl={(resourceId) => apiClient.conversationContextResourceUrl(
+            resourceUrl={(resourceId) => conversationApi.conversationContextResourceUrl(
               conversationDetail.session_id, resourceId
             )}
             onDelete={workspaceActions.deleteQueuedInput}
@@ -418,7 +423,7 @@ export function ConversationWorkspaceSurface({
         onRetryAttachmentCapabilities={viewState.retryAttachmentCapabilities}
         selectedModelFileMimeTypes={selectedModelFileMimeTypes}
         selectedScenarioPlaceholder={composerPlaceholder ?? selectedScenario.placeholder}
-        sending={sending}
+        sending={sending || pageState.restoringQueuedInput}
         uploadedResources={uploadedResources}
         uploadingResources={uploadingResources}
       />
@@ -445,7 +450,7 @@ export function ConversationWorkspaceSurface({
         messageItems={renderConversationTurns()}
         messageListRef={messageListRef}
         messagesLength={messagesLength}
-        emptyPrompt={activeScenario === "reports" ? "想先从这份报告的哪一点开始？" : undefined}
+        emptyPrompt={activeScenario === "reports" ? "想先从这份医疗报告的哪一点开始？" : undefined}
         onAddSelectedTextToConversation={onAddSelectedTextToConversation}
         onConversationDisclosureAnchor={onConversationDisclosureAnchor}
         onReturnToLatest={onReturnToLatest}

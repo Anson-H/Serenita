@@ -1,8 +1,11 @@
 from datetime import datetime
+from pathlib import Path
+import os
+from zoneinfo import ZoneInfo
 
 
 def local_now() -> datetime:
-    """Return the current local wall-clock time with its UTC offset."""
+    """Return the current local wall-clock time with its local offset."""
 
     return datetime.now().astimezone()
 
@@ -41,3 +44,22 @@ def local_datetime_from_epoch_ms(timestamp: int) -> datetime:
 
 def elapsed_ms(start: float, end: float) -> int:
     return max(1, round((end - start) * 1000))
+
+
+def local_timezone_name() -> str:
+    """Read the operating system's local timezone; never ask domain callers."""
+    configured = os.environ.get("TZ", "").lstrip(":")
+    if configured:
+        ZoneInfo(configured)
+        return configured
+    location = str(Path("/etc/localtime").resolve())
+    if "/zoneinfo/" in location:
+        return location.split("/zoneinfo/", 1)[1]
+    timezone_file = Path("/etc/timezone")
+    if timezone_file.is_file():
+        return timezone_file.read_text().strip()
+    raise RuntimeError("操作系统尚未提供本地时区设置。")
+
+
+def local_timezone():
+    return ZoneInfo(local_timezone_name())

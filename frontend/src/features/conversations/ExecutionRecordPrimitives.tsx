@@ -3,9 +3,8 @@ import {
   useMemo,
   useRef
 } from "react";
-import type {
-  ConversationContextRecord
-} from "../../api/client";
+import type { ConversationContextRecord } from "../../api/conversations/conversationTypes";
+
 import {
   ChevronRightIcon
 } from "../../components/icons";
@@ -103,7 +102,7 @@ export function conversationTurnFailureMessage(error: unknown) {
 
 export function FormattedRecordValue({ value }: { value: unknown }) {
   const formatted = useMemo(() => formatRecordValue(value), [value]);
-  return <pre>{formatted}</pre>;
+  return <pre className="scroll-balanced">{formatted}</pre>;
 }
 
 export function previewRecordValue(value: unknown) {

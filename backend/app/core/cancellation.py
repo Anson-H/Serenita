@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import threading
+from contextlib import contextmanager
+from contextvars import ContextVar
 from collections.abc import Callable
 
 
@@ -23,6 +25,13 @@ class CancellationToken:
     def raise_if_cancelled(self) -> None:
         if self.is_cancelled:
             raise OperationCancelledError("操作已取消。")
+
+    @contextmanager
+    def commit_guard(self):
+        """Order cancellation and durable commit at one synchronization point."""
+        with self._lock:
+            self.raise_if_cancelled()
+            yield
 
     def register(self, callback: Callable[[], None]) -> Callable[[], None]:
         callback_id = object()
@@ -60,3 +69,21 @@ class CancellationToken:
             # Cancellation must remain best-effort across multiple resources;
             # one already-closed handle cannot prevent the others from closing.
             pass
+
+
+_tool_cancellation = ContextVar('tool_cancellation', default=None)
+
+
+def current_tool_cancellation():
+    return _tool_cancellation.get()
+
+
+@contextmanager
+def tool_cancellation_scope(token):
+    if token is not None:
+        token.raise_if_cancelled()
+    binding = _tool_cancellation.set(token)
+    try:
+        yield
+    finally:
+        _tool_cancellation.reset(binding)

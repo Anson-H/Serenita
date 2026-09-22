@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { Favorite, apiClient } from "../../api/client";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { FavoriteEntities } from "./favoriteEntities";
+import * as favoriteApi from "../../api/favorites/favoriteApi";
+
 import { showStatusNotification } from "../../components/StatusNotificationCenter";
 import {
   removeDeletedFavoriteDetail,
@@ -14,10 +16,13 @@ type UseFavoriteWorkspaceOptions = {
 };
 
 export function useFavoriteWorkspace({ setComposerError, memberCollection }: UseFavoriteWorkspaceOptions) {
-  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const entities = useRef(new FavoriteEntities()).current;
+  const { favorites } = useSyncExternalStore(entities.subscribe, entities.snapshot, entities.snapshot);
+  const setFavorites = entities.updateList;
   const [favoriteSelectionMode, setFavoriteSelectionMode] = useState(false);
   const [selectedFavoriteIds, setSelectedFavoriteIds] = useState<string[]>([]);
-  const [favoriteDetail, setFavoriteDetail] = useState<Favorite | null>(null);
+  const favoriteDetail = entities.detail();
+  const setFavoriteDetail = entities.updateDetail;
   const [editingFavoriteTagIds, setEditingFavoriteTagIds] = useState<string[]>([]);
   const [editingFavoriteDetailTagId, setEditingFavoriteDetailTagId] = useState<string | null>(null);
   const [addingFavoriteTagId, setAddingFavoriteTagId] = useState<string | null>(null);
@@ -32,7 +37,7 @@ export function useFavoriteWorkspace({ setComposerError, memberCollection }: Use
   useEffect(() => {
     if (!memberCollection) return;
     let disposed = false;
-    void apiClient.fetchFavorites().then(response => {
+    void favoriteApi.fetchFavorites().then(response => {
       if (disposed) return;
       const identities = new Map(response.favorites.map(item => [item.favorite_id, item]));
       setFavorites(current => current.map(item => {
@@ -41,7 +46,7 @@ export function useFavoriteWorkspace({ setComposerError, memberCollection }: Use
       }));
     }).catch(() => undefined);
     if (favoriteDetail?.favorite_id) {
-      void apiClient.getFavorite(favoriteDetail.favorite_id).then(updated => {
+      void favoriteApi.getFavorite(favoriteDetail.favorite_id).then(updated => {
         if (!disposed) setFavoriteDetail(current => current?.favorite_id === updated.favorite_id
           ? { ...current, member_id: updated.member_id, member_name: updated.member_name, source_available: updated.source_available }
           : current);
@@ -87,6 +92,7 @@ export function useFavoriteWorkspace({ setComposerError, memberCollection }: Use
       if (!(target instanceof Element)) {
         return;
       }
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (favoriteDetailAutoSaveRef.current?.contains(target)) {
         return;
       }
@@ -115,11 +121,12 @@ export function useFavoriteWorkspace({ setComposerError, memberCollection }: Use
 
   async function showFavorite(favoriteId: string) {
     const requestSequence = ++favoriteDetailRequestSequenceRef.current;
+    const tagRevision = entities.tagRevision(favoriteId);
     favoriteDetailRequestTargetRef.current = favoriteId;
     try {
-      const detail = await apiClient.getFavorite(favoriteId);
+      const detail = await favoriteApi.getFavorite(favoriteId);
       if (requestSequence !== favoriteDetailRequestSequenceRef.current) return;
-      setFavoriteDetail(detail);
+      entities.acceptDetail(detail, tagRevision);
     } catch (error) {
       if (requestSequence !== favoriteDetailRequestSequenceRef.current) return;
       favoriteDetailRequestTargetRef.current = null;
@@ -155,10 +162,11 @@ export function useFavoriteWorkspace({ setComposerError, memberCollection }: Use
     if (!nextSelectionMode) {
       setSelectedFavoriteIds([]);
       setEditingFavoriteTagIds([]);
-      setEditingFavoriteDetailTagId(null);
-      setAddingFavoriteTagId(null);
-      setFavoriteTagInput("");
-      void flushAllFavoriteTags();
+      if (addingFavoriteTagId && editingFavoriteTagIds.includes(addingFavoriteTagId)) {
+        setAddingFavoriteTagId(null);
+        setFavoriteTagInput("");
+      }
+      for (const favoriteId of editingFavoriteTagIds) void flushFavoriteTags(favoriteId);
     }
   }
 
@@ -167,7 +175,7 @@ export function useFavoriteWorkspace({ setComposerError, memberCollection }: Use
       return;
     }
     try {
-      const result = await apiClient.batchDeleteFavorites(selectedFavoriteIds);
+      const result = await favoriteApi.batchDeleteFavorites(selectedFavoriteIds);
       const deletedFavoriteIds = new Set(result.deleted_ids);
       for (const favoriteId of deletedFavoriteIds) {
         pendingFavoriteTagsRef.current.delete(favoriteId);
@@ -184,8 +192,7 @@ export function useFavoriteWorkspace({ setComposerError, memberCollection }: Use
       setEditingFavoriteTagIds((current) => removeFavoriteIds(current, deletedFavoriteIds));
       setEditingFavoriteDetailTagId((current) => (current && deletedFavoriteIds.has(current) ? null : current));
       setFavoriteDetail((current) => removeDeletedFavoriteDetail(current, deletedFavoriteIds));
-      const response = await apiClient.fetchFavorites();
-      setFavorites(response.favorites);
+      setFavorites(current => current.filter(item => !deletedFavoriteIds.has(item.favorite_id)));
       if (result.failed.length) {
         setComposerError(`有 ${result.failed.length} 条收藏未能取消，请刷新后重试。`);
       } else {
@@ -206,7 +213,7 @@ export function useFavoriteWorkspace({ setComposerError, memberCollection }: Use
     favoriteDetailRequestTargetRef.current = null;
     pendingFavoriteTagsRef.current.clear();
     favoriteTagSavePromisesRef.current.clear();
-    setFavorites([]);
+    entities.clear();
     setFavoriteSelectionMode(false);
     setSelectedFavoriteIds([]);
     setFavoriteDetail(null);
@@ -244,7 +251,8 @@ export function useFavoriteWorkspace({ setComposerError, memberCollection }: Use
     setAddingFavoriteTagId,
     setFavoriteTagInput,
     editingFavoriteTagIds,
-    favoriteTagInput
+    favoriteTagInput,
+    getFavorite: entities.get
   });
 
   return {

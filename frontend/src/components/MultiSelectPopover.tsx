@@ -1,3 +1,4 @@
+import {useOptionActivation} from "./useOptionActivation";
 import { createPortal } from "react-dom";
 import type { SelectMenuLayout } from "../utils/popoverPosition";
 import { GroupedList } from "./GroupedList";
@@ -33,6 +34,7 @@ export function MultiSelectPopover<Value extends string>({
       : options.filter(option => selectedValueSet.has(option.value) || option.value === optionValue).map(option => option.value);
     void onChange(nextValues);
   }
+  const activation = useOptionActivation(toggle);
   return (
     <div className={["select-popover", "multi-select-popover", className].filter(Boolean).join(" ")}
       onBlur={picker.onBlur} ref={picker.pickerRef}>
@@ -44,7 +46,7 @@ export function MultiSelectPopover<Value extends string>({
       </button>
       {picker.open && typeof document !== "undefined" ? createPortal(
         <GroupedList density="standard" aria-label={ariaLabel + "候选项"} aria-multiselectable="true"
-          className="select-popover-options multi-select-popover-options"
+          className="select-popover-options scroll-balanced multi-select-popover-options"
           data-modal-focus-scope="true" data-placement={picker.position?.placement}
           id={picker.listboxId} onBlur={picker.onBlur} ref={picker.optionsRef} role="listbox"
           style={{ left: picker.position?.left ?? 0, top: picker.position?.top ?? 0,
@@ -55,12 +57,7 @@ export function MultiSelectPopover<Value extends string>({
             const selected = selectedValueSet.has(option.value);
             return (
               <button aria-selected={selected} className="select-popover-option multi-select-popover-option"
-                key={option.value} onClick={event => { if (event.detail === 0) toggle(option.value); }}
-                onKeyDown={picker.moveOptionFocus} onPointerDown={event => {
-                  if (event.button !== 0) return;
-                  event.preventDefault();
-                  toggle(option.value);
-                }} role="option" type="button">
+                key={option.value} {...activation(option.value)} onKeyDown={picker.moveOptionFocus} role="option" type="button">
                 <span aria-hidden="true" className="selection-check-control" data-selected={selected ? "true" : undefined}>
                   {selected ? <CheckIcon className="selection-check-icon" /> : null}
                 </span><span>{option.label}</span>

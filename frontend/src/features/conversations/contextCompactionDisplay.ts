@@ -1,4 +1,5 @@
-import type { ConversationContextRecord, ConversationModelRecord } from "../../api/client";
+import type { ConversationContextRecord, ConversationModelRecord } from "../../api/conversations/conversationTypes";
+
 import type { ConversationExecutionRecord } from "./conversationTurns";
 
 export function isCompactionStatus(record: ConversationContextRecord) {

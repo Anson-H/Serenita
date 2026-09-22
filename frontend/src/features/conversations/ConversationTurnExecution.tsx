@@ -1,10 +1,8 @@
 import {
   useMemo
 } from "react";
-import type {
-  ConversationErrorRecord,
-  ConversationRecord
-} from "../../api/client";
+import type { ConversationErrorRecord, ConversationRecord } from "../../api/conversations/conversationTypes";
+
 import { isBaseContextAssemblyType } from "../accountPreferences/contextAssemblyDisplay";
 import type { ToolExecutionDisplayType } from "../accountPreferences/toolExecutionDisplay";
 import {
@@ -34,6 +32,7 @@ function isVisibleExecutionRecord(
   mergedRawOutputCallIds: ReadonlySet<string>
 ) {
   if (record.kind === "model") {
+    if (record.channel === "retry") return true;
     if (record.purpose === "context_compaction") return false;
     return (
       record.channel !== "input" &&
@@ -61,6 +60,7 @@ export function ConversationTurnExecution({
   onRegisterMessageElement,
   records,
   turnRecords,
+  showModelIdentity,
   visibleBaseContextRecordIds,
   visibleContextTypes,
   visibleToolTypes
@@ -71,6 +71,7 @@ export function ConversationTurnExecution({
   onRegisterMessageElement: (messageId: string, node: HTMLElement | null) => void;
   records: ConversationExecutionRecord[];
   turnRecords: ConversationRecord[];
+  showModelIdentity: boolean;
   visibleBaseContextRecordIds: ReadonlySet<string>;
   visibleContextTypes: ReadonlySet<string>;
   visibleToolTypes: ReadonlySet<ToolExecutionDisplayType>;
@@ -166,10 +167,11 @@ export function ConversationTurnExecution({
           {bodyMounted ? <div className="turn-execution-body" aria-label="本轮执行过程">
             {traceRecords.map((record) => {
               if (record.kind === "model") {
-                if (record.purpose === "context_compaction") return null;
+                if (record.purpose === "context_compaction" && record.channel !== "retry") return null;
                 if (record.channel === "content") {
                   return (
                     <ModelContentRecord
+                      showModelIdentity={showModelIdentity}
                       highlighted={highlightedMessageId === record.record_id}
                       key={record.record_id}
                       onRegister={onRegisterMessageElement}
@@ -179,6 +181,7 @@ export function ConversationTurnExecution({
                 }
                 return (
                   <ModelRecordDetails
+                      showModelIdentity={showModelIdentity}
                     highlighted={highlightedMessageId === record.record_id}
                     key={record.record_id}
                     onRegister={onRegisterMessageElement}

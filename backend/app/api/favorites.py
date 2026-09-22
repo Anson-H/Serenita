@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from backend.app.api.dependencies import require_current_user, get_favorite_service
-from backend.app.application.auth_service import CurrentUser
+from backend.app.application.accounts.auth_service import CurrentUser
 from backend.app.application.favorite_service import FavoriteService
 from backend.app.schemas.favorite import (
     CreateFavoriteRequest,

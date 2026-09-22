@@ -1,4 +1,4 @@
-import type { ConversationModelRecord, ConversationRecord } from "../../api/client";
+import type { ConversationModelRecord, ConversationRecord } from "../../api/conversations/conversationTypes";
 
 export type ContextWindowUsage = {
   contextWindowTokens: number;

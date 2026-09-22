@@ -1,7 +1,7 @@
 from typing import Any, List, Optional
 from urllib import request
 
-from backend.app.model_capabilities import (
+from backend.app.domain.model_capabilities import (
     DEFAULT_CAPABILITY_PROFILE,
     ModelCapabilityProfiles,
     ModelCapabilityProfile,
@@ -13,6 +13,7 @@ from backend.app.agent_runtime.model_types import (
 from backend.app.core.cancellation import (
     CancellationToken,
 )
+from backend.app.core.model_retry import retry_scope_active, run_model_request
 
 
 from backend.app.providers.types import (
@@ -20,7 +21,7 @@ from backend.app.providers.types import (
     ProviderConnectionResult,
     ProviderModel,
 )
-from backend.app.providers.errors import ProviderChatCompletionError
+from backend.app.providers.errors import ProviderChatCompletionError, ProviderModelListError
 from backend.app.providers.capability_probe import _THINKING_MODES
 from backend.app.providers.errors import ProviderErrorParser, is_context_overflow
 from backend.app.providers.responses import ProviderResponseParser
@@ -30,10 +31,13 @@ from backend.app.providers.capability_probe import ProviderCapabilityProbe
 
 
 class ModelProvider:
+    provider_kind = "builtin"
+    requires_api_key = True
     provider_id = "provider"
     provider_name = "Provider"
     default_api_url = ""
     default_official_url = ""
+    connection_test_path = "/models"
     timeout_seconds = 10
     attachment_timeout_seconds = 300
 
@@ -50,8 +54,56 @@ class ModelProvider:
         )
         self.probe = ProviderCapabilityProbe(self)
 
-    def test_connection(self, api_url: str, api_key: str) -> ProviderConnectionResult:
-        return self.transport.test_connection(api_url=api_url, api_key=api_key)
+    def embedding_protocols(self, api_url):
+        return ["compatible"]
+
+    def authorization_headers(self, api_key):
+        return {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+    def embedding_modalities(self, protocol):
+        return {"text"}
+
+    def embedding_dimensions(self, remote_model_id):
+        return []
+
+    def build_embedding_request(self, api_url, model, inputs, mode, dimensions, protocol):
+        from backend.app.providers.embeddings import compatible_payload
+        if protocol != "compatible":
+            raise ProviderChatCompletionError("向量接口协议未确认。", code="EMBEDDING_PROTOCOL_UNCONFIRMED")
+        return api_url.rstrip("/") + "/embeddings", compatible_payload(model, inputs, mode, dimensions)
+
+    def complete_embedding(self, *, purpose=None, **kwargs):
+        from backend.app.providers.embeddings import complete_embedding
+        return run_model_request(
+            lambda: complete_embedding(self, **kwargs),
+            cancellation_token=kwargs.get("cancellation_token"),
+        )
+
+    def test_connection(self, api_url: str, api_key: str, cancellation_token=None) -> ProviderConnectionResult:
+        outer_owner = retry_scope_active()
+        try:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
+            return self._test_connection(api_url, api_key, cancellation_token)
+        except (ProviderChatCompletionError, ProviderModelListError) as exc:
+            if outer_owner:
+                raise
+            attempts = getattr(exc, "retry_attempts", None)
+            message = str(exc)
+            if attempts is not None:
+                message += f"（已尝试 {attempts} 次）"
+            from dataclasses import replace
+            from backend.app.core.model_retry import error_details
+            return replace(self.failure(message, code=exc.code or "MODEL_ERROR"),
+                           details=error_details(exc))
+
+    def _test_connection(self, api_url: str, api_key: str, cancellation_token=None) -> ProviderConnectionResult:
+        return run_model_request(
+            lambda: self.transport.test_connection(
+                api_url=api_url, api_key=api_key, cancellation_token=cancellation_token
+            ),
+            cancellation_token=cancellation_token,
+        )
 
     def list_models(
         self,
@@ -59,8 +111,14 @@ class ModelProvider:
         api_key: str,
         cancellation_token: CancellationToken | None = None,
     ) -> List[ProviderModel]:
-        return self.transport.list_models(
-            api_url=api_url, api_key=api_key, cancellation_token=cancellation_token
+        return self._list_models(api_url, api_key, cancellation_token)
+
+    def _list_models(self, api_url, api_key, cancellation_token=None):
+        return run_model_request(
+            lambda: self.transport.list_models(
+                api_url=api_url, api_key=api_key, cancellation_token=cancellation_token
+            ),
+            cancellation_token=cancellation_token,
         )
 
     def complete_chat(
@@ -73,13 +131,16 @@ class ModelProvider:
         timeout_seconds: Optional[float] = None,
         cancellation_token: CancellationToken | None = None,
     ) -> AssistantModelOutput:
-        return self.transport.complete_chat(
-            api_url=api_url,
-            api_key=api_key,
-            remote_model_id=remote_model_id,
-            model_request=model_request,
-            thinking_mode=thinking_mode,
-            timeout_seconds=timeout_seconds,
+        return run_model_request(
+            lambda: self.transport.complete_chat(
+                api_url=api_url,
+                api_key=api_key,
+                remote_model_id=remote_model_id,
+                model_request=model_request,
+                thinking_mode=thinking_mode,
+                timeout_seconds=timeout_seconds,
+                cancellation_token=cancellation_token,
+            ),
             cancellation_token=cancellation_token,
         )
 
@@ -165,7 +226,7 @@ class ModelProvider:
 
     def parse_model_payload(self, payload: Any) -> List[ProviderModel]:
         if isinstance(payload, dict):
-            raw_models = payload.get("data") or payload.get("models") or []
+            raw_models = payload.get("data") or payload.get("models") or payload.get("output", {}).get("models") or []
         elif isinstance(payload, list):
             raw_models = payload
         else:
@@ -196,6 +257,8 @@ class ModelProvider:
                     if isinstance(model_name, str)
                     else remote_model_id,
                     profile=profile,
+                    model_type=self.model_type_from_metadata(item),
+                    embedding_dimensions=[value for value in item.get("supported_dimensions", []) if type(value) is int and value > 0],
                     created_at=created_at,
                     capability_declarations=self.capability_declarations(
                         item,
@@ -204,6 +267,15 @@ class ModelProvider:
                 )
             )
         return models
+
+    def model_type_from_metadata(self, item):
+        output = (item.get("architecture") or {}).get("output_modalities", [])
+        explicit = item.get("model_type") or item.get("type")
+        if explicit in {"embedding", "embeddings"} or "embeddings" in output:
+            return "embedding"
+        if explicit in {"generation", "chat", "text-generation"} or "text" in output:
+            return "generation"
+        return "unknown"
 
     def normalize_capabilities(
         self,

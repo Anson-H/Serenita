@@ -3,11 +3,10 @@ import {
   type SetStateAction,
 } from "react";
 
-import {
-  type ConversationMessage,
-  type Favorite,
-  apiClient
-} from "../../api/client";
+import * as favoriteApi from "../../api/favorites/favoriteApi";
+import type { ConversationMessage } from "../../api/conversations/conversationTypes";
+import type { Favorite } from "../../api/favorites/favoriteTypes";
+
 import { showStatusNotification } from "../../components/StatusNotificationCenter";
 
 type FavoriteMessageActionsOptions = {
@@ -30,12 +29,12 @@ export function useFavoriteMessageActions({
     const existing = favorites.find((favorite) => favorite.source_id === message.message_id);
     try {
       if (existing) {
-        await apiClient.deleteFavorite(existing.favorite_id);
+        await favoriteApi.deleteFavorite(existing.favorite_id);
+        setFavorites(current => current.filter(item => item.favorite_id !== existing.favorite_id));
       } else {
-        await apiClient.createFavorite(currentSessionId, message.message_id, []);
+        const created = await favoriteApi.createFavorite(currentSessionId, message.message_id, []);
+        setFavorites(current => [...current.filter(item => item.favorite_id !== created.favorite_id), created]);
       }
-      const response = await apiClient.fetchFavorites();
-      setFavorites(response.favorites);
       showStatusNotification({
         id: `favorite-message-${message.message_id}`,
         message: existing ? "已取消收藏。" : "已收藏。",

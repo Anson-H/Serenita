@@ -1,0 +1,4 @@
+allowed_tools:
+  - create_medication_plan
+  - update_medication_plan
+  - delete_medication_plan

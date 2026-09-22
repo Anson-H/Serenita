@@ -3,10 +3,8 @@ from __future__ import annotations
 import sqlite3
 
 from backend.app.storage.auth_database import initialize_auth_database
-from backend.app.storage.config_database import (
-    initialize_config_database,
-    require_config_database,
-)
+from backend.app.repositories.account_configuration_repository import initialize_config_database
+from backend.app.storage.config_database import require_config_database
 from backend.app.storage.paths import app_paths
 from backend.app.storage.sqlite import connect
 
@@ -16,6 +14,10 @@ class AccountConflictError(RuntimeError):
 
 
 class AccountNotFoundError(RuntimeError):
+    pass
+
+
+class CredentialsChangedError(RuntimeError):
     pass
 
 
@@ -40,6 +42,10 @@ class AuthRepository:
             return connection.execute(
                 "SELECT * FROM accounts WHERE account_id = ?", (account_id,)
             ).fetchone()
+
+    def account_ids(self) -> list[str]:
+        with connect(self.paths.auth_db) as connection:
+            return [row[0] for row in connection.execute("SELECT account_id FROM accounts ORDER BY account_id")]
 
     @staticmethod
     def _insert_session(
@@ -102,6 +108,8 @@ class AuthRepository:
                     ) VALUES (1, NULL, NULL, 'last_used')
                     """
                 )
+                from backend.app.repositories.preference_changes import record_initial_preference
+                record_initial_preference(connection, account_id, "member_preference", schema_alias="account_config")
                 self._insert_session(
                     connection,
                     session_token_hash=session_token_hash,
@@ -119,10 +127,17 @@ class AuthRepository:
         *,
         session_token_hash: str,
         account_id: str,
+        verified_password_hash: str,
         expires_at: str,
         timestamp: str,
     ) -> None:
         with connect(self.paths.auth_db) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                "SELECT password_hash FROM accounts WHERE account_id = ?", (account_id,)
+            ).fetchone()
+            if current is None or current["password_hash"] != verified_password_hash:
+                raise CredentialsChangedError
             self._insert_session(
                 connection,
                 session_token_hash=session_token_hash,
@@ -154,6 +169,65 @@ class AuthRepository:
                 """,
                 (timestamp, timestamp, session_token_hash),
             )
+
+    def delete_account(self, account_id: str) -> bool:
+        with connect(self.paths.auth_db) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            exists = connection.execute(
+                "SELECT 1 FROM accounts WHERE account_id = ?", (account_id,)
+            ).fetchone()
+            if exists is None:
+                return False
+
+            owned_members = [
+                row[0]
+                for row in connection.execute(
+                    "SELECT member_id FROM member_ownerships WHERE account_id = ?",
+                    (account_id,),
+                )
+            ]
+            if owned_members:
+                placeholders = ", ".join("?" for _ in owned_members)
+                affected_grantees = [
+                    row[0]
+                    for row in connection.execute(
+                        f"SELECT DISTINCT account_id FROM member_grants "
+                        f"WHERE member_id IN ({placeholders}) AND account_id != ?",
+                        (*owned_members, account_id),
+                    )
+                ]
+            else:
+                affected_grantees = []
+
+            connection.execute(
+                "DELETE FROM member_lifecycle_tasks "
+                "WHERE owner_account_id = ? OR actor_account_id = ?",
+                (account_id, account_id),
+            )
+            connection.execute(
+                "DELETE FROM member_grants "
+                "WHERE account_id = ? OR member_id IN "
+                "(SELECT member_id FROM member_ownerships WHERE account_id = ?)",
+                (account_id, account_id),
+            )
+            connection.execute(
+                "DELETE FROM login_sessions WHERE account_id = ?", (account_id,)
+            )
+            connection.execute(
+                "DELETE FROM model_service_access WHERE account_id = ?", (account_id,)
+            )
+            connection.execute(
+                "DELETE FROM member_ownerships WHERE account_id = ?", (account_id,)
+            )
+            if affected_grantees:
+                placeholders = ", ".join("?" for _ in affected_grantees)
+                connection.execute(
+                    f"UPDATE accounts SET access_revision = access_revision + 1 "
+                    f"WHERE account_id IN ({placeholders})",
+                    tuple(affected_grantees),
+                )
+            connection.execute("DELETE FROM accounts WHERE account_id = ?", (account_id,))
+            return True
 
     def update_identity(
         self,
@@ -187,6 +261,7 @@ class AuthRepository:
         *,
         account_id: str,
         password_hash: str,
+        verified_password_hash: str,
         current_session_token_hash: str,
         timestamp: str,
     ) -> None:
@@ -196,12 +271,12 @@ class AuthRepository:
                 """
                 UPDATE accounts
                 SET password_hash = ?, updated_at = ?
-                WHERE account_id = ?
+                WHERE account_id = ? AND password_hash = ?
                 """,
-                (password_hash, timestamp, account_id),
+                (password_hash, timestamp, account_id, verified_password_hash),
             )
             if not updated.rowcount:
-                raise AccountNotFoundError
+                raise CredentialsChangedError
             connection.execute(
                 """
                 UPDATE login_sessions

@@ -1,3 +1,4 @@
+import { randomUuid } from "../../utils/randomUuid";
 import {
   type Dispatch,
   type FormEvent,
@@ -6,7 +7,8 @@ import {
   useEffect,
 } from "react";
 
-import { type ConversationMessage } from "../../api/client";
+import type { ConversationMessage } from "../../api/conversations/conversationTypes";
+
 import { copyTextToClipboard } from "../../utils/clipboard";
 import {
   focusWithoutScroll,
@@ -189,7 +191,7 @@ export function useConversationMessageActions(options: ConversationMessageAction
       return [
         ...currentAnnotations,
         {
-          resource_id: window.crypto.randomUUID(),
+          resource_id: randomUuid(),
           source_record_id: annotationSelection.source_record_id,
           annotation_text: annotationSelection.annotation_text,
           preview: annotationSelection.preview

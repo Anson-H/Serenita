@@ -1,11 +1,13 @@
 from typing import Literal, Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from backend.app.domain.model_capabilities import EmbeddingCapabilities, ModelType
 
 
 class ModelProviderSaveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider_id: str
+    provider_id: str | None = None
+    provider_name: str | None = Field(default=None, min_length=1, max_length=50)
     api_url: Optional[str] = None
     official_url: Optional[str] = None
     api_key: Optional[str] = None
@@ -17,6 +19,7 @@ class ModelProviderPatchRequest(BaseModel):
     api_url: Optional[str] = None
     official_url: Optional[str] = None
     api_key: Optional[str] = None
+    provider_name: str | None = Field(default=None, min_length=1, max_length=50)
 
 
 class ModelProviderTestRequest(BaseModel):
@@ -48,10 +51,7 @@ class AddModelRequest(BaseModel):
 
     provider_id: str
     remote_model_id: str
-    thinking_modes: Optional[list[str]] = None
-    capability_profiles: Optional[ModelCapabilityProfilesRequest] = None
-    context_window_tokens: Optional[int] = None
-    max_output_tokens: Optional[int] = None
+    model_type: ModelType = "unknown"
 
 
 class ModelDefaultsPatchRequest(BaseModel):
@@ -61,13 +61,26 @@ class ModelDefaultsPatchRequest(BaseModel):
     title: Optional[str] = None
     vision_parse: Optional[str] = None
     compact: Optional[str] = None
+    memory_generation: Optional[str] = None
+    text_embedding: Optional[str] = None
+    multimodal_embedding: Optional[str] = None
 
 
 class ModelPatchRequest(BaseModel):
+    model_type: ModelType | None = None
+    embedding_capabilities: EmbeddingCapabilities | None = None
+    embedding_dimensions: StrictInt | None = Field(default=None, gt=0)
+    max_input_tokens: StrictInt | None = Field(default=None, gt=0)
+    max_batch_size: StrictInt | None = Field(default=None, gt=0)
     model_config = ConfigDict(extra="forbid")
 
     model_name: Optional[str] = None
     thinking_modes: Optional[list[str]] = None
     capability_profiles: Optional[ModelCapabilityProfilesRequest] = None
-    context_window_tokens: Optional[int] = None
-    max_output_tokens: Optional[int] = None
+    context_window_tokens: StrictInt | None = Field(default=None, gt=0)
+    max_output_tokens: StrictInt | None = Field(default=None, gt=0)
+
+
+class ModelProbeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    probe_id: str | None = Field(default=None, min_length=1, max_length=100)

@@ -1,4 +1,5 @@
 import { createElement, type ComponentPropsWithRef, type ReactNode } from "react";
+import { CheckIcon } from "./icons";
 
 type ListElement = "div" | "ul" | "ol" | "dl" | "nav";
 type GroupedListProps<Element extends ListElement> = {
@@ -38,4 +39,11 @@ export function ReadonlyField({ className = "", label, value }: {
       <span className="field-value">{value}</span>
     </div>
   );
+}
+
+export function GroupedCheckboxRow({label,checked,disabled=false,onChange}:{label:string;checked:boolean;disabled?:boolean;onChange:(checked:boolean)=>void}) {
+  return <button className="control control--row grouped-checkbox-row" type="button" role="checkbox" aria-checked={checked} disabled={disabled} data-interaction-owner="row" onClick={()=>onChange(!checked)}>
+    <span className="selection-check-control" data-selected={checked?'true':undefined} aria-hidden="true">{checked?<CheckIcon className="selection-check-icon"/>:null}</span>
+    <span>{label}</span>
+  </button>;
 }

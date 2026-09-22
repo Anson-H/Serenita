@@ -11,10 +11,12 @@ import {
   type RefObject
 } from "react";
 
-import type { UploadedResource } from "../../api/client";
+import type { UploadedResource } from "../../api/conversations/conversationTypes";
+
 import {
   ArrowUpIcon,
   PaperclipIcon,
+  WaitingIcon,
   StopIcon
 } from "../../components/icons";
 import {
@@ -196,7 +198,7 @@ export function ConversationComposer({
             </summary>
             <div
               aria-label="队列与上下文"
-              className="conversation-composer-auxiliary-tray"
+              className="conversation-composer-auxiliary-tray scroll-balanced"
               id={auxiliaryTrayId}
               role="region"
             >
@@ -271,14 +273,15 @@ export function ConversationComposer({
             {renderComposerModelControl()}
             {showStopButton ? (
               <button
-                aria-label="停止生成"
+                aria-label={cancellingTurnId ? "正在停止生成" : "停止生成"}
+                aria-busy={Boolean(cancellingTurnId)}
                 className="control control--inline control--icon control--ghost command-button send-button stop-button"
                 disabled={Boolean(cancellingTurnId)}
                 onClick={onCancelActiveGeneration}
-                title="停止生成"
+                title={cancellingTurnId ? "正在停止生成…" : "停止生成"}
                 type="button"
               >
-                <StopIcon />
+                {cancellingTurnId ? <WaitingIcon /> : <StopIcon />}
               </button>
             ) : <button
               aria-label={sending ? "发送中..." : "发送"}

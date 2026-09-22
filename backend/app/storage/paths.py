@@ -53,7 +53,8 @@ def data_root() -> Path:
     configured_root = os.environ.get("DATA_ROOT")
     if configured_root:
         return Path(configured_root)
-    return Path(__file__).resolve().parents[3] / "serenita_files"
+    directory = "serenita_online_data" if os.environ.get("SERENITA_SERVICE_MODE") == "official" else "serenita_self_hosted_data"
+    return Path(__file__).resolve().parents[3] / directory
 
 
 def ensure_private_directory(path: Path | str) -> Path:
@@ -179,7 +180,7 @@ class AppPaths:
         auth_directory = self.root / "all_users" / "auth"
         harden_private_ancestors(auth_directory, self.root)
         harden_private_tree_once(auth_directory)
-        return auth_directory / "auth.db"
+        return auth_directory / "user_auth.db"
 
     def config_db(self, account_id: str) -> Path:
         return self.account_root(account_id) / "config" / "settings.db"
@@ -200,6 +201,30 @@ class AppPaths:
 
     def reports_db(self, account_id: str) -> Path:
         return self.account_root(account_id) / "reports" / "db_storage" / "reports.db"
+
+    def medical_logs_db(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "medical_logs" / "db_storage" / "medical_logs.db"
+
+    def knowledge_db(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "knowledge" / "db_storage" / "knowledge.db"
+
+    def memory_db(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "memory" / "db_storage" / "memory.db"
+
+    def memory_vectors_dir(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "memory" / "vector_storage"
+
+    def body_metrics_db(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "body_metrics" / "db_storage" / "body_metrics.db"
+
+    def medications_db(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "medications" / "db_storage" / "medications.db"
+
+    def notifications_db(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "notifications" / "db_storage" / "notifications.db"
+
+    def medication_files_dir(self, account_id: str) -> Path:
+        return self.account_root(account_id) / "medications" / "files"
 
     def report_attachments_dir(self, account_id: str) -> Path:
         return self.account_root(account_id) / "reports" / "attachments"

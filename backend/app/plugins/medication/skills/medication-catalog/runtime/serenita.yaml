@@ -1,0 +1,3 @@
+allowed_tools:
+  - create_medication
+  - add_medication_sources

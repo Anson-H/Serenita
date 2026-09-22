@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from backend.app.core.time import local_now_iso
-from backend.app.storage.config_database import initialize_config_database
+from backend.app.repositories.account_configuration_repository import initialize_config_database
+from backend.app.storage.config_database import WEB_PROVIDERS_TABLE_SCHEMA
 from backend.app.storage.crypto import (
     seal_web_secret,
     unseal_web_secret,
@@ -45,7 +46,7 @@ class WebAccessRepository:
                 str(item["provider_id"])
                 for item in connection.execute(
                     "SELECT provider_id FROM web_providers "
-                    "WHERE is_configured = 1 AND encrypted_api_key IS NOT NULL"
+                    "WHERE encrypted_api_key IS NOT NULL"
                 ).fetchall()
             }
             provider_api_urls = {
@@ -85,7 +86,7 @@ class WebAccessRepository:
             if next_enabled:
                 credential = connection.execute(
                     "SELECT 1 FROM web_providers "
-                    "WHERE provider_id = ? AND is_configured = 1 "
+                    "WHERE provider_id = ? "
                     "AND encrypted_api_key IS NOT NULL",
                     (next_provider,),
                 ).fetchone()
@@ -106,6 +107,7 @@ class WebAccessRepository:
     ) -> None:
         self._initialize(account_id)
         provider = self._provider_id(provider_id)
+        WEB_PROVIDERS_TABLE_SCHEMA.validate_values({'provider_id': provider, 'api_url': api_url}, partial=True)
         timestamp = local_now_iso()
         with connect(self._path(account_id)) as connection:
             connection.execute(
@@ -132,7 +134,6 @@ class WebAccessRepository:
                 """
                 UPDATE web_providers
                 SET encrypted_api_key = ?,
-                    is_configured = 1,
                     updated_at = ?
                 WHERE provider_id = ?
                 """,
@@ -157,7 +158,6 @@ class WebAccessRepository:
                 """
                 UPDATE web_providers
                 SET encrypted_api_key = NULL,
-                    is_configured = 0,
                     updated_at = ?
                 WHERE provider_id = ?
                 """,

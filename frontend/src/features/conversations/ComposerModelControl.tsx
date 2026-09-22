@@ -1,6 +1,7 @@
 import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 
-import type { AddedModel } from "../../api/client";
+import type { AddedModel } from "../../api/models/modelTypes";
+
 import { GroupedList } from "../../components/GroupedList";
 import {
   BrainIcon,
@@ -47,7 +48,7 @@ export function ComposerModelControl({
   const modes = selectedThinkingModes.length ? selectedThinkingModes : ["default"];
   const modeIndex = Math.max(0, modes.indexOf(thinkingMode));
   const progress = modes.length > 1 ? modeIndex / (modes.length - 1) * 100 : 0;
-  const triggerLabel = `模型与推理强度：${currentModelName}，${currentThinkingLabel}`;
+  const triggerLabel = `模型与推理强度：${currentModelName} · ${selectedModel?.provider_name ?? ""}，${currentThinkingLabel}`;
   function returnFocus(modality: FocusModality) {
     focusWithModality(controlRef.current?.querySelector<HTMLButtonElement>(".composer-model-trigger") ?? null, modality);
   }
@@ -142,13 +143,13 @@ export function ComposerModelControl({
           <GroupedList className="composer-model-popover-main" density="standard">
             <button
               aria-expanded={activeSection === "model"}
-              aria-label={`选择模型：${currentModelName}`}
+              aria-label={`选择模型：${currentModelName} · ${selectedModel?.provider_name ?? ""}`}
               aria-haspopup="true"
               className="composer-model-name-button"
               onClick={() => setActiveSection(activeSection ? null : "model")}
               type="button"
             >
-              <span>{currentModelName}</span>
+              <span className="model-provider-label" title={`${currentModelName} · ${selectedModel?.provider_name ?? ""}`}><span>{currentModelName}</span><small>{selectedModel?.provider_name}</small></span>
               <ChevronRightIcon className="composer-model-row-chevron" />
             </button>
             <div className="composer-reasoning-control field-row">
@@ -189,7 +190,7 @@ export function ComposerModelControl({
               </button>
               <GroupedList
                 aria-label="模型"
-                className="composer-model-side-panel"
+                className="composer-model-side-panel scroll-balanced"
                 role="radiogroup"
                 density="standard"
               >
@@ -197,6 +198,8 @@ export function ComposerModelControl({
                   models.map((model) => (
                     <button
                       aria-checked={model.model_id === selectedModel?.model_id}
+                      aria-label={`${model.model_name} · ${model.provider_name}`}
+                      title={`${model.model_name} · ${model.provider_name}`}
                       className={
                         model.model_id === selectedModel?.model_id
                           ? "composer-model-option active"
@@ -210,7 +213,7 @@ export function ComposerModelControl({
                       role="radio"
                       type="button"
                     >
-                      <span>{model.model_name}</span>
+                      <span className="model-provider-label"><span>{model.model_name}</span><small>{model.provider_name}</small></span>
                     </button>
                   ))
                 ) : (

@@ -1,6 +1,8 @@
 /** Serializes writes to one resource without coupling unrelated resources. */
 export class SerialTasks {
   private readonly pending = new Map<string, Promise<unknown>>();
+  hasPending(key: string): boolean { return this.pending.has(key); }
+
   run<T>(key: string, task: () => Promise<T>, isCurrent: () => boolean): Promise<T> {
     const run = async () => {
       if (!isCurrent()) { const error = new Error('操作所属页面已改变。'); error.name = 'AbortError'; throw error; }

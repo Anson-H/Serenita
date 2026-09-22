@@ -3,16 +3,13 @@ import { useLayoutEffect } from "react";
 /** Keep each content inset tied to its own scrollbar's actual layout width. */
 export function useScrollbarMetrics() {
   useLayoutEffect(() => {
-    const selector = ".scroll-content, .conversation-surface";
+    const selector = ".scroll-content, .scroll-balanced, .conversation-surface";
     const property = "--scrollbar-layout-width";
     const elements = new Set<HTMLElement>();
 
-    // Detect the browser's default scrollbar mode once, before any later route
-    // or dialog can mount. Per-element measurement remains authoritative, but
-    // this root hint prevents a newly mounted overlay-scrollbar surface from
-    // briefly using the classic 10px fallback before MutationObserver runs.
     const root = document.documentElement;
     const previousRootLayout = root.getAttribute("data-scrollbar-layout");
+    const previousRootWidth = root.style.getPropertyValue(property);
     const probe = document.createElement("div");
     probe.style.cssText =
       "position:absolute;visibility:hidden;overflow:scroll;width:100px;height:100px;inset:-9999px auto auto -9999px;";
@@ -20,26 +17,20 @@ export function useScrollbarMetrics() {
     const defaultLayoutWidth = probe.offsetWidth - probe.clientWidth;
     probe.remove();
     root.dataset.scrollbarLayout = defaultLayoutWidth > 0 ? "classic" : "overlay";
+    root.style.setProperty(property, `${defaultLayoutWidth}px`);
 
     const scheduledFrames = new Map<HTMLElement, number>();
     const measure = (element: HTMLElement) => {
       const style = getComputedStyle(element);
       const borders = parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
       const width = Math.max(0, element.offsetWidth - element.clientWidth - borders);
-      if (width > 0) {
-        const value = `${width}px`;
-        if (element.style.getPropertyValue(property) !== value) {
-          element.style.setProperty(property, value);
-        }
-        element.removeAttribute("data-scrollbar-layout");
-      } else if (element.style.getPropertyValue(property)) {
-        // Overlay scrollbars report no layout width. Keep the shared CSS
-        // fallback instead of replacing it with a misleading zero value.
-        element.style.removeProperty(property);
-        element.dataset.scrollbarLayout = "overlay";
-      } else {
-        element.dataset.scrollbarLayout = "overlay";
+      // Zero is authoritative too: overlay and non-overflowing surfaces must
+      // never inherit a parent's occupied scrollbar width.
+      const value = `${width}px`;
+      if (element.style.getPropertyValue(property) !== value) {
+        element.style.setProperty(property, value);
       }
+      element.dataset.scrollbarLayout = width > 0 ? "classic" : "overlay";
     };
     const scheduleRemeasure = (element: HTMLElement) => {
       const previousFrame = scheduledFrames.get(element);
@@ -66,10 +57,18 @@ export function useScrollbarMetrics() {
     };
     observeTree(document.body);
 
-    // Routes and dialogs mount after App's layout effect. Text-only streaming
-    // updates need no scan; ResizeObserver handles the existing containers.
+    // Overflow can change without a ResizeObserver notification in WebKit.
+    // Remeasure affected ancestors when their content or visibility changes.
     const mutationObserver = new MutationObserver((records) => {
-      for (const record of records) record.addedNodes.forEach(observeTree);
+      for (const record of records) {
+        record.addedNodes.forEach(observeTree);
+        if (record.attributeName === "class") observeTree(record.target);
+        let ancestor = record.target instanceof Element ? record.target : record.target.parentElement;
+        while (ancestor) {
+          if (ancestor instanceof HTMLElement && elements.has(ancestor)) scheduleRemeasure(ancestor);
+          ancestor = ancestor.parentElement;
+        }
+      }
       for (const element of elements) {
         if (element.isConnected) continue;
         resizeObserver.unobserve(element);
@@ -81,7 +80,10 @@ export function useScrollbarMetrics() {
         elements.delete(element);
       }
     });
-    mutationObserver.observe(document.body, { childList: true, subtree: true });
+    mutationObserver.observe(document.body, {
+      childList: true, characterData: true, subtree: true,
+      attributes: true, attributeFilter: ["class", "style", "hidden"]
+    });
 
     return () => {
       mutationObserver.disconnect();
@@ -94,6 +96,8 @@ export function useScrollbarMetrics() {
       }
       if (previousRootLayout === null) root.removeAttribute("data-scrollbar-layout");
       else root.setAttribute("data-scrollbar-layout", previousRootLayout);
+      if (previousRootWidth) root.style.setProperty(property, previousRootWidth);
+      else root.style.removeProperty(property);
     };
   }, []);
 }

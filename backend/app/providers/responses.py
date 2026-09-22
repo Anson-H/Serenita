@@ -96,7 +96,7 @@ def _parse_chat_stream_chunk(payload: Any) -> Optional[ModelStreamChunk]:
     )
 
 
-def _parse_tool_calls(value: Any) -> tuple[ToolCall, ...]:
+def parse_tool_calls(value: Any) -> tuple[ToolCall, ...]:
     if value is None:
         return ()
     if not isinstance(value, list):
@@ -110,20 +110,22 @@ def _parse_tool_calls(value: Any) -> tuple[ToolCall, ...]:
             raise ProviderChatCompletionError("模型服务返回的工具调用缺少函数信息")
         call_id = str(item.get("id") or "").strip()
         name = str(function.get("name") or "").strip()
-        raw_arguments = function.get("arguments", "{}")
+        raw_arguments = function.get("arguments", "")
         if isinstance(raw_arguments, dict):
             arguments = dict(raw_arguments)
         elif isinstance(raw_arguments, str):
             try:
-                arguments = json.loads(raw_arguments or "{}")
-            except json.JSONDecodeError as exc:
-                raise ProviderChatCompletionError(
-                    "模型服务返回的工具参数不是有效 JSON"
-                ) from exc
+                arguments = json.loads(raw_arguments)
+            except json.JSONDecodeError:
+                arguments = raw_arguments
         else:
-            raise ProviderChatCompletionError("模型服务返回的工具参数格式不正确")
+            arguments = raw_arguments
         if not isinstance(arguments, dict):
-            raise ProviderChatCompletionError("模型服务返回的工具参数必须是 JSON 对象")
+            # Keep rejected arguments attached to their call so the Harness can
+            # return an error to the model without executing the tool.
+            arguments = raw_arguments if isinstance(raw_arguments, str) else json.dumps(
+                raw_arguments, ensure_ascii=False, separators=(",", ":")
+            )
         try:
             calls.append(ToolCall(id=call_id, name=name, arguments=arguments))
         except (TypeError, ValueError) as exc:
@@ -179,6 +181,7 @@ class ProviderResponseParser:
         self.errors = errors
 
     def stream(self, response, cancellation_token=None):
+        has_finish_reason = False
         for raw_line in response:
             if cancellation_token is not None:
                 cancellation_token.raise_if_cancelled()
@@ -197,7 +200,15 @@ class ProviderResponseParser:
             self.errors.raise_payload_error(payload)
             chunk = _parse_chat_stream_chunk(payload)
             if chunk:
+                if chunk.stop_reason and chunk.stop_reason.strip():
+                    has_finish_reason = True
                 yield chunk
+        if cancellation_token is not None:
+            cancellation_token.raise_if_cancelled()
+        if not has_finish_reason:
+            raise ProviderChatCompletionError(
+                "模型服务流式响应缺少结束标记", code="MODEL_STREAM_INCOMPLETE"
+            )
 
     def completion(self, payload: Any) -> AssistantModelOutput:
         if not isinstance(payload, dict):
@@ -215,7 +226,7 @@ class ProviderResponseParser:
             raise ProviderChatCompletionError("模型服务未返回助手消息")
 
         content = _content_text(message.get("content"))
-        tool_calls = _parse_tool_calls(message.get("tool_calls"))
+        tool_calls = parse_tool_calls(message.get("tool_calls"))
         if not content and not tool_calls:
             raise ProviderChatCompletionError("模型服务返回了空回复")
 

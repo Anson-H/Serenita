@@ -114,12 +114,12 @@
   border: 0;
   box-shadow: none;
   background: var(--color-danger-soft);
-  color: var(--color-danger);
+  color: var(--color-foreground);
 }
 
 .control--danger:hover:not(:disabled) {
   background: var(--color-danger-hover);
-  color: var(--color-danger);
+  color: var(--color-foreground);
 }
 
 .control:disabled {
@@ -139,8 +139,9 @@ label,
 
 input,
 textarea,
-select {
-  /* Draw the stroke inside the surface without adding to the 40px control. */
+select,
+.text-input-surface {
+  /* Input surfaces share control spacing without a persistent outline. */
   min-height: var(--size-control-primary);
   min-width: 0;
   border: 0;
@@ -151,7 +152,15 @@ select {
   font-size: var(--text-body);
   font-weight: var(--weight-regular);
   line-height: var(--line-body);
-  box-shadow: inset 0 0 0 1px var(--color-divider);
+  box-shadow: none;
+}
+
+.text-input-surface {
+  display: block;
+  width: 100%;
+  font-family: var(--font-ui);
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 input { width: 100%; }
@@ -162,17 +171,18 @@ select {
 select { max-width: 240px; }
 
 .secret-field > label { display: block; }
+.secret-input input[data-saved-secret]::placeholder { color: currentColor; opacity: 1; }
 .secret-input { position: relative; display: block; width: 100%; }
-.secret-input input { padding-right: calc(var(--size-inline-button) + var(--space-control-inline)); }
-.secret-input.with-before-toggle input { padding-right: calc(var(--size-inline-button) * 2 + var(--space-content)); }
+.secret-input input { padding-right: calc(max(var(--size-inline-button), var(--size-pointer-min)) + var(--space-control-inline)); }
+.secret-input.with-before-toggle input { padding-right: calc(max(var(--size-inline-button), var(--size-pointer-min)) * 2 + var(--space-content)); }
 .secret-before-toggle {
   position: absolute;
   top: 50%;
-  right: calc(var(--size-inline-button) + var(--space-control-inline));
+  right: calc(max(var(--size-inline-button), var(--size-pointer-min)) + var(--space-control-inline));
   display: inline-grid;
   place-items: center;
-  width: var(--size-inline-button);
-  height: var(--size-inline-button);
+  width: max(var(--size-inline-button), var(--size-pointer-min));
+  height: max(var(--size-inline-button), var(--size-pointer-min));
   transform: translateY(-50%);
 }
 
@@ -370,3 +380,8 @@ select { max-width: 240px; }
 @media (pointer: coarse) {
   .discrete-slider { height: var(--size-touch-target); }
 }
+
+/* Semantic icons accompany theme-neutral labels. */
+.control--danger svg { color: var(--color-danger); }
+
+input::placeholder, textarea::placeholder { color: var(--color-foreground-muted); opacity: 1; }

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "serenita"
-version = "0.2.0"
-description = "Serenita v0.2.0 patient report workspace"
+version = "0.3.0"
+description = "Serenita v0.3.0 health workspace"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi",
@@ -14,7 +14,13 @@ dependencies = [
     "python-multipart",
     "cryptography",
     "pyyaml",
+    "jsonschema>=4.26,<5",
     "markdown-it-py>=4.2,<5",
+    "pypdf",
+    "lancedb>=0.38.0",
+    "pillow>=12.3.0",
+    "tiktoken>=0.14",
+    "tokenizers>=0.22",
 ]
 
 [dependency-groups]
@@ -23,4 +29,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["backend"]
+packages = ["backend", "zleap"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

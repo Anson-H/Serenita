@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { AlertIcon, CheckIcon, InfoIcon, XIcon } from "./icons";
+import { ControlRowContent } from "./ControlRowContent";
 
 export type StatusNotificationTone = "error" | "info" | "success" | "warning";
 
@@ -11,10 +12,12 @@ type StatusNotificationAction = {
 
 type StatusNotificationInput = {
   action?: StatusNotificationAction;
+  dismissMode?: "auto" | "manual";
   durationMs?: number | null;
   id?: string;
   message: string;
   title?: string;
+  showIcon?: boolean;
   tone?: StatusNotificationTone;
 };
 
@@ -29,6 +32,7 @@ const listeners = new Set<StatusNotificationListener>();
 const dismissListeners = new Set<(notificationId: string) => void>();
 const pendingNotifications: StatusNotification[] = [];
 let notificationSequence = 0;
+const AUTO_NOTIFICATION_DURATION_MS = 3000;
 
 const TONE_LABEL: Record<StatusNotificationTone, string> = {
   error: "错误",
@@ -38,20 +42,26 @@ const TONE_LABEL: Record<StatusNotificationTone, string> = {
 };
 
 const TONE_MARK: Record<StatusNotificationTone, ReactNode> = {
-  error: <XIcon />,
+  error: null,
   info: <InfoIcon />,
   success: <CheckIcon />,
   warning: <AlertIcon />
 };
 
 function notificationDuration(notification: StatusNotification) {
+  if (notification.dismissMode === "manual") {
+    return null;
+  }
+  if (notification.dismissMode === "auto" && notification.durationMs === null) {
+    return AUTO_NOTIFICATION_DURATION_MS;
+  }
   if (notification.durationMs !== undefined) {
     return notification.durationMs;
   }
   if (notification.tone === "error") {
     return null;
   }
-  return notification.tone === "success" ? 3600 : 5200;
+  return AUTO_NOTIFICATION_DURATION_MS;
 }
 
 export function showStatusNotification(input: StatusNotificationInput) {
@@ -63,7 +73,8 @@ export function showStatusNotification(input: StatusNotificationInput) {
     ...input,
     id: input.id ?? `status-notification-${Date.now()}-${notificationSequence++}`,
     message,
-    tone: input.tone ?? "info"
+    tone: input.tone ?? "info",
+    dismissMode: input.dismissMode ?? (input.tone === "error" ? "manual" : "auto")
   };
   if (!listeners.size) {
     pendingNotifications.push(notification);
@@ -98,7 +109,7 @@ export function useStatusNotification(
       lastMessageRef.current = "";
       return;
     }
-    const fingerprint = [options.id, options.tone, options.title, nextMessage].join("|");
+    const fingerprint = [options.id, options.tone, options.title, options.showIcon, nextMessage].join("|");
     if (lastMessageRef.current === fingerprint) {
       return;
     }
@@ -108,7 +119,7 @@ export function useStatusNotification(
       action: actionRef.current,
       message: nextMessage
     });
-  }, [message, options.durationMs, options.id, options.title, options.tone]);
+  }, [message, options.dismissMode, options.durationMs, options.id, options.title, options.tone, options.showIcon]);
 }
 
 export function StatusNotificationCenter() {
@@ -163,21 +174,21 @@ export function StatusNotificationCenter() {
     <aside aria-label="状态通知" className="status-notification-region">
       {notifications.map((notification) => (
         <section
-          className="status-notification"
+          className="status-notification standard-control-bar"
+          data-dismiss-mode={notification.dismissMode}
           data-tone={notification.tone}
           key={notification.id}
           role={notification.tone === "error" ? "alert" : "status"}
         >
-          <span aria-hidden="true" className="status-notification-mark">
-            {TONE_MARK[notification.tone]}
-          </span>
           <div className="status-notification-copy">
-            <span className="status-notification-kicker">{TONE_LABEL[notification.tone]}</span>
-            {notification.title ? <strong>{notification.title}</strong> : null}
-            <p>{notification.message}</p>
+            <ControlRowContent
+              title={notification.title || TONE_LABEL[notification.tone]}
+              description={notification.message}
+              icon={notification.showIcon === false ? undefined : TONE_MARK[notification.tone]}
+            />
             {notification.action ? (
               <button
-                className="status-notification-action"
+                className="control control--compact status-notification-action"
                 onClick={() => {
                   notification.action?.onClick();
                   dismiss(notification.id);
@@ -190,7 +201,7 @@ export function StatusNotificationCenter() {
           </div>
           <button
             aria-label="关闭通知"
-            className="status-notification-close"
+            className="control control--inline control--icon control--ghost"
             onClick={() => dismiss(notification.id)}
             type="button"
           >

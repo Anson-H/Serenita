@@ -2,6 +2,7 @@
 
 @media (pointer: coarse) {
   body {
+    --size-pointer-min: var(--size-touch-target);
     --workspace-titlebar-side: var(--size-touch-target);
   }
 

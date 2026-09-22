@@ -1,0 +1,4 @@
+allowed_tools:
+  - "create_report"
+  - "link_duplicate_sources"
+  - "merge_report"

@@ -3,10 +3,10 @@ from typing import Optional
 from fastapi import Cookie, Depends, Request
 from backend.app.core.errors import raise_error
 
-from backend.app.application.account_settings_service import AccountSettingsService
-from backend.app.application.auth_service import AuthService, CurrentUser
-from backend.app.application.conversation_service import ConversationService
-from backend.app.application.report_service import ReportService
+from backend.app.application.accounts.settings_service import AccountSettingsService
+from backend.app.application.accounts.auth_service import AuthService, CurrentUser
+from backend.app.application.conversations.service import ConversationService
+from backend.app.application.reports.service import ReportService
 from backend.app.plugins.web.service import WebAccessService
 
 
@@ -23,9 +23,16 @@ def require_current_user(
     service: AuthService = Depends(get_auth_service),
 ) -> CurrentUser:
     user = service.current_user(session_token)
+    if not request.app.state.services.deployment.official:
+        request.app.state.services.local_workspace.require_user(user)
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         require_account_context(request, user)
     return user
+
+
+def require_official_login(request: Request):
+    if not request.app.state.services.deployment.official:
+        raise_error('forbidden', "OFFICIAL_LOGIN_ONLY", "本地工作区无需登录；请前往在线版登录官方账号。")
 
 
 def get_account_settings_service(request: Request) -> AccountSettingsService:

@@ -1,11 +1,5 @@
-import type {
-  ConversationDetail,
-  ConversationMessage,
-  ConversationRecord,
-  ConversationStreamEvent,
-  StartedMessageResponse
-} from "../../api/client";
-import { isConversationMessage } from "../../api/client";
+import type { ConversationDetail, ConversationMessage, ConversationRecord, ConversationStreamEvent, StartedMessageResponse } from "../../api/conversations/conversationTypes";
+import { isConversationMessage } from "../../api/conversations/conversationTypes";
 
 type MessageUpdater = (message: ConversationMessage) => ConversationMessage;
 
@@ -218,7 +212,7 @@ export function appendRecordDeltaToDetail(
   recordId: string,
   delta: string,
   offset: number,
-  channel?: "input" | "reasoning" | "content" | "raw_output" | "tool_request" | "result" | "name" | "arguments"
+  channel?: "input" | "reasoning" | "content" | "raw_output" | "tool_request" | "result" | "retry" | "name" | "arguments"
 ) {
   if (!detail || !delta) {
     return detail;
@@ -306,6 +300,11 @@ export function completeStreamingRecordInDetail(
     if (record.kind === "model") {
       return {
         ...record,
+        call_id: data.call_id ?? record.call_id,
+        step: data.step ?? record.step,
+        first_call_id: data.first_call_id ?? record.first_call_id,
+        retry: data.retry ?? record.retry,
+        source_event_seqs: data.source_event_seqs ?? record.source_event_seqs,
         channel: data.channel ?? record.channel,
         value: data.value ?? data.content ?? record.value,
         context_window_tokens: data.context_window_tokens ?? record.context_window_tokens,
@@ -315,7 +314,7 @@ export function completeStreamingRecordInDetail(
         usage: data.usage ?? record.usage,
         stop_reason: data.stop_reason ?? record.stop_reason,
         status: data.status ?? "completed",
-        error: data.error ?? record.error,
+        error: data.error === undefined ? record.error : data.error,
         duration_ms: data.duration_ms ?? record.duration_ms
       };
     }

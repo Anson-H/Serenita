@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any
 
 from backend.app.agent_runtime.model_types import (
@@ -125,6 +126,17 @@ class ProviderMessageCodec:
         payload.update(
             self.policy.thinking_mode_payload(remote_model_id, thinking_mode)
         )
+        if (
+            model_request.output_schema is not None
+            and model_request.supports_json_schema_output is True
+        ):
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "structured_output",
+                    "schema": deepcopy(model_request.output_schema),
+                },
+            }
         return payload
 
     def _serialize_content(

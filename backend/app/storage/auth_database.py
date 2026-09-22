@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.app.storage.paths import AppPaths, app_paths
+from backend.app.storage.member_lifecycle_database import MEMBER_LIFECYCLE_TASKS_TABLE
 from backend.app.storage.schema import (
     CheckConstraint,
     Column,
@@ -15,8 +16,9 @@ from backend.app.storage.sqlite import connect
 
 
 AUTH_DATABASE_SCHEMA = Database(
-    name="auth.db",
+    name="user_auth.db",
     tables=(
+        MEMBER_LIFECYCLE_TASKS_TABLE,
         Table(
             name="accounts",
             columns=(
@@ -37,8 +39,8 @@ AUTH_DATABASE_SCHEMA = Database(
                     nullable=False,
                     default="0",
                 ),
-                Column("created_at", "TEXT", ColumnGroup.AUDIT, nullable=False),
-                Column("updated_at", "TEXT", ColumnGroup.AUDIT, nullable=False),
+                Column("created_at", "DATETIME", ColumnGroup.AUDIT, nullable=False),
+                Column("updated_at", "DATETIME", ColumnGroup.AUDIT, nullable=False),
             ),
             primary_key=("account_id",),
             unique_constraints=(
@@ -51,6 +53,22 @@ AUTH_DATABASE_SCHEMA = Database(
             ),
         ),
         Table(
+            name="model_service_access",
+            columns=(
+                Column("account_id", "TEXT", ColumnGroup.PRIMARY_KEY, nullable=False),
+                Column("daily_request_limit", "INTEGER", ColumnGroup.DATA),
+                Column("is_enabled", "INTEGER", ColumnGroup.STATE, nullable=False),
+                Column("created_at", "DATETIME", ColumnGroup.AUDIT, nullable=False),
+                Column("updated_at", "DATETIME", ColumnGroup.AUDIT, nullable=False),
+            ),
+            primary_key=("account_id",),
+            foreign_keys=(ForeignKey(("account_id",), "accounts", ("account_id",)),),
+            checks=(
+                CheckConstraint("daily_request_limit IS NULL OR daily_request_limit BETWEEN 1 AND 1000000"),
+                CheckConstraint("is_enabled IN (0, 1)"),
+            ),
+        ),
+        Table(
             name="login_sessions",
             columns=(
                 Column(
@@ -60,10 +78,10 @@ AUTH_DATABASE_SCHEMA = Database(
                     nullable=False,
                 ),
                 Column("account_id", "TEXT", ColumnGroup.SCOPE, nullable=False),
-                Column("expires_at", "TEXT", ColumnGroup.STATE, nullable=False),
-                Column("revoked_at", "TEXT", ColumnGroup.STATE),
-                Column("created_at", "TEXT", ColumnGroup.AUDIT, nullable=False),
-                Column("updated_at", "TEXT", ColumnGroup.AUDIT, nullable=False),
+                Column("expires_at", "DATETIME", ColumnGroup.STATE, nullable=False),
+                Column("revoked_at", "DATETIME", ColumnGroup.STATE),
+                Column("created_at", "DATETIME", ColumnGroup.AUDIT, nullable=False),
+                Column("updated_at", "DATETIME", ColumnGroup.AUDIT, nullable=False),
             ),
             primary_key=("session_token_hash",),
             foreign_keys=(
@@ -82,7 +100,7 @@ AUTH_DATABASE_SCHEMA = Database(
             columns=(
                 Column("member_id", "TEXT", ColumnGroup.PRIMARY_KEY, nullable=False),
                 Column("account_id", "TEXT", ColumnGroup.SCOPE, nullable=False),
-                Column("created_at", "TEXT", ColumnGroup.AUDIT, nullable=False),
+                Column("created_at", "DATETIME", ColumnGroup.AUDIT, nullable=False),
             ),
             primary_key=("member_id",),
             foreign_keys=(
@@ -99,7 +117,7 @@ AUTH_DATABASE_SCHEMA = Database(
                 Column("member_id", "TEXT", ColumnGroup.PRIMARY_KEY, nullable=False),
                 Column("account_id", "TEXT", ColumnGroup.PRIMARY_KEY, nullable=False),
                 Column("permission", "TEXT", ColumnGroup.STATE, nullable=False),
-                Column("updated_at", "TEXT", ColumnGroup.AUDIT, nullable=False),
+                Column("updated_at", "DATETIME", ColumnGroup.AUDIT, nullable=False),
             ),
             primary_key=("member_id", "account_id"),
             foreign_keys=(

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { QueuedConversationInput } from "../../api/client";
+import type { QueuedConversationInput } from "../../api/conversations/conversationTypes";
+
 import { DocumentFormatIcon, EditIcon, GripIcon, TrashIcon, TurnRightIcon } from "../../components/icons";
 
 type QueuedInputPanelProps = {
@@ -10,6 +11,7 @@ type QueuedInputPanelProps = {
   onEdit: (inputId: string) => void | Promise<void>;
   onReorder: (inputIds: string[]) => void | Promise<void>;
   onRunNow: (inputId: string) => void | Promise<void>;
+  disabled?: boolean;
 };
 
 export function QueuedInputPanel({
@@ -18,11 +20,27 @@ export function QueuedInputPanel({
   onDelete,
   onEdit,
   onReorder,
-  onRunNow
+  onRunNow,
+  disabled = false
 }: QueuedInputPanelProps) {
   const [orderedItems, setOrderedItems] = useState(items);
   const orderedItemsRef = useRef(items);
   const draggedInputIdRef = useRef<string | null>(null);
+  const pendingRef = useRef(false);
+  const [pending, setPending] = useState<{ id: string; label: string } | null>(null);
+  const busy = disabled || pending !== null;
+
+  async function perform(id: string, label: string, action: () => void | Promise<void>) {
+    if (disabled || pendingRef.current) return;
+    pendingRef.current = true;
+    setPending({ id, label });
+    try {
+      await action();
+    } finally {
+      pendingRef.current = false;
+      setPending(null);
+    }
+  }
 
   useEffect(() => {
     orderedItemsRef.current = items;
@@ -30,6 +48,7 @@ export function QueuedInputPanel({
   }, [items]);
 
   function previewMove(inputId: string, targetInputId: string) {
+    if (disabled || pendingRef.current) return;
     const current = orderedItemsRef.current;
     const from = current.findIndex((item) => item.input_id === inputId);
     const to = current.findIndex((item) => item.input_id === targetInputId);
@@ -47,7 +66,7 @@ export function QueuedInputPanel({
     const inputIds = orderedItemsRef.current.map((item) => item.input_id);
     draggedInputIdRef.current = null;
     if (inputIds.some((inputId, index) => inputId !== items[index]?.input_id)) {
-      void onReorder(inputIds);
+      void perform(inputIds.join(","), "正在调整顺序…", () => onReorder(inputIds));
     }
   }
 
@@ -64,7 +83,8 @@ export function QueuedInputPanel({
 
   return (
     <section aria-label="等候队列" className="queued-input-panel">
-      <div className="queued-input-list">
+      {pending ? <div role="status">{pending.label}</div> : null}
+      <div className="queued-input-list scroll-balanced">
         {orderedItems.map((item, index) => {
           const firstAttachment = item.context_resources.find(
             (resource) => resource.resource_type === "file"
@@ -87,7 +107,8 @@ export function QueuedInputPanel({
                 aria-label={`移动第 ${index + 1} 项，使用上下方向键调整`}
                 className="queued-input-drag-handle"
                 data-interaction-owner="self"
-                draggable
+                disabled={busy}
+                draggable={!busy}
                 onDragEnd={commitOrder}
                 onDragStart={() => {
                   draggedInputIdRef.current = item.input_id;
@@ -146,20 +167,21 @@ export function QueuedInputPanel({
                   aria-label="调整方向"
                   className="control control--compact control--ghost queued-input-action"
                   data-interaction-owner="self"
-                  onClick={() => void onRunNow(item.input_id)}
+                  disabled={busy}
+                  onClick={() => void perform(item.input_id, "正在调整方向…", () => onRunNow(item.input_id))}
                   title="调整方向：中断当前轮次并立即执行此项"
                   type="button"
                 >
                   <TurnRightIcon className="queued-input-icon" />
-                  <span>调整方向</span>
+                  <span>{pending?.id === item.input_id && pending.label === "正在调整方向…" ? pending.label : "调整方向"}</span>
                 </button>
-                <button aria-label="编辑" className="control control--compact control--ghost queued-input-action" data-interaction-owner="self" onClick={() => void onEdit(item.input_id)} title="取回编辑" type="button">
+                <button aria-label="编辑" className="control control--compact control--ghost queued-input-action" data-interaction-owner="self" disabled={busy} onClick={() => void perform(item.input_id, "正在取回编辑…", () => onEdit(item.input_id))} title="取回编辑" type="button">
                   <EditIcon className="queued-input-icon" />
-                  <span>编辑</span>
+                  <span>{pending?.id === item.input_id && pending.label === "正在取回编辑…" ? pending.label : "编辑"}</span>
                 </button>
-                <button aria-label="删除" className="control control--compact control--ghost control--danger queued-input-action removal-action-control" data-interaction-owner="self" onClick={() => void onDelete(item.input_id)} title="删除" type="button">
+                <button aria-label="删除" className="control control--compact control--ghost control--danger queued-input-action removal-action-control" data-interaction-owner="self" disabled={busy} onClick={() => void perform(item.input_id, "正在删除…", () => onDelete(item.input_id))} title="删除" type="button">
                   <TrashIcon className="queued-input-icon" />
-                  <span>删除</span>
+                  <span>{pending?.id === item.input_id && pending.label === "正在删除…" ? pending.label : "删除"}</span>
                 </button>
               </div>
             </article>

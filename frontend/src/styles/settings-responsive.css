@@ -161,8 +161,7 @@
 
 .settings-workspace .settings-two-column[data-mobile-layer="root"] .settings-primary-nav,
   .settings-workspace .settings-two-column[data-mobile-layer="provider-list"] .settings-list-column,
-  .settings-workspace .settings-two-column[data-mobile-layer="conversation-list"] .conversation-settings-list,
-  .settings-workspace .settings-two-column[data-mobile-layer="dictionary-list"] .dictionary-list-column {
+  .settings-workspace .settings-two-column[data-mobile-layer="conversation-list"] .conversation-settings-list {
     display: grid;
     grid-column: 1 / -1;
   }
@@ -255,13 +254,6 @@
 
 }
 
-@media (max-width: 650px) {
-
-  .settings-workspace .settings-detail-panel-body {
-    padding: var(--space-content);
-  }
-
-}
 
 @media (max-width: 650px) {
 

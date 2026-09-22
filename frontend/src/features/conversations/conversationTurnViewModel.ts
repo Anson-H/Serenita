@@ -1,9 +1,5 @@
-import type {
-  ConversationContextRecord,
-  ConversationModelRecord,
-  ConversationRecord,
-  ConversationToolRecord
-} from "../../api/client";
+import type { ConversationContextRecord, ConversationModelRecord, ConversationRecord, ConversationToolRecord } from "../../api/conversations/conversationTypes";
+
 import type { WebCitationSource } from "../../utils/markdownCitations";
 import {
   webCitationSourcesFromToolRecords

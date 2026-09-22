@@ -1,3 +1,4 @@
+import { NavigationTitle } from "../../components/NavigationTitle";
 import {
   useCallback,
   useEffect,
@@ -141,9 +142,9 @@ export function SettingsListPanel({
       className={["settings-list-column", className].filter(Boolean).join(" ")}
     >
       <header className="settings-list-header">
-        <h2 id={titleId}>{title}</h2>
+        <NavigationTitle id={titleId} title={title} />
       </header>
-      <div className={["settings-list-body", "scroll-content", bodyClassName].filter(Boolean).join(" ")}>
+      <div className={["settings-list-body", "scroll-content", "content-column", bodyClassName].filter(Boolean).join(" ")}>
         {children}
       </div>
       {footer}

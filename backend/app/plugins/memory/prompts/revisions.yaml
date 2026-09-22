@@ -1,0 +1,163 @@
+revisions:
+  description: 为新加入事项的事件生成完整摘要和当前状态。
+  version: '1.0'
+  variables:
+  - time
+  - timezone
+  - custom_background
+  - custom_requirements
+  template: |
+    ## Role
+
+    你负责为新加入事项的事件生成完整摘要和当前状态。
+
+    ## Background
+
+    当前时间：{time}
+    当前时区：{timezone}
+    {custom_background}
+
+    ## Task
+
+    为新加入事项的事件生成完整摘要和当前状态。
+
+    ## Input
+
+    objects、change_sources 是实际读取的记忆及来源，new_event_ids 是新事件，retrieval 给出事项匹配及归属。validation_errors 与 previous_output 用于修正输出。
+
+    ## Output
+
+    返回 reason 和 revisions。完整结构见输出 Schema。
+
+    ## Rules
+
+    每次必须为 revision_event_id 返回恰好一项完整版本，trigger_event_id 使用该事件标识，episode_id 使用它的已保存归属。即使文字与上一版相同，也必须返回。summary 描述整个事项截至当前输入的经过，包括关键事件、进展和转折；state 描述当前情况、实际适用时间及仍未知的部分。先依据事项内事件与来源原文确定实际事实、适用时间和限定，再结合事件关系组织经过。最新版本用于核对覆盖内容，沿用的每项判断仍须有事件及来源支持；旧版本的概括没有依据时，本次完整版本按实际依据表述，旧版本仍保留。概括不能扩大事实范围、提高确定程度，或从局部表现推定原因、整体状态及最终结果；合称须覆盖其全部含义的依据。固定 scope 确定事项范围，不提供额外事实。输出完整版本，不能只返回差异；新资料不改变 scope。依据不明或互相冲突时，在正文中说明，不编造持续时间、诊断或实际执行。reason 说明新事件带来的变化。实际输入与依据由程序保存在执行记录中。版本号与保存时间由程序提供。
+
+    {custom_requirements}
+
+    仅使用当前阶段提供的事实投影；coverage 保留实际读取缺口。事项版本仅提供截点内最新完整版本，历史事实和反证沿事件及来源原文核对。
+  input_schema:
+    type: object
+    properties:
+      objects:
+        type: array
+      change_sources:
+        type: array
+        items:
+          type: object
+      new_event_ids:
+        type: array
+      record_cutoff:
+        type: integer
+      coverage:
+        type: array
+      retrieval:
+        type: object
+      operation_prefix:
+        type: string
+      validation_errors:
+        type: array
+      previous_output:
+        type: string
+      pipeline_stage:
+        const: revisions
+      revision_event_id:
+        type: string
+    required:
+    - objects
+    - new_event_ids
+    - record_cutoff
+    - coverage
+    - retrieval
+    - operation_prefix
+    - pipeline_stage
+    - revision_event_id
+    additionalProperties: false
+  output_schema:
+    type: object
+    properties:
+      reason:
+        type: string
+        minLength: 1
+      revisions:
+        type: array
+        items:
+          additionalProperties: false
+          properties:
+            episode_id:
+              title: Episode Id
+              type: string
+            trigger_event_id:
+              title: Trigger Event Id
+              type: string
+            summary:
+              description: 整个事项截至当前输入的完整经过，包含关键事件、进展和转折；保留不确定内容。
+              minLength: 1
+              title: Summary
+              type: string
+            state:
+              description: 事项当前的完整状态，说明实际时间、支持与反对的依据及未知部分。不能把计划、建议当作已经执行。
+              minLength: 1
+              title: State
+              type: string
+            reason:
+              description: 本次新事件带来的变化；内容没有变化时也说明。
+              minLength: 1
+              title: Reason
+              type: string
+          required:
+          - episode_id
+          - trigger_event_id
+          - summary
+          - state
+          - reason
+          type: object
+        maxItems: 20
+    required:
+    - reason
+    - revisions
+    additionalProperties: false
+  definitions:
+    MemoryReference:
+      additionalProperties: false
+      properties:
+        object_type:
+          enum:
+          - event
+          - processing_attempt
+          - access_restriction
+          - memory_setting
+          - entity
+          - entity_name
+          - vector_space
+          - vector_binding
+          - vector_status
+          - event_relation
+          - episode
+          - episode_revision
+          - episode_membership
+          - memory_execution_entry
+          title: Object Type
+          type: string
+        object_id:
+          minLength: 1
+          title: Object Id
+          type: string
+        version:
+          anyOf:
+          - minimum: 1
+            type: integer
+          - type: 'null'
+          default: null
+          title: Version
+        item_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Item Id
+      required:
+      - object_type
+      - object_id
+      title: MemoryReference
+      type: object

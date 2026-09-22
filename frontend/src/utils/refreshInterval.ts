@@ -1,0 +1,1 @@
+export const LIST_REFRESH_INTERVAL_MS = 2500;

@@ -1,5 +1,8 @@
+import { normalizeFavoriteTags } from "./favoriteTags";
 import type * as React from "react";
-import { Favorite, apiClient } from "../../api/client";
+import * as favoriteApi from "../../api/favorites/favoriteApi";
+import type { Favorite } from "../../api/favorites/favoriteTypes";
+
 import { showStatusNotification } from "../../components/StatusNotificationCenter";
 import {
   addFavoriteIds,
@@ -7,12 +10,12 @@ import {
   applyLocalFavoriteTagsToList,
   applySavedFavoriteDetail,
   applySavedFavoriteList,
-  favoriteTagsForState,
-  normalizedFavoriteTags
+  favoriteTagsForState
 } from "./favoriteState";
 import { sameFavoriteTags } from './favoriteTagEquality';
 
 type Dependencies = {
+  getFavorite?: (id: string) => Favorite | undefined;
   favorites: Favorite[];
   favoriteDetail: Favorite | null;
   pendingFavoriteTagsRef: React.RefObject<Map<string, string[]>>;
@@ -33,6 +36,7 @@ type Dependencies = {
 };
 
 export function createFavoriteTagActions({
+  getFavorite,
   favorites,
   favoriteDetail,
   pendingFavoriteTagsRef,
@@ -52,11 +56,11 @@ export function createFavoriteTagActions({
   favoriteTagInput
 }: Dependencies) {
   function favoriteTagsFor(favoriteId: string) {
-    return favoriteTagsForState(favorites, favoriteDetail, favoriteId);
+    return pendingFavoriteTagsRef.current.get(favoriteId) ?? getFavorite?.(favoriteId)?.tags ?? favoriteTagsForState(favorites, favoriteDetail, favoriteId);
   }
 
   function updateFavoriteTagsLocally(favoriteId: string, tags: string[]) {
-    const normalizedTags = normalizedFavoriteTags(tags);
+    const normalizedTags = normalizeFavoriteTags(tags);
     pendingFavoriteTagsRef.current.set(favoriteId, normalizedTags);
     setFavoriteDetail((current) => applyLocalFavoriteTagsToDetail(current, favoriteId, normalizedTags));
     setFavorites((current) => applyLocalFavoriteTagsToList(current, favoriteId, normalizedTags));
@@ -72,7 +76,7 @@ export function createFavoriteTagActions({
         const pendingTags = pendingFavoriteTagsRef.current.get(favoriteId);
         if (!pendingTags) return;
         try {
-          const updated = await apiClient.updateFavorite(favoriteId, pendingTags);
+          const updated = await favoriteApi.updateFavorite(favoriteId, pendingTags);
           if (workspaceRevision !== favoriteWorkspaceRevisionRef.current) return;
           const latestTags = pendingFavoriteTagsRef.current.get(favoriteId);
           if (!latestTags) return;
@@ -167,8 +171,10 @@ export function createFavoriteTagActions({
 
   function beginFavoriteTagAdd(favoriteId: string, surface: "list" | "detail") {
     if (surface === "detail") {
+      setEditingFavoriteTagIds(current=>current.filter(id=>id!==favoriteId));
       setEditingFavoriteDetailTagId(favoriteId);
     } else {
+      setEditingFavoriteDetailTagId(current=>current===favoriteId?null:current);
       setEditingFavoriteTagIds((current) => (current.includes(favoriteId) ? current : [...current, favoriteId]));
     }
     setAddingFavoriteTagId(favoriteId);
@@ -190,6 +196,7 @@ export function createFavoriteTagActions({
       return;
     }
     appendFavoriteTag(addingFavoriteTagId, submittedTag);
+    if(submittedTag.trim())void flushFavoriteTags(addingFavoriteTagId);
   }
 
   function removeFavoriteTag(favoriteId: string, tagToRemove: string) {

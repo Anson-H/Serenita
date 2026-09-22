@@ -5,6 +5,7 @@ from pathlib import Path
 from backend.app.storage.paths import AppPaths, app_paths
 from backend.app.storage.schema import (
     CheckConstraint,
+    ForeignKey,
     Column,
     ColumnGroup,
     Database,
@@ -16,6 +17,12 @@ from backend.app.storage.sqlite import (
 )
 
 
+from backend.app.schemas.medical_history import MEDICAL_HISTORY_FIELDS
+
+
+from backend.app.storage.business_change_database import BUSINESS_CHANGE_TABLES
+
+
 MEMBER_DATABASE_SCHEMA = Database(
     name="members.db",
     tables=(
@@ -24,14 +31,18 @@ MEMBER_DATABASE_SCHEMA = Database(
             columns=(
                 Column("member_id", "TEXT", ColumnGroup.PRIMARY_KEY, nullable=False),
                 Column("member_name", "TEXT", ColumnGroup.DATA, nullable=False),
+                Column("relationship", "TEXT", ColumnGroup.DATA),
                 Column("sex", "TEXT", ColumnGroup.DATA),
-                Column("birth_date", "TEXT", ColumnGroup.DATA),
+                Column("birth_date", "DATE", ColumnGroup.DATA, non_blank=True),
                 Column("blood_type", "TEXT", ColumnGroup.DATA),
-                Column("created_at", "TEXT", ColumnGroup.AUDIT, nullable=False),
-                Column("updated_at", "TEXT", ColumnGroup.AUDIT, nullable=False),
+                Column("created_at", "DATETIME", ColumnGroup.AUDIT, nullable=False),
+                Column("updated_at", "DATETIME", ColumnGroup.AUDIT, nullable=False),
             ),
             primary_key=("member_id",),
             checks=(
+                CheckConstraint(
+                    "relationship IS NULL OR (length(trim(relationship)) BETWEEN 1 AND 40)",
+                ),
                 CheckConstraint(
                     "length(trim(member_name)) > 0",
                 ),
@@ -44,6 +55,18 @@ MEMBER_DATABASE_SCHEMA = Database(
                 ),
             ),
         ),
+        Table(
+            name="medical_history",
+            columns=(
+                Column("member_id", "TEXT", ColumnGroup.PRIMARY_KEY, nullable=False),
+                *(Column(name, "TEXT", ColumnGroup.DATA) for name in MEDICAL_HISTORY_FIELDS),
+                *(Column(f"{name}_updated_at", "DATETIME", ColumnGroup.AUDIT) for name in MEDICAL_HISTORY_FIELDS),
+            ),
+            primary_key=("member_id",),
+            foreign_keys=(ForeignKey(("member_id",), "members", ("member_id",), on_delete="CASCADE"),),
+            checks=tuple(CheckConstraint(f"{name} IS NULL OR {name}_updated_at IS NOT NULL") for name in MEDICAL_HISTORY_FIELDS),
+        ),
+        *BUSINESS_CHANGE_TABLES,
     ),
 )
 

@@ -1,4 +1,5 @@
-import type { ToolExecutionDisplayType as ApiToolExecutionDisplayType } from "../../api/client";
+import type { ToolExecutionDisplayType as ApiToolExecutionDisplayType } from "../../api/accounts/conversationPreferenceTypes";
+
 import {
   readConversationPreferences,
   useConversationPreferences,

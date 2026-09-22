@@ -1,5 +1,4 @@
-import type { Favorite } from "../../api/client";
-import { normalizeFavoriteTags } from "./favoriteTags";
+import type { Favorite } from "../../api/favorites/favoriteTypes";
 
 export function favoriteTagsForState(
   favorites: Favorite[],
@@ -39,10 +38,6 @@ export function applySavedFavoriteList(
   return favorites.map((favorite) =>
     favorite.favorite_id === favoriteId ? mergeUpdatedFavorite(favorite, updated) : favorite
   );
-}
-
-export function normalizedFavoriteTags(tags: string[]) {
-  return normalizeFavoriteTags(tags);
 }
 
 export function applyLocalFavoriteTagsToDetail(

@@ -1,13 +1,4 @@
-import type {
-  ConversationAssistantRecord,
-  ConversationContextRecord,
-  ConversationErrorRecord,
-  ConversationModelRecord,
-  ConversationObservationRecord,
-  ConversationRecord,
-  ConversationToolRecord,
-  ConversationUserRecord
-} from "../../api/client";
+import type { ConversationAssistantRecord, ConversationContextRecord, ConversationErrorRecord, ConversationModelRecord, ConversationObservationRecord, ConversationRecord, ConversationToolRecord, ConversationUserRecord } from "../../api/conversations/conversationTypes";
 
 export type ConversationExecutionRecord =
   | ConversationContextRecord

@@ -1,0 +1,3 @@
+allowed_tools:
+  - search_knowledge
+  - read_knowledge_file

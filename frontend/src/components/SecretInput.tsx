@@ -4,12 +4,14 @@ import { EyeIcon, EyeOffIcon } from "./icons";
 
 type SecretInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
   beforeToggleAction?: ReactNode;
+  hasSavedValue?: boolean;
   labelForAction: string;
   onReveal?: () => boolean | void | Promise<boolean | void>;
 };
 
 export function SecretInput({
   beforeToggleAction,
+  hasSavedValue = false,
   id,
   labelForAction,
   onReveal,
@@ -46,7 +48,9 @@ export function SecretInput({
 
   return (
     <span className={beforeToggleAction ? "secret-input with-before-toggle" : "secret-input"}>
-      <input {...inputProps} id={inputId} type={revealed ? "text" : "password"} />
+      <input {...inputProps} id={inputId} type={revealed ? "text" : "password"}
+        data-saved-secret={hasSavedValue && !inputProps.value && !revealed || undefined}
+        placeholder={hasSavedValue && !revealed ? "••••••••" : inputProps.placeholder} />
       {beforeToggleAction ? (
         <span className="secret-before-toggle">{beforeToggleAction}</span>
       ) : null}

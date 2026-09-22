@@ -1,15 +1,15 @@
-export * from "./reportTypes";
+export * from "./reports/reportTypes";
 export * from "./types";
 
-import * as accountSettingsApi from "./accountSettingsApi";
-import * as authApi from "./authApi";
-import * as conversationApi from "./conversationApi";
-import * as favoriteApi from "./favoriteApi";
-import * as labDictionaryApi from "./labDictionaryApi";
-import * as memberApi from "./memberApi";
-import * as modelProviderApi from "./modelProviderApi";
-import * as reportApi from "./reportApi";
-import * as webAccessApi from "./webAccessApi";
+import * as accountSettingsApi from "./accounts/accountSettingsApi";
+import * as authApi from "./auth/authApi";
+import * as conversationApi from "./conversations/conversationApi";
+import * as favoriteApi from "./favorites/favoriteApi";
+import * as labDictionaryApi from "./knowledge/labDictionaryApi";
+import * as memberApi from "./accounts/memberApi";
+import * as modelProviderApi from "./models/modelProviderApi";
+import * as reportApi from "./reports/reportApi";
+import * as webAccessApi from "./web/webAccessApi";
 
 export const apiClient = {
   ...authApi,

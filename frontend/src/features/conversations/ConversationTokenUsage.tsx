@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
-import type { ConversationModelRecord } from "../../api/client";
+import type { ConversationModelRecord } from "../../api/conversations/conversationTypes";
+
 import { ChevronDownIcon } from "../../components/icons";
 import {
   firstTokenCount,

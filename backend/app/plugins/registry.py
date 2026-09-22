@@ -35,8 +35,6 @@ def discover_plugin_registries(root: str | Path = PLUGINS_ROOT) -> list[ModuleTy
             raise PluginRegistryError(
                 f"插件目录名必须与 PLUGIN_ID 一致：{directory.name} != {plugin_id}"
             )
-        if not callable(getattr(module, "build_skills", None)):
-            raise PluginRegistryError(f"插件 {plugin_id} 缺少 build_skills()")
         registries.append(module)
     return registries
 
@@ -47,7 +45,8 @@ def build_builtin_skills() -> list[Skill]:
     skills: list[Skill] = []
     seen: set[str] = set()
     for registry in discover_plugin_registries():
-        for skill in registry.build_skills():
+        builder = getattr(registry, "build_skills", None)
+        for skill in builder() if callable(builder) else ():
             if skill.name in seen:
                 raise PluginRegistryError(f"重复的技能名称：{skill.name}")
             seen.add(skill.name)
@@ -155,7 +154,6 @@ def resolve_plugin_input_model_resources(
                 resolved.append(dict(item))
                 break
     return resolved
-
 
 
 

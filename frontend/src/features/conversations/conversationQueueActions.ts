@@ -1,21 +1,18 @@
-import type * as React from "react";
+import type { ConversationDraftStore } from "./conversationDraftStore";
 import {
   type Dispatch,
   type SetStateAction
 } from "react";
-import {
-  apiClient,
-  type ConversationDetail,
-  type ConversationSummary,
-  type QueuedConversationInput,
-  type UploadedResource
-} from "../../api/client";
+import * as conversationApi from "../../api/conversations/conversationApi";
+import type { ConversationDetail, ConversationSummary, QueuedConversationInput, UploadedResource } from "../../api/conversations/conversationTypes";
+
 import { partitionContextResources, type UploadingResource } from "./contextResources";
 import {
   type AnnotatedContext
 } from "./workspaceTypes";
 
 type Dependencies = {
+  draftStore: ConversationDraftStore;
   prepareConversationMutation: (key: string) => void;
   setConversationDetail: Dispatch<SetStateAction<ConversationDetail | null>>;
   currentSessionId: string | null;
@@ -29,7 +26,6 @@ type Dependencies = {
   uploadedResources: UploadedResource[];
   uploadingResources: UploadingResource[];
   annotatedContexts: AnnotatedContext[];
-  restoredQueueContextResourcesRef: React.RefObject<Record<string, unknown>[]>;
   setComposerText: Dispatch<SetStateAction<string>>;
   setUploadedResources: Dispatch<SetStateAction<UploadedResource[]>>;
   setAnnotatedContexts: Dispatch<SetStateAction<AnnotatedContext[]>>;
@@ -38,6 +34,7 @@ type Dependencies = {
 };
 
 export function createConversationQueueActions({
+  draftStore,
   prepareConversationMutation,
   setConversationDetail,
   currentSessionId,
@@ -51,14 +48,18 @@ export function createConversationQueueActions({
   uploadedResources,
   uploadingResources,
   annotatedContexts,
-  restoredQueueContextResourcesRef,
-  setComposerText,
-  setUploadedResources,
-  setAnnotatedContexts,
   onRestoreQueuedInputPreferences,
   clearHighlightedMessage
 }: Dependencies) {
+  async function recoverQueue(error: unknown, message: string) {
+    if (!currentSessionId || !isCurrentScope()) return;
+    setComposerError(error instanceof Error ? error.message : message);
+    await openConversation(currentSessionId).catch(() => false);
+    if (isCurrentScope()) setComposerError(error instanceof Error ? error.message : message);
+  }
+
   function applyQueuedInputs(queuedInputs: QueuedConversationInput[]) {
+    if (!isCurrentScope()) return;
     prepareConversationMutation(
       `queue-update:${queuedInputs.map((item) => item.input_id).join(",")}`
     );
@@ -87,13 +88,10 @@ export function createConversationQueueActions({
       position
     })));
     try {
-      const response = await apiClient.reorderQueuedInputs(currentSessionId, inputIds);
+      const response = await conversationApi.reorderQueuedInputs(currentSessionId, inputIds);
       applyQueuedInputs(response.queued_inputs);
     } catch (error) {
-      if (!isCurrentScope()) return;
-      if (!isCurrentScope()) return;
-      await openConversation(currentSessionId);
-      setComposerError(error instanceof Error ? error.message : "调整等候顺序失败。");
+      await recoverQueue(error, "调整等候顺序失败。");
     }
   }
 
@@ -102,14 +100,10 @@ export function createConversationQueueActions({
       return;
     }
     try {
-      const response = await apiClient.deleteQueuedInput(currentSessionId, inputId);
+      const response = await conversationApi.deleteQueuedInput(currentSessionId, inputId);
       applyQueuedInputs(response.queued_inputs);
-      await refreshConversations();
     } catch (error) {
-      if (!isCurrentScope()) return;
-      if (!isCurrentScope()) return;
-      await openConversation(currentSessionId);
-      setComposerError(error instanceof Error ? error.message : "删除等候输入失败。");
+      await recoverQueue(error, "删除等候输入失败。");
     }
   }
 
@@ -122,18 +116,19 @@ export function createConversationQueueActions({
       uploadedResources.length > 0 ||
       uploadingResources.length > 0 ||
       annotatedContexts.length > 0 ||
-      restoredQueueContextResourcesRef.current.length > 0
+      draftStore.snapshot().contextResources.length > 0
     ) {
       setComposerError("输入框或附件区已有草稿，请先发送或清空后再编辑等候输入。");
       return;
     }
+    const draft = draftStore.beginRestore();
+    if (!draft) return;
+    draftStore.remember(currentSessionId);
     try {
-      const response = await apiClient.restoreQueuedInputToDraft(currentSessionId, inputId);
-      if (!isCurrentScope()) return;
+      const response = await conversationApi.restoreQueuedInputToDraft(currentSessionId, inputId);
       const item = response.queued_input;
       const partition = partitionContextResources(item.context_resources, item.input_id);
-      setComposerText(item.content);
-      setUploadedResources(partition.files.map((file) => {
+      const files = partition.files.map((file) => {
         const original = item.context_resources.find(
           (resource) => resource.resource_type === "file" && resource.resource_id === file.resource_id
         ) ?? {};
@@ -142,26 +137,25 @@ export function createConversationQueueActions({
           original_filename: file.original_filename,
           mime_type: file.mime_type ?? "application/octet-stream",
           size_bytes: typeof original.size_bytes === "number" ? original.size_bytes : 0,
-          storage_status: "ready",
-          lifecycle_status: "attached"
+          storage_status: "ready" as const,
+          lifecycle_status: "attached" as const
         };
-      }));
-      setAnnotatedContexts(partition.annotations.map((annotation) => ({
+      });
+      draftStore.patch(draft, { composerText: item.content, uploadedResources: files, annotatedContexts: partition.annotations.map((annotation) => ({
         ...annotation,
         preview: annotation.annotation_text
-      })));
-      restoredQueueContextResourcesRef.current = item.context_resources.filter(
-        (resource) => !["file", "record_annotation"].includes(String(resource.resource_type ?? ""))
-      );
+      })), contextResources: item.context_resources.filter(
+        resource => !["file", "record_annotation"].includes(String(resource.resource_type ?? ""))
+      ) });
+      if (!isCurrentScope()) return;
       await onRestoreQueuedInputPreferences?.(item.model_id, item.thinking_mode);
+      if (!isCurrentScope()) return;
       applyQueuedInputs(response.queued_inputs);
       setComposerError("");
-      await refreshConversations();
     } catch (error) {
-      if (!isCurrentScope()) return;
-      if (!isCurrentScope()) return;
-      await openConversation(currentSessionId);
-      setComposerError(error instanceof Error ? error.message : "取回等候输入失败。");
+      await recoverQueue(error, "取回等候输入失败。");
+    } finally {
+      draftStore.endRestore(draft);
     }
   }
 
@@ -171,16 +165,16 @@ export function createConversationQueueActions({
     }
     clearHighlightedMessage();
     try {
-      await apiClient.runQueuedInputNow(currentSessionId, inputId);
+      const response = await conversationApi.runQueuedInputNow(currentSessionId, inputId);
       if (!isCurrentScope()) return;
+      applyQueuedInputs(response.queued_inputs);
       prepareConversationMutation(`queue-run-now:${inputId}`);
-      await openConversation(currentSessionId);
-      await refreshConversations();
+      await openConversation(currentSessionId).catch(() => {
+        if (isCurrentScope()) setComposerError("方向已调整，聊天刷新失败，请重新打开聊天。");
+      });
+      void refreshConversations().catch(() => undefined);
     } catch (error) {
-      if (!isCurrentScope()) return;
-      if (!isCurrentScope()) return;
-      await openConversation(currentSessionId);
-      setComposerError(error instanceof Error ? error.message : "立即执行失败。");
+      await recoverQueue(error, "立即执行失败。");
     }
   }
   return {

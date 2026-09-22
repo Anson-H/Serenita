@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from backend.app.storage.config_database import initialize_config_database
+from backend.app.repositories.account_configuration_repository import initialize_config_database
 from backend.app.storage.paths import AppPaths, app_paths
 from backend.app.storage.sqlite import UnsupportedSchemaError, connect
+from backend.app.core.business_operation import current_business_operation
+from backend.app.repositories.business_change_repository import record_change
+from backend.app.repositories.business_operation_repository import begin_operation, finish_operation
 
 
 BASE_CONTEXT_COLUMNS = {
@@ -57,6 +60,7 @@ class ConfigRepository:
             ),
             "is_related_content_visible": bool(row["is_related_content_visible"]),
             "is_token_usage_visible": bool(row["is_token_usage_visible"]),
+            "is_model_identity_visible": bool(row["is_model_identity_visible"]),
             "visible_context_types": [
                 context_type
                 for context_type, column in CONTEXT_DISPLAY_COLUMNS.items()
@@ -86,6 +90,7 @@ class ConfigRepository:
         is_context_window_usage_visible: bool,
         is_related_content_visible: bool,
         is_token_usage_visible: bool,
+        is_model_identity_visible: bool,
         visible_context_types: list[str],
         tool_display_types: list[str],
     ) -> dict[str, Any]:
@@ -110,6 +115,7 @@ class ConfigRepository:
             ),
             "is_related_content_visible": int(is_related_content_visible),
             "is_token_usage_visible": int(is_token_usage_visible),
+            "is_model_identity_visible": int(is_model_identity_visible),
         }
         values.update(
             {
@@ -130,7 +136,14 @@ class ConfigRepository:
             }
         )
         assignments = ", ".join(f"{column} = ?" for column in values)
+        operation = current_business_operation()
         with connect(self._path(account_id)) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            replay = begin_operation(connection, account_id, operation.operation_id,
+                                     {"domain": "conversation_preference", "action": "update", "values": values})
+            if replay is not None:
+                return replay
+            before = dict(connection.execute("SELECT * FROM conversation_preferences WHERE singleton_id=1").fetchone())
             connection.execute(
                 f"UPDATE conversation_preferences SET {assignments} WHERE singleton_id = 1",
                 tuple(values.values()),
@@ -138,4 +151,8 @@ class ConfigRepository:
             row = connection.execute(
                 "SELECT * FROM conversation_preferences WHERE singleton_id = 1"
             ).fetchone()
-        return self._conversation_preferences_from_row(row)
+            record_change(connection, actor_account_id=account_id, operation_id=operation.operation_id,
+                          scope_kind="account", member_id=None, resource_type="conversation_preference", resource_id="1",
+                          before={f"/{key}": before[key] for key in values}, after={f"/{key}": row[key] for key in values},
+                          context={"preference_kind": "conversation"}, origin_kind=operation.origin_kind)
+            return finish_operation(connection, account_id, operation.operation_id, self._conversation_preferences_from_row(row))

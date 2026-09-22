@@ -1,3 +1,8 @@
+import { SidebarHeader } from "./SidebarHeader";
+import {useNotifications} from "../features/notifications/NotificationProvider";
+import { useDeployment } from "./DeploymentContext";
+import { navigationLabels } from "../components/navigationLabels";
+import { EmptyState } from "../components/EmptyState";
 import {
   useEffect,
   useMemo,
@@ -8,11 +13,18 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { GroupedList } from "../components/GroupedList";
+import { IdentityRowCopy } from "../components/IdentityRowCopy";
 import { SelectAllButton } from "../components/SelectAllButton";
+import { ListSelectionBar } from "../components/ListSelectionBar";
+import { ListBulkActions } from "../components/ListBulkActions";
 import { useListContextMenu } from "../components/useListContextMenu";
 
-import { AuthSession, ConversationSummary } from "../api/client";
+import type { AuthSession } from "../api/auth/authTypes";
+import type { ConversationSummary } from "../api/conversations/conversationTypes";
+
 import {
+  BellIcon,
+  BrainIcon,
   BranchIcon,
   CheckIcon,
   EditIcon,
@@ -20,10 +32,8 @@ import {
   ListChecksIcon,
   PinIcon,
   PlusIcon,
-  SidebarExpandedIcon,
   TrashIcon,
-  WaitingIcon,
-  XIcon
+  WaitingIcon
 } from "../components/icons";
 import {
   type ScenarioTab
@@ -32,14 +42,21 @@ import {
   APP_PATH,
   CHAT_PATH_PREFIX,
   FAVORITES_PATH,
+  NOTIFICATIONS_PATH,
+  KNOWLEDGE_PATH,
+  memoryPath,
+  isMemoryRoute,
   SETTING_PATH,
+  isSettingsRoute,
   type RoutePath
 } from "./routes";
 
 type SidebarProps = {
   healthNavigation: ReactNode;
+  memoryMemberId?: string | null;
   activeScenario: ScenarioTab;
   conversations: ConversationSummary[];
+  conversationPagination?: { hasMore: boolean; loading: boolean; error: string; loadMore: () => Promise<void> };
   currentSession: Extract<AuthSession, { authenticated: true }>;
   currentSessionId: string | null;
   mobileCollapseButtonRef?: RefObject<HTMLButtonElement | null>;
@@ -59,8 +76,10 @@ type SidebarProps = {
 
 export function Sidebar({
   healthNavigation,
+  memoryMemberId,
   activeScenario,
   conversations,
+  conversationPagination,
   currentSession,
   currentSessionId,
   mobileCollapseButtonRef,
@@ -77,6 +96,8 @@ export function Sidebar({
   onStartConversation,
   route
 }: SidebarProps) {
+  const notifications = useNotifications();
+  const local = useDeployment().mode === "self_hosted";
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
@@ -221,7 +242,7 @@ export function Sidebar({
     ? createPortal(
         <GroupedList
           aria-label={`${contextConversation.title} 的聊天操作`}
-          className="context-action-menu conversation-context-menu"
+          className="context-action-menu scroll-balanced conversation-context-menu"
           onKeyDown={onMenuKeyDown}
           ref={contextMenuRef}
           role="menu"
@@ -281,42 +302,31 @@ export function Sidebar({
 
   return (
     <aside aria-label="主导航" className="patient-sidebar">
-      <section className="sidebar-header">
-        <div className="brand-row">
-          <div className="brand-name"><span>Serenita</span></div>
+      <SidebarHeader onCollapseSidebar={onCollapseSidebar} onCollapseMobileSidebar={onCollapseMobileSidebar} mobileCollapseButtonRef={mobileCollapseButtonRef}>
           <button
-            aria-label="折叠侧边栏"
-            className="control control--titlebar control--icon control--ghost sidebar-collapse-button titlebar-icon-control"
-            onClick={onCollapseSidebar}
-            title="折叠侧边栏"
+            aria-current={route === NOTIFICATIONS_PATH ? "page" : undefined}
+            aria-label="通知"
+            className="control control--titlebar control--icon control--ghost sidebar-notification-button titlebar-icon-control"
+            onClick={() => onNavigate(NOTIFICATIONS_PATH)}
+            title={notifications.error || "通知"}
             type="button"
           >
-            <SidebarExpandedIcon />
+            <BellIcon />
+            {notifications.error ? (
+              <span className="notification-badge" aria-label="通知刷新异常">!</span>
+            ) : notifications.count ? (
+              <span className="notification-badge" aria-label={`${notifications.count >= 100 ? '99+' : notifications.count} 条待处理通知`}>
+                {notifications.count >= 100 ? '99+' : notifications.count}
+              </span>
+            ) : null}
           </button>
-          <button
-            aria-label="折叠侧边栏"
-            className="control control--titlebar control--icon control--ghost mobile-sidebar-collapse-button titlebar-icon-control"
-            onClick={onCollapseMobileSidebar}
-            ref={mobileCollapseButtonRef}
-            title="折叠侧边栏"
-            type="button"
-          >
-            <SidebarExpandedIcon />
-          </button>
-        </div>
-      </section>
+      </SidebarHeader>
 
       <div className="sidebar-content">
         <nav className="global-nav">
           {healthNavigation}
           {selectionMode ? (
-            <div
-              aria-live="polite"
-              className="list-selection-heading standard-control-bar"
-              role="status"
-            >
-              <strong>已选择 {selectedSessionIds.size} 个聊天</strong>
-              <div className="compact-control-actions">
+            <ListSelectionBar summary={`已选择 ${selectedSessionIds.size} 个聊天`} label="聊天多选" cancelLabel="退出多选" busy={batchBusy} onCancel={cancelSelection}>
                 <SelectAllButton
                   disabled={batchBusy}
                   ids={conversations.map((conversation) => conversation.session_id)}
@@ -324,18 +334,7 @@ export function Sidebar({
                   scopeLabel="当前列表中的聊天"
                   selectedIds={selectedSessionIds}
                 />
-                <button
-                  aria-label="退出多选"
-                  className="control control--inline control--icon control--ghost conversation-selection-cancel standard-bar-icon-control"
-                  disabled={batchBusy}
-                  onClick={cancelSelection}
-                  title="退出多选"
-                  type="button"
-                >
-                  <XIcon />
-                </button>
-              </div>
-            </div>
+            </ListSelectionBar>
           ) : null}
         </nav>
 
@@ -348,6 +347,7 @@ export function Sidebar({
             aria-label="聊天列表"
           >
             {conversations.length ? conversations.map((conversation) => {
+            const memberNameCharacters = Array.from(conversation.member_name ?? "");
             const selected = selectedSessionIds.has(conversation.session_id);
             const active = !selectionMode && conversationWorkspaceActive
               && conversation.session_id === currentSessionId;
@@ -430,7 +430,7 @@ export function Sidebar({
                       <span>{conversation.title}</span>
                       {conversation.member_name ? (
                         <span className="conversation-member-label" title={conversation.member_name}>
-                          {Array.from(conversation.member_name).slice(0, 3).join("")}
+                          {memberNameCharacters.slice(0, 3).join("")}{memberNameCharacters.length > 3 ? "…" : ""}
                         </span>
                       ) : null}
                     </button>
@@ -470,8 +470,10 @@ export function Sidebar({
               </div>
             );
             }) : (
-              <span className="message-meta empty-list-status conversation-list-empty">暂无历史聊天</span>
+              <EmptyState className="conversation-list-empty" title="暂无历史聊天" />
             )}
+            {conversationPagination?.error ? <p role="alert">{conversationPagination.error}</p> : null}
+            {conversationPagination?.hasMore ? <button type="button" className="control" disabled={conversationPagination.loading} onClick={() => void conversationPagination.loadMore()}>{conversationPagination.loading ? "正在读取…" : "加载更多聊天"}</button> : null}
           </section>
 
           {!selectionMode ? (
@@ -490,58 +492,43 @@ export function Sidebar({
           ) : null}
         </div>
 
-        {selectionMode ? (
-          <section className="conversation-bulk-toolbar" aria-label="批量聊天操作">
-            <div className="conversation-bulk-actions">
-              <button
-                className="control control--secondary"
-                disabled={!selectedSessionIds.size || batchBusy}
-                onClick={() => void applyBatchPin(!selectionAllPinned)}
-                type="button"
-              >
-                <PinIcon />
-                <span>{selectionAllPinned ? "取消置顶" : "置顶"}</span>
-              </button>
-              <button
-                className="control control--secondary control--danger removal-action-control"
-                disabled={!selectedSessionIds.size || batchBusy}
-                onClick={() => void deleteSelection()}
-                type="button"
-              >
-                <TrashIcon />
-                <span>删除</span>
-              </button>
-            </div>
-          </section>
-        ) : null}
-
+        {selectionMode ? <ListBulkActions label="批量聊天操作">
+          <button className="control control--compact control--secondary" disabled={!selectedSessionIds.size || batchBusy} onClick={() => void applyBatchPin(!selectionAllPinned)} type="button"><PinIcon /><span>{selectionAllPinned ? "取消置顶" : "置顶"}</span></button>
+          <button className="control control--compact control--secondary control--danger removal-action-control" disabled={!selectedSessionIds.size || batchBusy} onClick={() => void deleteSelection()} type="button"><TrashIcon /><span>删除</span></button>
+        </ListBulkActions> : null}
         <div className="sidebar-bottom">
           <nav className="secondary-nav" aria-label="辅助导航">
+            <button aria-label={navigationLabels.memory} aria-current={isMemoryRoute(route)?'page':undefined} className={`control control--secondary nav-item control-primary${isMemoryRoute(route)?' active':''}`} disabled={!memoryMemberId} onClick={() => {if(memoryMemberId)onNavigate(memoryPath(memoryMemberId));}} type="button">
+              <BrainIcon /><span className="nav-label">{navigationLabels.memory}</span>
+            </button>
+            <button aria-label={navigationLabels.knowledge} className={route === KNOWLEDGE_PATH ? "control control--secondary nav-item control-primary active" : "control control--secondary nav-item control-primary"} onClick={() => onNavigate(KNOWLEDGE_PATH)} title={navigationLabels.knowledge} type="button">
+              <ListChecksIcon /><span className="nav-label">{navigationLabels.knowledge}</span>
+            </button>
             <button
-              aria-label="我的收藏"
+              aria-label={navigationLabels.favorites}
               className={route === FAVORITES_PATH ? "control control--secondary nav-item control-primary active" : "control control--secondary nav-item control-primary"}
               onClick={() => onNavigate(FAVORITES_PATH)}
-              title="我的收藏"
+              title={navigationLabels.favorites}
               type="button"
             >
               <FavoriteNavIcon />
-              <span className="nav-label">我的收藏</span>
+              <span className="nav-label">{navigationLabels.favorites}</span>
             </button>
           </nav>
 
           <section className="user-summary" aria-label="当前账号">
             <button
-              aria-current={route === SETTING_PATH ? "page" : undefined}
-              aria-label={`账号设置：${currentSession.account_name}`}
-              className={route === SETTING_PATH ? "sidebar-identity-row account-button active" : "sidebar-identity-row account-button"}
+              aria-current={isSettingsRoute(route) ? "page" : undefined}
+              aria-label={local ? navigationLabels.localSettings : `账号设置：${currentSession.account_name}`}
+              className={isSettingsRoute(route) ? "identity-row account-button active" : "identity-row account-button"}
               onClick={() => onNavigate(SETTING_PATH)}
-              title={currentSession.account_name}
+              title={local ? navigationLabels.localSettings : currentSession.account_name}
               type="button"
             >
               <span className="account-avatar" aria-hidden="true">
                 {currentSession.account_name.slice(0, 1).toUpperCase()}
               </span>
-              <span className="account-copy"><strong>{currentSession.account_name}</strong></span>
+              <IdentityRowCopy title={local ? navigationLabels.localSettings : currentSession.account_name}/>
             </button>
           </section>
         </div>

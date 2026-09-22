@@ -1,4 +1,5 @@
-import type { ReportContextResource } from "../../api/client";
+import type { ReportContextResource } from "../../api/reports/reportTypes";
+
 import { reportContextResourceFromRecord } from "../reports/reportContext";
 
 export type AnnotationContextResource = {

@@ -1,4 +1,5 @@
-import type { ComposerSubmitShortcut as ApiComposerSubmitShortcut } from "../../api/client";
+import type { ComposerSubmitShortcut as ApiComposerSubmitShortcut } from "../../api/accounts/conversationPreferenceTypes";
+
 import {
   readConversationPreferences,
   useConversationPreferences,

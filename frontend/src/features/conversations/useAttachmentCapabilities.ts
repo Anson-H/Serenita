@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { apiClient, type AddedModel } from "../../api/client";
+import * as conversationApi from "../../api/conversations/conversationApi";
+import type { AddedModel } from "../../api/models/modelTypes";
 
 const EMPTY_TYPES: string[] = [];
 
@@ -12,7 +13,7 @@ export function useAttachmentCapabilities(model: AddedModel | undefined, visionM
   useEffect(() => {
     let active = true;
     if (!model) return;
-    void apiClient.fetchAttachmentCapabilities(model.model_id).then(result => {
+    void conversationApi.fetchAttachmentCapabilities(model.model_id).then(result => {
       if (!active) return;
       if (result.model_id !== model.model_id || !Array.isArray(result.file_mime_types)
         || result.file_mime_types.some(type => typeof type !== "string")) {

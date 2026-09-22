@@ -1,4 +1,5 @@
-import type { ConversationToolRecord } from "../../api/client";
+import type { ConversationToolRecord } from "../../api/conversations/conversationTypes";
+
 import { citationSource, decodeTabularJson, isRecord, type WebCitationSource } from "../../utils/markdownCitations";
 
 function logicalToolOutput(record: ConversationToolRecord) {

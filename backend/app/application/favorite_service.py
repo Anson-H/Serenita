@@ -1,23 +1,22 @@
 from backend.app.schemas.report import report_snapshot_fields
 import json
-from backend.app.core.favorite_errors import FavoriteSourceConflictError
+from backend.app.domain.favorite_errors import FavoriteSourceConflictError
 import uuid
 
-from backend.app.application.conversation_service import ConversationService
-from backend.app.application.report_service import ReportService
+from backend.app.application.reports.service import ReportService
 from backend.app.core.errors import raise_error
-from backend.app.core.member_lifecycle import member_lifecycle_operation
+from backend.app.core.runtime.member_lifecycle import member_lifecycle_operation
 from backend.app.core.time import local_now_iso
 from backend.app.repositories.favorite_repository import FavoriteRepository
-from backend.app.repositories.member_repository import MemberRepository
-from backend.app.core.member_errors import member_error
+from backend.app.repositories.members.repository import MemberRepository
+from backend.app.domain.member_errors import member_error
 from backend.app.schemas.favorite import CreateFavoriteRequest, PatchFavoriteRequest
 from backend.app.core.errors import SerenitaError
 from backend.app.storage.paths import app_paths
 
 
 def _report_title(report: dict) -> str:
-    report_type = str(report.get("report_type") or "报告").strip() or "报告"
+    report_type = str(report.get("report_type") or "医疗报告").strip() or "医疗报告"
     report_name = str(report.get("report_name") or "").strip()
     if not report_name or report_name == report_type:
         return report_type
@@ -52,8 +51,8 @@ def _report_snapshot(report: dict) -> str:
     lines = [
         f"# {_report_title(report)}",
         "",
-        f"- **报告类型**：{str(report.get('report_type') or '—').strip() or '—'}",
-        f"- **报告时间**：{str(report.get('report_time') or '—').strip() or '—'}",
+        f"- **医疗报告类型**：{str(report.get('report_type') or '—').strip() or '—'}",
+        f"- **医疗报告时间**：{str(report.get('report_time') or '—').strip() or '—'}",
         f"- **就诊机构**：{str(report.get('institution_name') or '—').strip() or '—'}",
     ]
     report_type = report.get("report_type")
@@ -106,10 +105,15 @@ def _report_snapshot(report: dict) -> str:
             report.get("surgery_report"),
             report_snapshot_fields("surgery_report"),
         )
+    elif report_type in {"门诊病历", "急诊病历"}:
+        table = "outpatient_report" if report_type == "门诊病历" else "emergency_report"
+        _append_report_fields(
+            lines, report_type, report.get(table), report_snapshot_fields(table)
+        )
     else:
         other_report = report.get("other_report")
         body = (other_report or {}).get("report_body")
-        lines.extend(["", "## 报告内容", "", str(body or "暂无内容").strip()])
+        lines.extend(["", "## 医疗报告内容", "", str(body or "暂无内容").strip()])
     analysis_content = str(report.get("analysis_content") or "").strip()
     if analysis_content:
         lines.extend(["", "## 解读结果", "", analysis_content])
@@ -120,16 +124,21 @@ class FavoriteService:
     def __init__(
         self,
         repository=None,
-        conversation_service=None,
         member_repository=None,
         report_service_factory=None,
-        *, paths=None,
+        *,
+        paths=None,
+        conversation_service,
     ):
         self.paths = paths or getattr(repository, "paths", None) or app_paths()
         self.repository = repository or FavoriteRepository(paths=self.paths)
-        self.conversations = conversation_service or ConversationService(paths=self.paths)
+        self.conversations = conversation_service
         self.members = member_repository or MemberRepository(paths=self.paths)
-        self.report_service_factory = report_service_factory or (lambda actor, member: ReportService.for_member(actor, member, members=self.members))
+        self.report_service_factory = report_service_factory or (
+            lambda actor, member: ReportService.for_member(
+                actor, member, members=self.members
+            )
+        )
 
     def _source_available(self, account_id, row):
         if row["source_type"] == "report":
@@ -175,7 +184,7 @@ class FavoriteService:
     def _row(self, account_id, favorite_id):
         row = self.repository.get(account_id, favorite_id)
         if row is None:
-            raise_error('missing', "NOT_FOUND", "收藏不存在。")
+            raise_error("missing", "NOT_FOUND", "收藏不存在。")
         return row
 
     def list_favorites(self, account_id):
@@ -191,11 +200,13 @@ class FavoriteService:
     @member_lifecycle_operation
     def create_favorite(self, account_id, payload: CreateFavoriteRequest):
         if payload.source_type not in {"message", "report"}:
-            raise_error('invalid_input', "INVALID_REQUEST", "不支持该收藏来源类型。")
+            raise_error("invalid_input", "INVALID_REQUEST", "不支持该收藏来源类型。")
         source_session_id = payload.source_session_id or ""
         if payload.source_type == "report":
             if not payload.member_id:
-                member_error("MEMBER_REQUIRED", "收藏报告必须指定成员。", 'invalid_input')
+                member_error(
+                    "MEMBER_REQUIRED", "收藏医疗报告必须指定成员。", "invalid_input"
+                )
             member_id = payload.member_id
             access = self.members.resolve(account_id, member_id)
             report = self.report_service_factory(account_id, member_id).get_report(
@@ -205,20 +216,22 @@ class FavoriteService:
             guard = access.guard()
         else:
             if not source_session_id:
-                raise_error('invalid_input', "INVALID_REQUEST", "收藏回答时缺少来源聊天。")
-            session = self.conversations.session_binding(
-                account_id, source_session_id
-            )
+                raise_error(
+                    "invalid_input", "INVALID_REQUEST", "收藏回答时缺少来源聊天。"
+                )
+            session = self.conversations.session_binding(account_id, source_session_id)
             if session is None:
-                raise_error('missing', "NOT_FOUND", "来源聊天不存在。")
+                raise_error("missing", "NOT_FOUND", "来源聊天不存在。")
             member_id = session["member_id"]
             if payload.member_id is not None and payload.member_id != member_id:
-                member_error("MEMBER_MISMATCH", "收藏与来源聊天关联的成员不一致。", 'conflict')
+                member_error(
+                    "MEMBER_MISMATCH", "收藏与来源聊天关联的成员不一致。", "conflict"
+                )
             source = self.conversations.source_message_for_favorite(
                 account_id, source_session_id, payload.source_id
             )
             if not source:
-                raise_error('missing', "NOT_FOUND", "来源消息不存在或不可收藏。")
+                raise_error("missing", "NOT_FOUND", "来源消息不存在或不可收藏。")
             content = source["content"]
             title = source["title"] if source["title"] != "新聊天" else content[:20]
             guard = self.members.private_reference_guard()
@@ -246,8 +259,8 @@ class FavoriteService:
                     },
                 )
         except FavoriteSourceConflictError:
-            duplicate_name = "报告" if payload.source_type == "report" else "回答"
-            raise_error('conflict', "CONFLICT", f"该{duplicate_name}已收藏。")
+            duplicate_name = "医疗报告" if payload.source_type == "report" else "回答"
+            raise_error("conflict", "CONFLICT", f"该{duplicate_name}已收藏。")
         return self.get_favorite(account_id, favorite_id)
 
     def get_favorite(self, account_id, favorite_id):
@@ -257,7 +270,7 @@ class FavoriteService:
         row = self._row(account_id, favorite_id)
         title = payload.title.strip() if payload.title is not None else row["title"]
         if not title:
-            raise_error('invalid_input', "INVALID_REQUEST", "收藏标题不能为空。")
+            raise_error("invalid_input", "INVALID_REQUEST", "收藏标题不能为空。")
         tags = (
             payload.tags
             if payload.tags is not None

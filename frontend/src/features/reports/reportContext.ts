@@ -1,11 +1,6 @@
-import type {
-  ConversationResourceState,
-  ReportContextResource,
-  ReportDetail,
-  ReportSummary,
-  ReportType
-} from "../../api/client";
-import { REPORT_TYPES } from "../../api/client";
+import type { ConversationResourceState } from "../../api/conversations/conversationTypes";
+import type { ReportContextResource, ReportDetail, ReportSummary, ReportType } from "../../api/reports/reportTypes";
+import { REPORT_TYPES } from "../../api/reports/reportTypes";
 
 type ReportReferenceStatus = "current" | "modified" | "deleted" | "forbidden" | "unknown";
 

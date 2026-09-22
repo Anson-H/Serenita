@@ -4,9 +4,8 @@ import {
   useRef,
   useState
 } from "react";
-import type {
-  ConversationModelRecord
-} from "../../api/client";
+import type { ConversationModelRecord } from "../../api/conversations/conversationTypes";
+
 import {
   recordStartedAtMs
 } from "./conversationTurns";

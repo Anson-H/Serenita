@@ -1,27 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import type { MemberFields } from "../../api/memberApi";
+import type { MemberFields } from "../../api/accounts/memberApi";
 import { DateTimePicker } from "../../components/DateTimePicker";
 import { SelectPopover } from "../../components/SelectPopover";
 import { focusWithoutScroll } from "../../utils/inputMethod";
+import { formatDateOnly } from "../../utils/localTime";
 
-export const emptyMemberFields: MemberFields = { member_name: "", sex: null, birth_date: null, blood_type: null };
-
-const BIRTH_DATE_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric"
-});
-
-function localDateValue(date: Date) {
-  const pad = (part: number) => String(part).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
+export const emptyMemberFields: MemberFields = { member_name: "", relationship: null, sex: null, birth_date: null, blood_type: null };
 
 function displayBirthDate(value: string | null) {
-  if (!value) return "未设置";
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return value;
-  return BIRTH_DATE_FORMATTER.format(new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
+  return value ? formatDateOnly(value) : "未知";
 }
 
 function BirthDateField({ disabled, onChange, value }: {
@@ -56,6 +43,7 @@ function BirthDateField({ disabled, onChange, value }: {
       ariaLabel="出生日期"
       disabled={disabled}
       mode="date"
+      emptyOptionLabel="未知"
       onCancel={() => { setDraft(value ?? ""); close(true); }}
       onChange={setDraft}
       onCommit={(nextValue, reason) => { onChange(nextValue || null); close(reason === "done"); }}
@@ -67,7 +55,7 @@ function BirthDateField({ disabled, onChange, value }: {
       className="member-birth-date-trigger"
       data-interaction-owner="row"
       disabled={disabled}
-      onClick={() => { setDraft(value ?? localDateValue(new Date())); setOpen(true); }}
+      onClick={() => { setDraft(value ?? ""); setOpen(true); }}
       ref={triggerRef}
       type="button"
     >{displayBirthDate(value)}</button>}
@@ -75,13 +63,15 @@ function BirthDateField({ disabled, onChange, value }: {
 }
 
 // Field rows share the enclosing grouped list's columns and interaction states.
-export function MemberFieldsEditor({ value, disabled, onChange }: {
+export function MemberFieldsEditor({ value, disabled, onChange, relationshipLabel = "与本人的关系" }: {
   value: MemberFields;
+  relationshipLabel?: string;
   disabled: boolean;
   onChange: Dispatch<SetStateAction<MemberFields>>;
 }) {
   return <>
     <label className="field-row"><span>成员名称</span><input required maxLength={80} disabled={disabled} value={value.member_name} onChange={event => onChange(current => ({ ...current, member_name: event.target.value }))} /></label>
+    <label className="field-row"><span>{relationshipLabel}</span><input maxLength={40} disabled={disabled} placeholder="未设置" value={value.relationship ?? ""} onChange={event => onChange(current => ({ ...current, relationship: event.target.value || null }))} /></label>
     <div className="field-row"><span>性别</span><SelectPopover ariaLabel="性别" disabled={disabled} menuWidth="content" menuAlign="end" interactionOwner="row" value={value.sex ?? ""} onChange={sex => onChange(current => ({ ...current, sex: sex || null }))} options={[{ value: "", label: "未设置" }, { value: "male", label: "男" }, { value: "female", label: "女" }, { value: "other", label: "其他" }]} /></div>
     <BirthDateField disabled={disabled} value={value.birth_date} onChange={birthDate => onChange(current => ({ ...current, birth_date: birthDate }))} />
     <div className="field-row"><span>血型</span><SelectPopover ariaLabel="血型" disabled={disabled} menuWidth="content" menuAlign="end" interactionOwner="row" value={value.blood_type ?? ""} onChange={bloodType => onChange(current => ({ ...current, blood_type: bloodType || null }))} options={[{ value: "", label: "未设置" }, { value: "a", label: "A 型" }, { value: "b", label: "B 型" }, { value: "ab", label: "AB 型" }, { value: "o", label: "O 型" }, { value: "other", label: "其他" }]} /></div>

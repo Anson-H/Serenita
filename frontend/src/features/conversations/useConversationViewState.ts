@@ -1,11 +1,10 @@
 import { useMemo } from "react";
 import { useAttachmentCapabilities } from "./useAttachmentCapabilities";
 
-import {
-  isConversationMessage,
-  type AddedModel,
-  type ConversationDetail
-} from "../../api/client";
+import { isConversationMessage } from "../../api/conversations/conversationTypes";
+import type { AddedModel } from "../../api/models/modelTypes";
+import type { ConversationDetail } from "../../api/conversations/conversationTypes";
+
 import { canAttachFilesForScenario } from "./attachmentSupport";
 import {
   scenarioCopy,

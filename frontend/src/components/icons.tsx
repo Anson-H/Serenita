@@ -4,6 +4,36 @@ type IconProps = {
   className?: string;
 };
 
+export function LoadingIcon({ className }: IconProps = {}) {
+  return <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <path d="M12 3a9 9 0 1 1-9 9" />
+  </svg>;
+}
+
+export function BellIcon({ className }: IconProps = {}) {
+  return <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 50 50" stroke="currentColor" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M38 17a13 13 0 0 0-26 0c0 14-6 14-6 18h38c0-4-6-4-6-18M21 44h8" />
+  </svg>;
+}
+
+export function SearchIcon({ className }: IconProps = {}) {
+  return <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" />
+  </svg>;
+}
+
+export function FilterIcon({ className }: IconProps = {}) {
+  return <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 6h16M7 12h10M10 18h4" />
+  </svg>;
+}
+
+export function CalendarIcon({ className }: IconProps = {}) {
+  return <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 11h18" />
+  </svg>;
+}
+
 export function PaperclipIcon() {
   return (
     <svg aria-hidden="true" className="composer-icon" fill="none" viewBox="0 0 50 50">
@@ -758,6 +788,13 @@ export function XIcon() {
       />
     </svg>
   );
+}
+
+export function MedicineBoxIcon({ className }: IconProps = {}) {
+  return <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="7" width="18" height="14" rx="2" />
+    <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M12 11v6M9 14h6" />
+  </svg>;
 }
 
 export function MedicationIcon({ className }: IconProps = {}) {

@@ -1,14 +1,10 @@
+import { ModelIdentity } from "./ModelIdentity";
 import {
   memo,
   useMemo
 } from "react";
-import type {
-  ConversationContextRecord,
-  ConversationErrorRecord,
-  ConversationModelRecord,
-  ConversationObservationRecord,
-  ConversationToolRecord
-} from "../../api/client";
+import type { ConversationContextRecord, ConversationErrorRecord, ConversationModelRecord, ConversationObservationRecord, ConversationToolRecord } from "../../api/conversations/conversationTypes";
+
 import {
   AlertIcon,
   ExecutionStageIcon,
@@ -28,11 +24,13 @@ import { ModelRecordDurationLabel } from "./ExecutionDuration";
 import { conversationTurnFailureMessage, firstVisibleLine, FormattedRecordValue, LiveDisclosurePreview, previewRecordValue, providerSourceLabel, TraceChevron, TraceItemSeparator } from "./ExecutionRecordPrimitives";
 import { formatThinkingDuration } from "./thinking";
 import { useDeferredDisclosureBody } from "./useExecutionDisclosure";
+import { modelRetryMessage } from "../../utils/modelRetry";
 
 const MODEL_CHANNEL_LABELS: Record<
   Exclude<ConversationModelRecord["channel"], "input" | "result" | "content">,
   string
 > = {
+  retry: "模型重试",
   reasoning: "思考过程",
   raw_output: "模型原始文本",
   tool_request: "请求工具调用"
@@ -144,11 +142,13 @@ export const CompactionStatusRecord = memo(function CompactionStatusRecord({
 export const ModelRecordDetails = memo(function ModelRecordDetails({
   highlighted,
   onRegister,
+  showModelIdentity,
   record
 }: {
   highlighted: boolean;
   onRegister: (recordId: string, node: HTMLElement | null) => void;
   record: ConversationModelRecord;
+  showModelIdentity: boolean;
 }) {
   const { bodyMounted, onToggle } = useDeferredDisclosureBody();
   if (
@@ -157,6 +157,18 @@ export const ModelRecordDetails = memo(function ModelRecordDetails({
     record.channel === "content"
   ) {
     return null;
+  }
+  if (record.channel === "retry") {
+    return <div
+      className="turn-trace-item operation-record model-retry-record"
+      data-highlighted={highlighted ? "true" : undefined}
+      ref={(node) => onRegister(record.record_id, node)}
+      role="status"
+      aria-live="polite"
+    >
+      <span className="turn-trace-item-icon"><ExecutionStageIcon stage="reasoning" /></span>
+      <span>{record.retry ? modelRetryMessage(record.retry) : String(record.value ?? "")}</span>
+    </div>;
   }
   const streaming = record.status === "streaming" || record.status === "running";
   const label = MODEL_CHANNEL_LABELS[record.channel];
@@ -194,9 +206,10 @@ export const ModelRecordDetails = memo(function ModelRecordDetails({
         </span>
       </summary>
       {bodyMounted ? <div className="operation-record-body">
+        {showModelIdentity ? <ModelIdentity modelId={record.model_id} /> : null}
         {record.channel === "reasoning"
-          ? (textValue ? <MarkdownContent content={textValue} /> : null)
-          : <pre>{typeof record.value === "string"
+          ? (textValue ? <MarkdownContent className="scroll-balanced" content={textValue} /> : null)
+          : <pre className="scroll-balanced">{typeof record.value === "string"
             ? record.value
             : JSON.stringify(record.value) ?? ""}</pre>}
         {record.error ? (
@@ -213,11 +226,13 @@ export const ModelRecordDetails = memo(function ModelRecordDetails({
 export const ModelContentRecord = memo(function ModelContentRecord({
   highlighted,
   onRegister,
+  showModelIdentity,
   record
 }: {
   highlighted: boolean;
   onRegister: (recordId: string, node: HTMLElement | null) => void;
   record: ConversationModelRecord;
+  showModelIdentity: boolean;
 }) {
   const textValue = typeof record.value === "string" ? record.value : "";
   if (!textValue && !record.error) {
@@ -229,6 +244,7 @@ export const ModelContentRecord = memo(function ModelContentRecord({
       data-highlighted={highlighted ? "true" : undefined}
       ref={(node) => onRegister(record.record_id, node)}
     >
+      {showModelIdentity ? <ModelIdentity modelId={record.model_id} /> : null}
       {textValue ? (
         <div className="message-bubble assistant">
           <MarkdownContent
@@ -279,7 +295,7 @@ export const TurnErrorRecord = memo(function TurnErrorRecord({
         </span>
       </summary>
       {bodyMounted ? <div className="operation-record-body">
-        <pre>{failureMessage}</pre>
+        <pre className="scroll-balanced">{failureMessage}</pre>
       </div> : null}
     </details>
   );

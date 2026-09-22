@@ -1,6 +1,4 @@
-import {
-  type ConversationSummary
-} from "../../api/client";
+import type { ConversationSummary } from "../../api/conversations/conversationTypes";
 
 export function compareConversationSummaries(
   left: ConversationSummary,

@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-ErrorKind = Literal['invalid_input', 'unauthenticated', 'forbidden', 'missing', 'conflict', 'resource_limit', 'unsupported', 'invalid_structure', 'upstream_failure', 'timeout']
+ErrorKind = Literal['invalid_input', 'unauthenticated', 'forbidden', 'missing', 'conflict', 'resource_limit', 'rate_limit', 'unsupported', 'invalid_structure', 'upstream_failure', 'timeout']
 
 
 class SerenitaError(Exception):

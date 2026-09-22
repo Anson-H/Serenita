@@ -21,14 +21,14 @@ type ReportFileLike = {
 export function validateReportFiles(files: ReportFileLike[]) {
   const errors: string[] = [];
   if (!files.length) {
-    errors.push("请先选择要上传的报告文件。");
+    errors.push("请先选择要上传的医疗报告文件。");
     return errors;
   }
   if (files.length > MAX_REPORT_FILES) {
     errors.push(`每批最多上传 ${MAX_REPORT_FILES} 个文件。`);
   }
   if (files.reduce((total, file) => total + file.size, 0) > MAX_REPORT_BATCH_BYTES) {
-    errors.push("单批报告文件总大小不能超过 100MB。");
+    errors.push("单批医疗报告文件总大小不能超过 100MB。");
   }
 
   files.forEach((file) => {

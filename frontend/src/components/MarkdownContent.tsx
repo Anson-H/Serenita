@@ -9,6 +9,7 @@ const MarkdownRenderer = lazy(() => import("./MarkdownRenderer").then(
 ));
 
 export function MarkdownContent({
+  className = "",
   annotationSourceId,
   content,
   citationSources = [],
@@ -19,7 +20,7 @@ export function MarkdownContent({
       fallback={(
         <div
           aria-busy="true"
-          className="markdown-content markdown-content-loading"
+          className={["markdown-content", "markdown-content-loading", className].filter(Boolean).join(" ")}
           data-annotation-source-id={annotationSourceId}
         >
           {content}
@@ -27,6 +28,7 @@ export function MarkdownContent({
       )}
     >
       <MarkdownRenderer
+        className={className}
         annotationSourceId={annotationSourceId}
         citationSources={citationSources}
         content={content}

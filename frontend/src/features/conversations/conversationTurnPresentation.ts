@@ -1,4 +1,5 @@
-import type { ConversationMessage, ConversationToolRecord } from "../../api/client";
+import type { ConversationMessage, ConversationToolRecord } from "../../api/conversations/conversationTypes";
+
 import { reportContextResourceFromRecord } from "../reports/reportContext";
 import type {
   RelatedReportReference,

@@ -1,7 +1,7 @@
-import type {
-  ConversationMessage,
-  UploadedResource
-} from "../../api/client";
+import type { ConversationDetail, ConversationMessage, UploadedResource } from "../../api/conversations/conversationTypes";
+
+import type { DraftRecord } from "./conversationDraftStore";
+
 import type { AnnotatedContext } from "./workspaceTypes";
 
 export function submittedContextResourcesFromDraft(
@@ -37,3 +37,9 @@ export function editDraftFromMessage(message: ConversationMessage) {
 export function removeContextResourceById(contextResources: Array<Record<string, unknown>>, resourceId: string) {
   return contextResources.filter((resource) => resource.resource_id !== resourceId);
 }
+
+export type HomeConversationDraft = {
+  currentSessionId: string | null;
+  conversationDetail: ConversationDetail | null;
+  draft: DraftRecord;
+};

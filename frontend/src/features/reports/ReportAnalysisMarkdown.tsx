@@ -24,8 +24,8 @@ export function ReportAnalysisMarkdown({
       <div className="report-section-body report-analysis-body">
         {markdown ? (
           <div
-            aria-label={editable ? "修改解读结果" : undefined}
-            className="report-analysis-markdown"
+            aria-label={editable ? "编辑解读结果" : undefined}
+            className="text-input-surface report-analysis-markdown"
             onClick={(event) => onEdit?.(event.currentTarget)}
             onKeyDown={editable ? (event) => {
               if (event.key === "Enter" || event.key === " ") {
@@ -41,7 +41,7 @@ export function ReportAnalysisMarkdown({
         ) : (
           <div
             aria-label={editable ? "添加解读结果" : undefined}
-            className="report-subtle-empty"
+            className="text-input-surface report-analysis-markdown"
             onClick={(event) => onEdit?.(event.currentTarget)}
             onKeyDown={editable ? (event) => {
               if (event.key === "Enter" || event.key === " ") {

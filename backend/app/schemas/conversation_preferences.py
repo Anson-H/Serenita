@@ -39,6 +39,7 @@ class ConversationPreferences(BaseModel):
     is_context_window_usage_visible: bool
     is_related_content_visible: bool
     is_token_usage_visible: bool
+    is_model_identity_visible: bool
     visible_context_types: list[VisibleContextType]
     tool_display_types: list[ToolDisplayType]
 

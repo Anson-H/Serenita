@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from backend.app.model_capabilities import (
+from backend.app.domain.model_capabilities import (
     ModelCapabilityProfiles,
     ModelModeCapabilityProfile,
     profile_for_thinking_state,
@@ -19,7 +19,7 @@ from backend.app.core.cancellation import (
 )
 
 
-from backend.app.providers.errors import ProviderChatCompletionError
+from backend.app.providers.errors import ProviderChatCompletionError, request_failure_message
 from backend.app.providers.types import ModelCapabilityProbeResult
 
 _CAPABILITY_PROBE_ASSET_ROOT = Path(__file__).with_name("probe_assets")
@@ -41,6 +41,11 @@ _CAPABILITY_PROBE_WAV_BASE64 = _read_capability_probe_asset_base64("audio.wav")
 
 
 _CAPABILITY_PROBE_MP4_BASE64 = _read_capability_probe_asset_base64("video.mp4")
+
+# Output limits include reasoning tokens even when the requested answer is short.
+_PROBE_REPLY_PROMPT = "仅回复 OK"
+_PROBE_TEXT_MAX_TOKENS = 32
+_PROBE_THINKING_MAX_TOKENS = 1024
 
 
 _PROBE_CAPABILITIES = (
@@ -85,7 +90,7 @@ _MEDIA_CAPABILITY_PROBES = (
         sample_mime_type="image/png",
         part_type="image",
         sample_base64=_CAPABILITY_PROBE_PNG_BASE64,
-        prompt="用一个词描述这张图片。",
+        prompt="只用一个英文单词回答图片的主要颜色。",
     ),
     _MediaCapabilityProbe(
         capability="pdf_input",
@@ -127,12 +132,10 @@ def _thinking_mode_probe_failure_status(error: ProviderChatCompletionError) -> s
     )
 
 
-def _fatal_thinking_mode_probe_failure(error: ProviderChatCompletionError) -> bool:
+def _fatal_probe_failure(error: ProviderChatCompletionError) -> bool:
     return error.code == "PROVIDER_AUTH_FAILED" or error.upstream_status == 404
 
 
-def _fatal_probe_failure(error: ProviderChatCompletionError) -> bool:
-    return _fatal_thinking_mode_probe_failure(error) or error.code == "MODEL_TIMEOUT"
 
 
 def _aggregate_probe_status(*statuses: str) -> str:
@@ -150,15 +153,6 @@ def _profiles_for_probed_thinking_modes(
     profiles: ModelCapabilityProfiles,
     thinking_modes: list[str],
 ) -> ModelCapabilityProfiles:
-    source = next(
-        (
-            profile
-            for profile in (profiles.non_thinking, profiles.thinking)
-            if profile.availability != "unavailable"
-        ),
-        ModelModeCapabilityProfile(availability="unverified"),
-    )
-
     explicit_thinking = any(mode not in {"default", "off"} for mode in thinking_modes)
     non_thinking = "off" in thinking_modes
     default_state = profiles.default_state
@@ -184,9 +178,9 @@ def _profiles_for_probed_thinking_modes(
             return profile
         return ModelModeCapabilityProfile(
             availability="unverified",
-            supports_text=source.supports_text,
-            file_mime_types=list(source.file_mime_types),
-            supports_tool_calling=source.supports_tool_calling,
+            supports_text=profile.supports_text,
+            file_mime_types=list(profile.file_mime_types),
+            supports_tool_calling=profile.supports_tool_calling,
         )
 
     return ModelCapabilityProfiles(
@@ -361,14 +355,16 @@ class ProviderCapabilityProbe:
     ) -> tuple[list[str], dict[str, str], dict[str, str]]:
         """Probe every explicit effort concurrently before other capabilities."""
 
-        probe_request = ModelRequest.build(
-            system="",
-            messages=[{"role": "user", "content": "仅回复 OK"}],
-            model_config={"max_tokens": 32},
-            transport_mode="thinking_mode_probe",
-        )
-
         def complete(mode: str) -> AssistantModelOutput:
+            probe_request = ModelRequest.build(
+                system="",
+                messages=[{"role": "user", "content": _PROBE_REPLY_PROMPT}],
+                model_config={
+                    "max_tokens": _PROBE_TEXT_MAX_TOKENS
+                    if mode == "off" else _PROBE_THINKING_MAX_TOKENS,
+                },
+                transport_mode="thinking_mode_probe",
+            )
             return self._complete_capability_probe(
                 api_url=api_url,
                 api_key=api_key,
@@ -402,8 +398,8 @@ class ProviderCapabilityProbe:
         for mode in THINKING_MODE_PROBE_ORDER:
             outcome = outcomes[mode]
             if isinstance(outcome, ProviderChatCompletionError):
-                message = str(outcome)
-                if _fatal_thinking_mode_probe_failure(outcome):
+                message = request_failure_message(outcome)
+                if _fatal_probe_failure(outcome):
                     raise outcome
                 status = _thinking_mode_probe_failure_status(outcome)
                 checks[mode] = status
@@ -436,7 +432,7 @@ class ProviderCapabilityProbe:
         checks: dict[str, str] = {}
         errors: dict[str, str] = {}
         thinking_probe = state == "thinking"
-        max_tokens = 1024 if thinking_probe else 32
+        max_tokens = _PROBE_THINKING_MAX_TOKENS if thinking_probe else _PROBE_TEXT_MAX_TOKENS
 
         def complete(model_request: ModelRequest) -> AssistantModelOutput:
             return self._complete_capability_probe(
@@ -534,7 +530,7 @@ class ProviderCapabilityProbe:
                     raise text_outcome
                 status = _optional_probe_failure_status(text_outcome)
                 checks["text"] = status
-                errors["text"] = str(text_outcome)
+                errors["text"] = request_failure_message(text_outcome)
                 if status == "unsupported":
                     supports_text = False
             else:
@@ -556,7 +552,7 @@ class ProviderCapabilityProbe:
             if isinstance(tool_outcome, ProviderChatCompletionError):
                 status = _optional_probe_failure_status(tool_outcome)
                 checks["tool_calling"] = status
-                errors["tool_calling"] = str(tool_outcome)
+                errors["tool_calling"] = request_failure_message(tool_outcome)
                 if status == "unsupported":
                     supports_tool_calling = False
             else:
@@ -604,21 +600,28 @@ class ProviderCapabilityProbe:
             if isinstance(media_outcome, ProviderChatCompletionError):
                 status = _optional_probe_failure_status(media_outcome)
                 checks[probe.capability] = status
-                errors[probe.capability] = str(media_outcome)
+                errors[probe.capability] = request_failure_message(media_outcome)
                 file_mime_types = (
                     without_current
                     if status == "unsupported"
                     else [*without_current, *current_types]
                 )
             else:
-                media_output = media_outcome
-                if media_output.content or media_output.tool_calls:
-                    checks[probe.capability] = "supported"
-                    file_mime_types = [*without_current, *supported_types]
-                else:
-                    checks[probe.capability] = "unverified"
-                    errors[probe.capability] = "模型未返回可用理解结果。"
-                    file_mime_types = [*without_current, *current_types]
+                checks[probe.capability] = "supported"
+                file_mime_types = [*without_current, *dict.fromkeys([*current_types, probe.sample_mime_type])]
+
+        # Probes may try formats beyond the adapter's normal transport. Only
+        # publish formats that normal requests can actually forward.
+        native_mime_types = self.provider.native_attachment_mime_types()
+        for probe in _MEDIA_CAPABILITY_PROBES:
+            detected_types = [
+                mime_type for mime_type in file_mime_types
+                if mime_type.startswith(probe.mime_type_prefix)
+            ]
+            if detected_types and not any(mime_type in native_mime_types for mime_type in detected_types):
+                checks[probe.capability] = "unsupported"
+                errors[probe.capability] = "当前提供方适配器尚未支持此附件格式的正式请求。"
+        file_mime_types = [mime_type for mime_type in file_mime_types if mime_type in native_mime_types]
 
         availability = current.availability
         if checks["text"] == "supported":

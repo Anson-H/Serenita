@@ -1,4 +1,4 @@
-import { apiClient, type AddedModel, type ModelDefaults } from '../../api/client';
+import type { AddedModel, ModelDefaults } from '../../api/models/modelTypes';
 
 export type ModelCatalog = {
   models: AddedModel[];
@@ -7,9 +7,5 @@ export type ModelCatalog = {
   error: string;
 };
 export function emptyModelCatalog(): ModelCatalog {
-  return { models: [], defaults: { chat: null, title: null, compact: null, vision_parse: null }, status: 'loading', error: '' };
-}
-export async function fetchModelCatalog(): Promise<ModelCatalog> {
-  const [models, defaults] = await Promise.all([apiClient.fetchModels(), apiClient.fetchModelDefaults()]);
-  return { models: models.models, defaults: defaults.defaults, status: 'ready', error: '' };
+  return { models: [], defaults: { chat: null, title: null, compact: null, memory_generation: null, vision_parse: null, text_embedding: null, multimodal_embedding: null }, status: 'loading', error: '' };
 }

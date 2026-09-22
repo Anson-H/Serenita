@@ -1,4 +1,4 @@
-import type { Member } from "../../api/memberApi";
+import type { Member } from "../../api/accounts/memberApi";
 
 export function memberDisplayName(member: Member) {
   return !member.is_owned && member.member_name === "本人" ? `${member.owner_account} 本人` : member.member_name;

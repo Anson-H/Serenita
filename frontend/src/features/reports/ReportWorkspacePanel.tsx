@@ -1,5 +1,6 @@
+import { navigationLabels } from "../../components/navigationLabels";
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import type { Member } from "../../api/memberApi";
+import type { Member } from "../../api/accounts/memberApi";
 import { HealthMemberOverview } from "../members/HealthMemberOverview";
 import { MemberInformationPanel } from "../members/MemberInformationPanel";
 
@@ -18,8 +19,12 @@ export function ReportWorkspacePanel({
   detailComposer,
   healthMember,
   reportRoute,
+  informationRequested = false,
   onUploadReports,
   onBackToHealth,
+  onOpenMedicalLogs,
+  onOpenMedications,
+  onOpenBodyMetrics,
   sidebarToggle,
   workspace
 }: {
@@ -28,7 +33,11 @@ export function ReportWorkspacePanel({
   detailComposer: ReactNode;
   healthMember: Member;
   reportRoute: boolean;
+  informationRequested?: boolean;
   onBackToHealth: () => void;
+  onOpenMedicalLogs: () => void;
+  onOpenMedications: () => void;
+  onOpenBodyMetrics?: () => void;
   onUploadReports: (files: File[]) => void | Promise<void>;
   sidebarToggle: ReactNode;
   workspace: ReportWorkspaceState;
@@ -39,7 +48,7 @@ export function ReportWorkspacePanel({
   const createReturnFocusRef = useRef<HTMLElement | null>(null);
   const memberInformationReturnFocusRef = useRef<HTMLElement | null>(null);
   const [createFlowOpen, setCreateFlowOpen] = useState(false);
-  const [memberInformationOpen, setMemberInformationOpen] = useState(false);
+  const [memberInformationOpen, setMemberInformationOpen] = useState(informationRequested);
   const detailOpen = memberInformationOpen || (reportRoute && workspace.detailVisible);
   const previousDetailOpenRef = useRef(detailOpen);
   const previousMemberInformationOpenRef = useRef(memberInformationOpen);
@@ -73,8 +82,8 @@ export function ReportWorkspacePanel({
   }, [detailOpen, memberInformationOpen]);
 
   useEffect(() => {
-    setMemberInformationOpen(false);
-  }, [healthMember.member_id]);
+    setMemberInformationOpen(informationRequested);
+  }, [healthMember.member_id, informationRequested]);
 
   useEffect(() => {
     const wasOpen = previousCreateFlowOpenRef.current;
@@ -110,12 +119,15 @@ export function ReportWorkspacePanel({
 
   function closeMemberInformation() {
     setMemberInformationOpen(false);
+    if (informationRequested) onBackToHealth();
     window.requestAnimationFrame(() => {
       if (memberInformationReturnFocusRef.current?.isConnected) {
         focusWithoutScroll(memberInformationReturnFocusRef.current);
       }
     });
   }
+
+  const titleReport = workspace.selectedReport ?? workspace.reports.find(report => report.report_id === workspace.selectedReportId);
 
   return (
     <section
@@ -142,9 +154,12 @@ export function ReportWorkspacePanel({
             className="reports-list-toolbar"
             leading={sidebarToggle}
             showBack={false}
-            title="健康档案"
+            title={navigationLabels.health}
           />
           <HealthMemberOverview
+            onSelectBodyMetrics={onOpenBodyMetrics}
+            onSelectMedicalLogs={onOpenMedicalLogs}
+            onSelectMedications={onOpenMedications}
             informationOpen={memberInformationOpen}
             onOpenInformation={openMemberInformation}
             member={healthMember}
@@ -153,24 +168,25 @@ export function ReportWorkspacePanel({
         </div>
         <div className="report-detail-column">
           {memberInformationOpen ? <MemberInformationPanel
+            key={healthMember.member_id}
             onClose={closeMemberInformation}
             panelRef={detailPanelRef}
             member={healthMember}
           /> : <><WorkspaceToolbar
             className="reports-detail-toolbar"
             onBack={workspace.detailVisible ? onBackToHealth : undefined}
-            title={workspace.selectedReport
-              ? reportDisplayTitle(workspace.selectedReport)
-              : "报告详情"}
+            title={titleReport
+              ? reportDisplayTitle(titleReport)
+              : "医疗报告详情"}
             trailing={workspace.selectedReport ? (
               <button
-                aria-label={workspace.reportFavorited ? "取消收藏报告" : "收藏报告"}
+                aria-label={workspace.reportFavorited ? "取消收藏医疗报告" : "收藏医疗报告"}
                 aria-pressed={workspace.reportFavorited}
                 className="control control--titlebar control--icon control--ghost message-icon-button report-action-icon-button reports-toolbar-favorite titlebar-icon-control"
                 data-active={workspace.reportFavorited ? "true" : undefined}
                 disabled={workspace.favoritingReport}
                 onClick={() => void workspace.toggleReportFavorite()}
-                title={workspace.reportFavorited ? "取消收藏报告" : "收藏报告"}
+                title={workspace.reportFavorited ? "取消收藏医疗报告" : "收藏医疗报告"}
                 type="button"
               >
                 <StarIcon filled={workspace.reportFavorited} />

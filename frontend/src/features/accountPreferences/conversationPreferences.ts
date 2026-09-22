@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
-import { captureAuthContext, isAuthContextCurrent, subscribeAuthLifecycle } from "../../api/authLifecycle";
+import { captureAuthContext, isAuthContextCurrent, subscribeAuthLifecycle } from "../../api/auth/authLifecycle";
 
-import {
-  apiClient,
-  type ConversationPreferences
-} from "../../api/client";
+import * as accountSettingsApi from "../../api/accounts/accountSettingsApi";
+import type { ConversationPreferences } from "../../api/accounts/conversationPreferenceTypes";
+
 import { showStatusNotification } from "../../components/StatusNotificationCenter";
 
 type PreferenceEntry = {
@@ -34,6 +33,7 @@ export function defaultConversationPreferences(): ConversationPreferences {
     is_context_window_usage_visible: false,
     is_related_content_visible: true,
     is_token_usage_visible: false,
+    is_model_identity_visible: false,
     visible_context_types: [],
     tool_display_types: ["model_tool_request", "tool_call"]
   };
@@ -93,7 +93,7 @@ export function loadConversationPreferences(
     return entry.loading;
   }
   const requestedAtRevision = entry.revision;
-  const request = apiClient.fetchConversationPreferences()
+  const request = accountSettingsApi.fetchConversationPreferences()
     .then((preferences) => {
       if (!isAuthContextCurrent(context)) return preferences;
       if (entry.revision === requestedAtRevision) {
@@ -140,7 +140,7 @@ export function writeConversationPreferences(
   notifyPreferenceListeners(accountId);
 
   const save = () => isAuthContextCurrent(context)
-    ? apiClient.replaceConversationPreferences(next) : Promise.resolve(next);
+    ? accountSettingsApi.replaceConversationPreferences(next) : Promise.resolve(next);
   entry.saveQueue = entry.saveQueue
     .then(save, save)
     .then(

@@ -1,0 +1,70 @@
+{
+  "roots": [
+    [
+      "received",
+      "接收变更"
+    ],
+    [
+      "registered",
+      "登记任务"
+    ],
+    [
+      "prepare",
+      "准备资料"
+    ],
+    [
+      "sag_extract",
+      "提取事件"
+    ],
+    [
+      "index",
+      "生成向量索引"
+    ]
+  ],
+  "labels": {
+    "permission_check": "检查权限",
+    "registration_check": "检查登记状态",
+    "registration_save": "保存任务",
+    "read_registered_task": "读取处理任务",
+    "read_change_record": "读取变更记录",
+    "sag_structure_batches": "组织资料分块",
+    "sag_fact_extract": "选择重要信息",
+    "sag_extract_result": "完成事件提取",
+    "sag_extract_direct": "整体提取事件",
+    "sag_event_synthesis": "统一组织事件",
+    "read_content": "读取变更原文",
+    "embed_content": "生成内容向量",
+    "expand_evidence": "读取事件依据",
+    "recall": "查找关联事件",
+    "joint_selection": "筛选相关依据",
+    "source_read": "读取所选原文",
+    "sag_extract_save": "暂存事件与依据",
+    "revisions_save": "暂存事项版本",
+    "index_events": "暂存事件向量",
+    "index_sources": "暂存原文向量",
+    "index_entities": "暂存实体向量",
+    "search_query_representation": "准备搜索线索",
+    "search_sag_core": "查找并排列事件",
+    "search_scope": "检查搜索范围",
+    "search_coarse_ranking": "排列相关事件",
+    "search_joint_selection": "筛选搜索结果",
+    "search_source_read": "读取原文",
+    "search_return_permission_check": "检查读取权限",
+    "search_sag": "查找并排列事件",
+    "revisions_context": "准备事项版本输入",
+    "organize_event": "处理事件",
+    "event_organization_context": "准备事项归属与关系依据",
+    "event_organization_save": "暂存事项归属与关系",
+    "episode_search_context": "准备事件与依据",
+    "episode_search": "筛选待核对事项",
+    "event_organization": "判断事项归属与关系",
+    "revisions": "生成事项摘要与状态",
+    "commit_memory": "统一提交记忆"
+  },
+  "numbered": {
+    "sag_fact_extract": "选择重要信息",
+    "index_events": "暂存事件向量",
+    "index_sources": "暂存原文向量"
+  },
+  "context_label": "读取所需依据"
+}

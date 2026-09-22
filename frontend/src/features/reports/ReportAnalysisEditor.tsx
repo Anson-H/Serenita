@@ -1,5 +1,5 @@
+import {useResourceDraft} from "../../utils/useResourceDraft";
 import {
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -28,22 +28,26 @@ export function EditableAnalysis({ actions, content, workspace }: {
   workspace: ReportAnalysisEditorWorkspace;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(content ?? "");
   const [saveError, setSaveError] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollSnapshotRef = useRef<ScrollPositionSnapshot | null>(null);
 
-  useStatusNotification(saveError, {
+  const draftState = useResourceDraft({
+    resourceKey: `${workspace.reportSaveKey}:analysis`, server: content ?? '', editing,
+    save: async next => {
+      if (!workspace.canEdit) throw new Error('当前权限无法保存，草稿已保留。');
+      const result = await workspace.updateSelectedReportField({field: 'analysis_content', value: next});
+      if (!result) throw new Error('保存失败，草稿已保留，请重试。');
+      return next;
+    }
+  });
+  const {draft, update: setDraft} = draftState;
+
+  useStatusNotification(saveError || draftState.error, {
     id: "report-analysis-save-error",
     title: "解读结果未保存",
     tone: "error"
   });
-
-  useEffect(() => {
-    setDraft(content ?? "");
-    setEditing(false);
-    setSaveError("");
-  }, [content]);
 
   useLayoutEffect(() => {
     if (!editing) return;
@@ -53,26 +57,16 @@ export function EditableAnalysis({ actions, content, workspace }: {
   }, [editing]);
 
   async function save(nextDraft: string) {
-    if (!workspace.canEdit || workspace.saving) return;
-    if (nextDraft === (content ?? "")) {
-      workspace.clearActionFeedback();
-      setSaveError("");
-      setEditing(false);
-      return;
+    setDraft(nextDraft);setSaveError('');
+    const revision = draftState.controller.snapshot().revision;
+    if (await draftState.flush()) {
+      if (revision === draftState.controller.snapshot().revision) setEditing(false);
     }
-    setSaveError("");
-    const response = await workspace.updateSelectedReportField({
-      field: "analysis_content",
-      value: nextDraft
-    });
-    if (response) {
-      setEditing(false);
-      return;
-    }
-    setSaveError("保存失败，请检查后重试。");
   }
 
   function cancel() {
+    if (draftState.controller.snapshot().pending) return;
+    draftState.controller.cancel();
     setDraft(content ?? "");
     setSaveError("");
     setEditing(false);
@@ -102,19 +96,21 @@ export function EditableAnalysis({ actions, content, workspace }: {
           className="report-analysis-editor report-content-sized-editor"
         >
           {draft.trim() ? (
-            <div aria-hidden="true" className="report-analysis-markdown report-analysis-size-mirror">
+            <div aria-hidden="true" className="text-input-surface report-analysis-markdown report-analysis-size-mirror">
               <MarkdownContent content={draft} />
             </div>
           ) : (
-            <div aria-hidden="true" className="report-subtle-empty report-analysis-size-mirror">
+            <div aria-hidden="true" className="text-input-surface report-analysis-markdown report-analysis-size-mirror">
               <strong>暂无解读结果</strong>
             </div>
           )}
           <textarea
+            className="text-input-surface"
             aria-label="解读结果 Markdown"
             onBlur={(event) => void save(event.currentTarget.value)}
             onChange={(event) => setDraft(event.target.value)}
-            onCompositionEnd={(event) => syncCommittedText(event, setDraft)}
+            onCompositionStart={() => draftState.controller.composition(true)}
+            onCompositionEnd={(event) => {syncCommittedText(event, setDraft); draftState.controller.composition(false);}}
             onKeyDown={(event) => {
               if (isImeComposing(event)) return;
               if (event.key === "Escape") {
@@ -139,9 +135,9 @@ export function EditableAnalysis({ actions, content, workspace }: {
 export function DeleteReportAction({ workspace }: { workspace: ReportAnalysisEditorWorkspace }) {
   return (
     <footer className="report-full-width-action-footer report-delete-footer">
-      <button aria-label="删除报告" className="control control--secondary control--danger report-delete-button destructive-action-button removal-action-control" disabled={!workspace.canEdit || workspace.deleting} onClick={() => void workspace.deleteSelectedReport()} type="button">
+      <button aria-label="删除医疗报告" className="control control--secondary control--danger report-delete-button destructive-action-button removal-action-control" disabled={!workspace.canEdit || workspace.deleting} onClick={() => void workspace.deleteSelectedReport()} type="button">
         <TrashIcon className="message-action-icon" />
-        <span>{workspace.deleting ? "删除中..." : "删除报告"}</span>
+        <span>{workspace.deleting ? "删除中..." : "删除医疗报告"}</span>
       </button>
     </footer>
   );
@@ -161,4 +157,4 @@ export function StartReportAnalysisAction({ analysisRunning, workspace }: {
   );
 }
 
-type ReportAnalysisEditorWorkspace = Pick<ReportWorkspaceState, "analyzeSelectedReport" | "analyzing" | "canEdit" | "clearActionFeedback" | "deleteSelectedReport" | "deleting" | "saving" | "updateSelectedReportField">;
+type ReportAnalysisEditorWorkspace = Pick<ReportWorkspaceState, "reportSaveKey" | "analyzeSelectedReport" | "analyzing" | "canEdit" | "clearActionFeedback" | "deleteSelectedReport" | "deleting" | "saving" | "updateSelectedReportField">;

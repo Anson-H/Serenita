@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState, type ReactNode } from "react";
 
 import { SIGN_IN_PATH, SIGN_UP_PATH, type RoutePath } from "../../app/routes";
 import { SecretInput } from "../../components/SecretInput";
@@ -11,15 +11,19 @@ import {
 import { validateAccountNameForSignUp } from "./validation";
 
 type AuthPageProps = {
+  server?: boolean;
+  disabled?: boolean;
+  footer?: ReactNode;
   mode: "sign_in" | "sign_up";
   onModeChange: (path: RoutePath) => void;
   onSignIn: (account: string, password: string) => Promise<void>;
   onSignUp: (account: string, accountName: string, password: string, confirmPassword: string) => Promise<void>;
+  onGuestEntry?: () => Promise<void>;
 };
 
 type AuthMode = "sign_in" | "sign_up";
 
-export function AuthPage({ mode, onModeChange, onSignIn, onSignUp }: AuthPageProps) {
+export function AuthPage({ mode, onModeChange, onSignIn, onSignUp, onGuestEntry, server = false, disabled = false, footer }: AuthPageProps) {
   const [authMode, setAuthMode] = useState<AuthMode>(mode);
   const [authAccount, setAuthAccount] = useState("");
   const [authAccountName, setAuthAccountName] = useState("");
@@ -40,6 +44,7 @@ export function AuthPage({ mode, onModeChange, onSignIn, onSignUp }: AuthPagePro
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (disabled || authSubmitting) return;
     setAuthError("");
     const submittedAccount = formTextValue(event.currentTarget, "account", authAccount);
     const submittedAccountName = formTextValue(event.currentTarget, "account-name", authAccountName);
@@ -78,13 +83,26 @@ export function AuthPage({ mode, onModeChange, onSignIn, onSignUp }: AuthPagePro
     }
   }
 
+  async function enterGuest() {
+    if (!onGuestEntry || disabled || authSubmitting) return;
+    setAuthError("");
+    setAuthSubmitting(true);
+    try {
+      await onGuestEntry();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "临时账号创建失败");
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
   return (
     <main className="login-page">
       <section className="auth-panel">
         <div className="brand-block">
-          <div className="brand-name">Serenita</div>
+          <div className="brand-name">{server ? "Serenita 服务端" : "Serenita"}</div>
         </div>
-        <div className="auth-switch" role="tablist" aria-label="认证方式">
+        {server ? null : <div className="auth-switch" role="tablist" aria-label="认证方式">
           <button
             className={authMode === "sign_in" ? "workspace-tab active" : "workspace-tab"}
             onClick={() => onModeChange(SIGN_IN_PATH)}
@@ -99,7 +117,7 @@ export function AuthPage({ mode, onModeChange, onSignIn, onSignUp }: AuthPagePro
           >
             注册
           </button>
-        </div>
+        </div>}
 
         <form className={authMode === "sign_in" ? "login-form" : "register-form"} onSubmit={submitAuth}>
           {authMode === "sign_up" ? (
@@ -110,7 +128,7 @@ export function AuthPage({ mode, onModeChange, onSignIn, onSignUp }: AuthPagePro
             </div>
           ) : null}
           <label>
-            用户标识
+            {server ? "管理员登录名" : "用户标识"}
             <input
               autoComplete="username"
               name="account"
@@ -151,10 +169,17 @@ export function AuthPage({ mode, onModeChange, onSignIn, onSignUp }: AuthPagePro
               />
             </div>
           ) : null}
-          <button className="control control--primary command-button control-primary" disabled={authSubmitting} onMouseDown={keepTextControlFocused} type="submit">
+          <button className="control control--primary command-button control-primary" disabled={authSubmitting || disabled} onMouseDown={keepTextControlFocused} type="submit">
             {authSubmitting ? "处理中..." : authMode === "sign_in" ? "登录" : "注册并进入"}
           </button>
         </form>
+        {onGuestEntry ? <div className="guest-entry">
+          <button className="control control--secondary command-button" disabled={authSubmitting || disabled} onClick={() => void enterGuest()} type="button">
+            {authSubmitting ? "处理中..." : "无需注册，临时使用"}
+          </button>
+          <p>将自动进入临时账号；关闭此页面后，账号及其中内容会被删除。</p>
+        </div> : null}
+        {footer}
       </section>
     </main>
   );

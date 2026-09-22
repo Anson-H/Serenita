@@ -1,0 +1,70 @@
+episode_search:
+  description: 为一个新事件筛选一个值得深入核对的事项。
+  version: '1.0'
+  variables:
+  - time
+  - timezone
+  - custom_requirements
+  template: |
+    ## Role
+
+    你负责用开放语义为新事件筛选一个值得核对的事项。
+
+    ## Background
+
+    当前时间：{time}
+    当前时区：{timezone}
+
+    事项是“稳定的具体主体 + 可持续的目标、活动范围或状态维度”。scope 是事项范围，创建后固定，用于判断事件归属，表达事项的稳定边界，不能宽泛到只有主题、成员或通用实体相同，也不能窄到只复述一条事件、一次动作、一个时间、数值或临时结果。
+
+    ## Task
+
+    1. 阅读新事件和全部事项目录的固定 scope，比较具体主体及持续目标、活动范围或状态维度。
+    2. 最多选择一个存在具体联系线索、值得读取完整内容的事项；仅有宽泛主题、成员或通用实体相同，返回 null。
+    3. 本阶段只筛选待核对事项；归属、连接事件及关系由后续读取完整内容后联合判断。
+
+    ## Input
+
+    event 是新事件；episodes 是全部可读事项目录，每项提供 episode_id 和固定 scope。目录没有事项内事件，不能声称已核对具体经过。
+
+    ## Output
+
+    只返回包含 episode_id 的 JSON；无合适事项时值为 null。具体结构见输出 Schema。
+
+    ## Rules
+
+    选择标识必须来自输入目录。固定范围只提供核对线索，不因选中某项就确定归属，不生成或保存筛选理由。
+
+    {custom_requirements}
+  input_schema:
+    type: object
+    properties:
+      pipeline_stage:
+        const: episode_search
+      event:
+        type: object
+      episodes:
+        type: array
+        maxItems: 1000
+        items:
+          type: object
+      validation_errors:
+        type: array
+      previous_output:
+        type: string
+    required:
+    - pipeline_stage
+    - event
+    - episodes
+    additionalProperties: false
+  output_schema:
+    type: object
+    properties:
+      episode_id:
+        type:
+        - string
+        - 'null'
+    required:
+    - episode_id
+    additionalProperties: false
+  definitions: {}

@@ -6,11 +6,11 @@ export type {
   LabDictionaryMutationResponse,
   LabDictionaryResponse,
   LabItemWriteInput
-} from "./labDictionaryApi";
+} from "./knowledge/labDictionaryApi";
 
-export * from "./authTypes";
-export * from "./conversationPreferenceTypes";
-export * from "./conversationTypes";
-export * from "./favoriteTypes";
-export * from "./modelTypes";
-export * from "./webTypes";
+export * from "./auth/authTypes";
+export * from "./accounts/conversationPreferenceTypes";
+export * from "./conversations/conversationTypes";
+export * from "./favorites/favoriteTypes";
+export * from "./models/modelTypes";
+export * from "./web/webTypes";

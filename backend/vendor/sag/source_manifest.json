@@ -1,0 +1,268 @@
+{
+  "repository": "https://github.com/Zleap-AI/SAG-Benchmark",
+  "commit": "942f498fb20001ade7492756a9002b5f6ad750d8",
+  "scope": "Chunking, extraction, entity association and SAG retrieval from one fixed SAG-Benchmark source.",
+  "files": {
+    "LICENSE": {
+      "source": "LICENSE",
+      "scope": "Unmodified upstream license.",
+      "sha256": "a964d5d93bfcdb0e83df12b92a4be8f88d6f5a1ccff5615343a0ff8efba870c8",
+      "source_sha256": "a964d5d93bfcdb0e83df12b92a4be8f88d6f5a1ccff5615343a0ff8efba870c8"
+    },
+    "__init__.py": {
+      "source": null,
+      "scope": "Application-owned package and runtime port.",
+      "sha256": "d1180b6b2fc06dad9663e0a8464a70b5c81ad49fddc8e904ec8c9eb35217ddad"
+    },
+    "candidate_scope.py": {
+      "source": "pipeline/modules/search/sag2/candidate_scope.py",
+      "source_sha256": "45cb829f200b0816a70a404c2677aa8887e35b8d0ddee0416744c2562972b85a",
+      "sha256": "e796b986edf17f566d1b45b1c23de19cf9749d55f8d1eb5b158ce854e7d08ad5",
+      "scope": "Copied request-scoped event/entity maps and candidate builder; omit unused contains_event and contains_entity conveniences."
+    },
+    "common/__init__.py": {
+      "source": null,
+      "scope": "Export required common helpers without upstream storage imports.",
+      "sha256": "61c7e9c571ff6de8dedd1ece325173233f65c1881a4ae5a352fefc8016a1cc9c"
+    },
+    "common/logger.py": {
+      "source": "pipeline/utils/logger.py",
+      "scope": "get_logger only, under the zleap.sag namespace; no settings or root logger mutation.",
+      "sha256": "42dec1c51c63126a71b4205df9cdd05c217889ba9c2244abb0b4a9204a32ecf2",
+      "source_sha256": "5ff8b9f57963f155dde49a2ea42f3d561d849aaa7448fc3eb9686c7addedc463"
+    },
+    "common/text.py": {
+      "source": "pipeline/utils/text.py",
+      "scope": "normalize_heading_text, estimate_tokens and their count_chinese_characters dependency.",
+      "sha256": "c1dae626d84f136910872f2146b17e8a4568dad07320f2f9feaa577328f407a7",
+      "source_sha256": "ce445c82975781adc82f87f85a34ecbfd28a8ded4bbef388f374daa676c25198"
+    },
+    "config.py": {
+      "source": "pipeline/modules/search/config.py",
+      "source_sha256": "fe026ca8fc53b915dfa5f0511864ead4d7ca396e3380473c3ff6a7c5fda1273d",
+      "sha256": "477d25baec679b08b7aab0e4219a3002286367717369c29231d6ea839df3ec69",
+      "scope": "SAGRecallConfig through SAGConfig"
+    },
+    "contracts.py": {
+      "source": "pipeline/modules/search/sag2/contracts.py",
+      "source_sha256": "2be328519cdc8cb305cb9358a86b2e9648f27c267dbf6819cdf71390343c356c",
+      "sha256": "f049f00c6f49340cf4d401a7b7664172e6b9735d535a8429c23482f79982cc21"
+    },
+    "core/ai/__init__.py": {
+      "source": null,
+      "scope": "Package initialization for retained modules.",
+      "sha256": "54dcd8a5664104e37c0b7ad2724006eea0cc8aa834ba1b8f36bd09d239999d69"
+    },
+    "core/ai/models.py": {
+      "source": "pipeline/core/ai/models.py",
+      "scope": "LLMRole and LLMMessage role/content fields only; omit unused to_dict convenience. Provider configuration and request serialization remain in Serenita.",
+      "sha256": "a146a47c17758ee91d4fc9e3b22667c25daddb707cb3aa9849f5575d35b4ac8e",
+      "source_sha256": "10c35fa91d86fc4d00437f7d38826201fdc3d8407f0bde5814d0f7b4a9c8daa8"
+    },
+    "evidence.py": {
+      "source": "pipeline/modules/search/sag2/evidence.py",
+      "source_sha256": "271bf69d1f11c32b1adf068f33dda0b21a4d95b6cb8aaa8cf6c933627b5cef70",
+      "sha256": "bfe9c2d6a8d0764e9d291c1cedf92ed867d98be6809cb9fca1527a20f9d14eae"
+    },
+    "exceptions.py": {
+      "source": "pipeline/exceptions.py",
+      "scope": "PipelineError and ExtractError only.",
+      "sha256": "7a349e91c1bf0352f6f50c962fcb26a62b75cb30030c5226928399c520f0ac9b",
+      "source_sha256": "99925eac79a275adb559636d952656c4b88c89d1f149f09ed690c2854bb97182"
+    },
+    "expand.py": {
+      "source": "pipeline/modules/search/sag2/expand.py",
+      "source_sha256": "36389cecec751ea2c0342341a41cc2db755cf494ba84992337c77eb34b5e3bd5",
+      "sha256": "48c30141c935437cceae2dff5635a713fb83bb85a5445bea964f767a094e3b34"
+    },
+    "modules/__init__.py": {
+      "source": null,
+      "scope": "Package initialization for retained modules.",
+      "sha256": "54dcd8a5664104e37c0b7ad2724006eea0cc8aa834ba1b8f36bd09d239999d69"
+    },
+    "modules/extract/__init__.py": {
+      "source": null,
+      "scope": "Package initialization for retained modules.",
+      "sha256": "54dcd8a5664104e37c0b7ad2724006eea0cc8aa834ba1b8f36bd09d239999d69"
+    },
+    "modules/extract/parser.py": {
+      "source": "pipeline/modules/extract/parser.py",
+      "scope": "Copied parse_events and recursive preorder traversal; host event construction replaces ORM, UUID, evidence and time fields. Entity grouping and description merge use host identity and cache-key callbacks; unused upstream _build_cache_key and get_or_create_entity methods are outside the adopted interface.",
+      "sha256": "4724575c824f29dbb2ff419f753080f1235596e39a996ae922d01ba3a26a4dc5",
+      "source_sha256": "33308f54964fd11b35ea0820d31220c59876a5723c88d3f1a93b4bc88e841949"
+    },
+    "modules/extract/processor.py": {
+      "source": "pipeline/modules/extract/processor.py",
+      "scope": "Copy original-template extraction methods with host model and medical template; historical event recall and input removed by user requirement; omit upstream ORM and compact-template branches.",
+      "sha256": "7a4b42e21f5a343f22250dcf8c87c471ae193936fe1f02ed3f327d59cf0a2e8b",
+      "source_sha256": "f1b587f8691565f9f6f368be250059184d4f682b374ef908db49d90a50b1658e"
+    },
+    "modules/load/__init__.py": {
+      "source": null,
+      "scope": "Package initialization for retained modules.",
+      "sha256": "54dcd8a5664104e37c0b7ad2724006eea0cc8aa834ba1b8f36bd09d239999d69"
+    },
+    "modules/load/chunking/__init__.py": {
+      "source": "pipeline/modules/load/chunking/__init__.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "bfcb63ff1272479780e4e26187139e8bc9446548f9c4c32b59404b01076dd8c1",
+      "source_sha256": "b9ea470ded1c853f9b79e6199709187b7ef8cb78ff69aa2fcd2f61844c9d2061"
+    },
+    "modules/load/chunking/assembler/__init__.py": {
+      "source": "pipeline/modules/load/chunking/assembler/__init__.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "5471408179dc2b0ae0e537c74bc19ffc18e444235bfdc70dd25bc632ae023d81",
+      "source_sha256": "b88e7c3099b65378b397efd67ef747a93677bae00ae2e2fd04a502394c0c706d"
+    },
+    "modules/load/chunking/assembler/generic.py": {
+      "source": "pipeline/modules/load/chunking/assembler/generic.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "e3a8277b787370612634193993168404eb6aa598a8f442cdea47f98e354c88f0",
+      "source_sha256": "6f67bbdce90b3ef507bd81d4838fd912a2671d6cce3b5d70f8d8ecac64ec74fe"
+    },
+    "modules/load/chunking/base.py": {
+      "source": "pipeline/modules/load/chunking/base.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "69b31f904ea117c2bc47ddd70f0734cef2b9767ec0321b5e761f2edaeb220003",
+      "source_sha256": "851c817614b4535dcfe0ce67246ec98426835db6976c6a254a1afc9aaa49b9a3"
+    },
+    "modules/load/chunking/chunker/__init__.py": {
+      "source": "pipeline/modules/load/chunking/chunker/__init__.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "da57bf28499cd83823bbfe55368dd662782c3fb680cb55a51f41c73ba283de6a",
+      "source_sha256": "634b716310a01d7ba07f90ceacd878df6f6d5ae109360339a0583cda2dd7d46d"
+    },
+    "modules/load/chunking/chunker/base.py": {
+      "source": "pipeline/modules/load/chunking/chunker/base.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "2abcb1e751269c64faa8615a3ccd8a3f1a022de042669faf783b21b7d9801d60",
+      "source_sha256": "72f41d61a3bdf0c322ab2cc219ac0f66a41a0d02be62e14262173eccd9ddbc86"
+    },
+    "modules/load/chunking/chunker/markdown.py": {
+      "source": "pipeline/modules/load/chunking/chunker/markdown.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "9c756d9d8ef4fd2f6f64ac19ef6e001ced433e4a294c5a9b3d65f133a0925a1a",
+      "source_sha256": "37758c3f17a70b5eb4656d45d40defce3fed039c512347909f381d2091234e20"
+    },
+    "modules/load/chunking/chunker/text.py": {
+      "source": "pipeline/modules/load/chunking/chunker/text.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "82c399d9313bb0d4bf82fef8f5701f6ec0344dfc055d15054dedff77d30ab84a",
+      "source_sha256": "0dddafc92b336074d4889a203bcf12f80fba0e7d15fc464d59154a884b146b78"
+    },
+    "modules/load/chunking/parser/__init__.py": {
+      "source": "pipeline/modules/load/chunking/parser/__init__.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "e25ceeb710264ee160ed04e8f99b711652d2a201cff4054e28a127a8ea76ab19",
+      "source_sha256": "bc63295b43a03d0ad95b3a00c9cbceb99aede6895594a7d5173402772e653a18"
+    },
+    "modules/load/chunking/parser/markdown.py": {
+      "source": "pipeline/modules/load/chunking/parser/markdown.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "6c7fba1db3818911487ee95ca600155b78618eb45b2bc9e2af7a0f69ea714b9c",
+      "source_sha256": "c869be9c55adfce5054713980227d208b59c8c8f209d44cf45ac1232d9b6e51d"
+    },
+    "modules/load/chunking/pipeline.py": {
+      "source": "pipeline/modules/load/chunking/pipeline.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "2f31e77595a929c4b31d79159d407a9a0277566097496af992c9b8e6566bfd54",
+      "source_sha256": "4b887077b3ee878c459db0cf2e430c2fd034c6e9df1d29d8f342141abfee86ec"
+    },
+    "modules/load/chunking/tokenizer/README.md": {
+      "source": "pipeline/modules/load/chunking/tokenizer/README.md",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "871650dd1916f6338c2fc4843f8c8cb8b13ecae8095b1b38412d50184aff989a",
+      "source_sha256": "871650dd1916f6338c2fc4843f8c8cb8b13ecae8095b1b38412d50184aff989a"
+    },
+    "modules/load/chunking/tokenizer/__init__.py": {
+      "source": "pipeline/modules/load/chunking/tokenizer/__init__.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "a583d23b8788f4c2b1e2471bda6df58939a6f65c917f0da0a32b1d4b93fa8553",
+      "source_sha256": "f99fe2e08c70c3e263057a9b7fd715460cc856806e23a74dd883177bc7b4f86a"
+    },
+    "modules/load/chunking/tokenizer/assets/tokenizer.json": {
+      "source": "pipeline/modules/load/chunking/tokenizer/assets/tokenizer.json",
+      "scope": "Unmodified tokenizer asset.",
+      "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "source_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    },
+    "modules/load/chunking/tokenizer/estimator.py": {
+      "source": "pipeline/modules/load/chunking/tokenizer/estimator.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "19ba25bce9dc1cd2acdebd19715dbdd37d992866eb248ab273dac715a967315c",
+      "source_sha256": "370696a942b5710f32fe20939b122efa23c853b1124ba7391c5ef1cd643ff9e0"
+    },
+    "modules/load/chunking/types.py": {
+      "source": "pipeline/modules/load/chunking/types.py",
+      "scope": "Copied source with namespace adaptation.",
+      "sha256": "6555a3c7e71763b15212d49dd8840698fbc641957adf4872b1211376d16d69db",
+      "source_sha256": "6555a3c7e71763b15212d49dd8840698fbc641957adf4872b1211376d16d69db"
+    },
+    "orchestrator.py": {
+      "source": "pipeline/modules/search/sag2/orchestrator.py",
+      "source_sha256": "afde5592db7024603931dc3657d2a1be5b9fa21b6ae2834aec9268171c8a868b",
+      "sha256": "21e7f4f39cdfab08a653f894959cd7220a3e923aa1e1abca784b01b4e0118d0a",
+      "scope": "Copied SAG search orchestration; internal utilities are imported directly from their defining module while package-level SAGConfig and SAGSearcher exports remain available."
+    },
+    "recall.py": {
+      "source": "pipeline/modules/search/sag2/recall.py",
+      "source_sha256": "45c09c93d8a6639ceb041ed683b91e95dbc42e8753f64242b81d3c6c46c747b3",
+      "sha256": "2f4710c59422b661930c08631bda242c497b42ad7495921baa01fc14d6b72201"
+    },
+    "rerank.py": {
+      "source": "pipeline/modules/search/sag2/rerank.py",
+      "source_sha256": "c9ec988b0d2141283fec992483cb21147d6825e4b40f579dec2f16c61588faef",
+      "sha256": "1e9eb47909161cc4c74a6c8142438ff43015aacd94fbe8dfa3550f318e5178bd"
+    },
+    "routes.py": {
+      "source": "pipeline/modules/search/sag2/routes.py",
+      "source_sha256": "e2edcbaffa24e7cc82e12af2a4bdd66daa6ec04c2dd20a450fb9895c3dd8ef9b",
+      "sha256": "d7ff11ee10994d35ba74cf0e6191ec886b5e3c5d607ab1107cbf8f462b3a27f3"
+    },
+    "runtime.py": {
+      "source": null,
+      "scope": "Application-owned package and runtime port.",
+      "sha256": "0492e63ea488fb8fbba10a44897c0fc9ec2a8ef4a0b751daca3887929a8eaa3e"
+    },
+    "timing.py": {
+      "source": "pipeline/modules/search/sag2/timing.py",
+      "source_sha256": "1a21c03208b97b383673cd79f0384e341835e2ff20e84c3e9dc98be4ea861c80",
+      "sha256": "0e2e2f527d8edd40a67ecf4f05ec0953e9a2b0d96b9e1cc45c642b10cb08a83b"
+    },
+    "utils.py": {
+      "source": "pipeline/modules/search/sag2/utils.py",
+      "source_sha256": "9ae121bc7fd579a6918a9521a00977042caa3bb2a59f94f6901fd5a4aeca5fbf",
+      "sha256": "4987fb6c8feaadca5ca0cbf5c58b7971199339eb45fbd657a3c7c6b1a7529768"
+    }
+  },
+  "adjustments": [
+    "One zleap.sag package; imports reference its common helpers.",
+    "Host supplies account models, local time and medical extraction with entity catalog identity resolution. Extraction performs no historical event recall or query embedding; later event organization and query retrieval remain independent.",
+    "SQLite/Lance persistence and append-only evidence stay in Serenita; upstream storage and compact-template fallback are excluded.",
+    "Extraction uses only changed fields on updates. JSON Schema, nonempty text and authorized references are validated before append.",
+    "Original recursive event traversal is retained. The medical schema allows L0/L1/L2 with full coverage and nonduplicate sibling instructions. Persisted Events contain no nesting metadata; Contains is an additional host relation decided by the relation-stage model after Episode membership.",
+    "Long extraction uses the copied SAG chunker and assembler; independently extracts each chunk with previous heading and first 300 characters as metadata, then gathers results in source order. Medical context, serial execution, exact evidence positions, bounded repairs and authorized checkpoints are host adaptations.",
+    "Local package, symbols, configuration fields and prompt names use SAG; upstream source paths and source hashes retain their original names and values.",
+    "Adopted interfaces exclude unused candidate membership conveniences, parser identity/cache defaults and LLMMessage.to_dict; host callbacks own identity rules and request serialization. Internal orchestration imports utilities directly without changing public package exports."
+  ],
+  "integration_references": {
+    "second_brain": {
+      "root": "../2nd-brain/task2",
+      "files": {
+        "task2_service/extraction/sag.py": "edfb27f2aacf2db28c06dedff2eb3b39ffa6ac749f75a6e8a419694902fc5a2c",
+        "zleap/sag/modules/load/parser.py": "c8c27a78a4615fdcdb878785e2079cabd2430cd98e75f10cd87a73e6e43c8b31",
+        "zleap/sag/modules/load/chunking/chunker/text.py": "e3cabfdd5a6c2b1c624e1889ce4bb30f8cfe94932bbdcda389f5e9a88f41d1e3",
+        "zleap/sag/modules/load/chunking/assembler/generic.py": "cce61ec635300b1b1898b2ab6d7e17d0f27f9f44b11186f12fc1d771218169b3",
+        "zleap/sag/modules/extract/extractor.py": "2f42209acdbdfadd2c1d121fda13645a1f675d6d5f022e51a022072917bbf2c8",
+        "task2_service/extraction/entity_resolution.py": "1ae37ff1ec3ad22e00ccc65dbb5cb30a968a89d8f0fd1cc944f4976d5bdd3b73",
+        "task2_service/extraction/worker.py": "055199e8d9dd715bbfefcbff0d6994043d364ffc493022302efed710702b6e7c"
+      },
+      "entity_identity_adaptation": {
+        "normalizer": "task2_service/extraction/entity_resolution.py copied unchanged to backend/app/application/memory/sag/entity_names.py",
+        "resolver": "worker.py _resolve_entity_id, _find_existing_entity_id and _record_entity_aliases adapted in backend/app/application/memory/sag/entity_resolution.py; same decision order, readable member catalog and staged append replace ORM reads/inserts; new IDs include the operation scope to avoid inaccessible historical identities",
+        "prompt": "sag.py _build_requirements entity identity paragraph copied into sag_extract.yaml; catalog location adapted to data.meta.entity_catalog",
+        "persistence": "Current name and aliases append to entity_names with source event in the same event transaction; immutable existing rows remain unchanged"
+      }
+    }
+  }
+}
